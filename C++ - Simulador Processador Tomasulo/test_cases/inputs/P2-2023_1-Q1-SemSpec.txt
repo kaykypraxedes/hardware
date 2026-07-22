@@ -1,0 +1,61 @@
+# ======================================================
+# CONFIGURACOES DO SIMULADOR
+# ======================================================
+# Linhas com '#' sao ignoradas (comentarios)
+# A ordem das configuracoes deve ser mantida
+
+# Tipo do processador:
+# 0 = Processador In-Order
+# 1 = Tomasulo sem especulacao
+# 2 = Tomasulo com especulacao
+tipo 1
+
+# Tem previsor de desvio:
+# Apenas em Tomasulo com especulação (ROB):
+# 0 = Não tem
+# 1 = Tem
+previsor 0
+
+# Numero de threads
+num_threads 1
+
+# Modelo do multithreading:
+# 0 = GRANULACAO_FINA
+# 1 = GRANULACAO_GROSSA
+# 2 = SMT
+modelo 0
+
+# Largura de despacho do processador
+despacho 2
+
+# Número de Reservation Stations (RS):
+# load - store - int_basico - int_mult_div - float_basico - float_mult_div
+num_rs 5 5 5 3 5 3
+
+# Número de unidades funcionais de operação (UF):
+# acessar_memoria - ula_int_basico - ula_int_mult_div - ula_float_basico - ula_float_mult_div - wr (despacho)
+num_ufs 1 1 1 1 1 1
+
+# Latência das instruções (EX para todas e de memória apenas para LOAD e STORE):
+# NAO_EXISTE - LOAD - STORE - BRANCH - INT_BASICO - INT_MUL - INT_DIV - FLOAT_BASICO - FLOAT_MUL - FLOAT_DIV
+latencias_ex 0 1 1 1 1 5 5 5 5 5
+# LOAD - STORE
+latencias_mem 1 1
+
+# Instrucoes do programa (uma por linha, termina com END_PROG)
+programa
+L.D F2, 0(R1)
+DIV.D F4, F2, F0
+ADD.D F4, F2, F0
+MUL.D F6, F2, F0
+S.D F6, 0(R1)
+DADDIU R1, R1, #-8
+BNEZ R1, loop
+L.D F2, 0(R1)
+DIV.D F4, F2, F0
+ADD.D F4, F2, F0
+MUL.D F6, F2, F0
+S.D F6, 0(R1)
+DADDIU R1, R1, #-8
+BNEZ R1, loop
+END_PROG

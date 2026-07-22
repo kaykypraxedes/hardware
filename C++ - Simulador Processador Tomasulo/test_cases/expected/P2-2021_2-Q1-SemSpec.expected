@@ -1,0 +1,95 @@
+==============
+CONFIGURAÇÕES:
+==============
+
+- Tipo: TOMASULO_SEM_ROB
+- Numero de Threads: 1
+- Modelo Multi-Threading: GRANULACAO_FINA
+- Previsor: false
+- Despacho: 2
+- Número de RSs: 5 5 5 5 5 5 
+- Número de UFs: 1 1 1 1 1 1 
+- Latêcias de EX: 0 1 1 1 1 5 5 5 5 5 
+- Latêcias de MEM: 1 1 
+
+Simulando...
+Concluido!
+
+=====================
+TABELA DE RESULTADOS
+=====================
+
+PC    Instrucao                     Issue     EX              MEM             WR        
+----------------------------------------------------------------------------------------
+0     L.D F2, 0(R1)                 1         02-02           03-03           4         
+1     DIV.D F4, F2, F0              1         05-09           --              10        
+2     ADD.D F4, F2, F0              2         05-09           --              11        
+3     MUL.D F6, F2, F0              2         10-14           --              15        
+4     S.D F6, 0(R1)                 3         04-04           16-16           --        
+5     DADDIU R1, R1, #-8            3         05-05           --              6         
+6     BNEZ R1, loop                 4         07-07           --              --        
+7     L.D F2, 0(R1)                 5         08-08           09-09           12        
+8     DIV.D F4, F2, F0              5         15-19           --              20        
+9     ADD.D F4, F2, F0              6         13-17           --              18        
+10    MUL.D F6, F2, F0              6         20-24           --              25        
+11    S.D F6, 0(R1)                 7         09-09           26-26           --        
+12    DADDIU R1, R1, #-8            7         10-10           --              13        
+13    BNEZ R1, loop                 8         14-14           --              --        
+
+=====================
+RESERVATION STATIONS
+=====================
+
+load:
+load0               L.D F2, 0(R1) (1-4) | L.D F2, 0(R1) (5-12) 
+
+store:
+store0              S.D F6, 0(R1) (3-17) 
+store1              S.D F6, 0(R1) (7-27) 
+
+int_basico:
+int_basico0         DADDIU R1, R1, #-8 (3-6) | DADDIU R1, R1, #-8 (7-13) 
+int_basico1         BNEZ R1, loop (4-8) | BNEZ R1, loop (8-16) 
+
+int_mult_div:
+
+float_basico:
+float_basico0       ADD.D F4, F2, F0 (2-11) 
+float_basico1       ADD.D F4, F2, F0 (6-18) 
+
+float_mult_div:
+float_mult_div0     DIV.D F4, F2, F0 (1-10) 
+float_mult_div1     MUL.D F6, F2, F0 (2-15) 
+float_mult_div2     DIV.D F4, F2, F0 (5-20) 
+float_mult_div3     MUL.D F6, F2, F0 (6-25) 
+
+=====================
+CDB
+=====================
+
+F:
+F2      load0 (1-4) | load0 (5-12) 
+F4      float_mult_div0 (1-10) | float_basico0 (2-11) | float_mult_div2 (5-20) | float_basico1 (6-18) 
+F6      float_mult_div1 (2-15) | float_mult_div3 (6-25) 
+
+R:
+R1      int_basico0 (3-6) | int_basico0 (7-13) 
+
+=====================
+UNIDADES FUNCIONAIS
+=====================
+
+acessar_memoria:
+acessar_memoria0        load0 (3-3) | load0 (9-9) | store0 (16-16) | store1 (26-26) 
+
+ula_int_basico:
+ula_int_basico0         load0 (2-2) | store0 (4-4) | int_basico0 (5-5) | int_basico1 (7-7) | load0 (8-8) | store1 (9-9) | int_basico0 (10-10) | int_basico1 (14-14) 
+
+ula_int_mult_div:
+
+ula_float_basico:
+ula_float_basico0       float_basico0 (5-9) | float_basico1 (13-17) 
+
+ula_float_mult_div:
+ula_float_mult_div0     float_mult_div0 (5-9) | float_mult_div1 (10-14) | float_mult_div2 (15-19) | float_mult_div3 (20-24) 
+
