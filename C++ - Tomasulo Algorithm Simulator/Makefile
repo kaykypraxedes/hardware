@@ -2,7 +2,7 @@ CXX      = g++
 CXXFLAGS = -Wall -Wextra -std=c++17 -g
 LDFLAGS  =
 
-SRCDIR   = _codigo
+SRCDIR   = _code
 TSTDIR   = $(SRCDIR)/testbenchs
 OBJDIR   = build
 INPUTDIR = test_cases/inputs
@@ -12,7 +12,7 @@ SRCS     = $(wildcard $(SRCDIR)/*.cpp)
 OBJS     = $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%.o,$(SRCS))
 MAIN_OBJ = $(OBJDIR)/Main.o
 
-EXEC     = executavel
+EXEC     = executable
 
 TB_NAMES = Componentes Instrucao ReservationStations Thread Processador
 TB_BINS  = $(addprefix $(OBJDIR)/tb_,$(TB_NAMES))
@@ -90,7 +90,7 @@ simtest: $(EXEC)
 		expected=$(EXPDIR)/$$name.expected; \
 		if [ ! -f $$expected ]; then \
 			missing=$$((missing + 1)); \
-			./executavel < $$input > $$expected 2>&1; \
+			./$(EXEC) < $$input > $$expected 2>&1; \
 			echo "  $$name -> referência gerada"; \
 		fi; \
 	done; \
@@ -100,7 +100,7 @@ simtest: $(EXEC)
 		name=$$(basename $$input .txt); \
 		expected=$(EXPDIR)/$$name.expected; \
 		printf "  %-40s" "$$name"; \
-		./executavel < $$input > /tmp/$$name.out 2>&1; \
+		./$(EXEC) < $$input > /tmp/$$name.out 2>&1; \
 		if diff -q /tmp/$$name.out $$expected > /dev/null 2>&1; then \
 			echo "$$(printf '\033[0;32mOK\033[0m')"; \
 		else \
@@ -151,10 +151,10 @@ simtest-completo: $(EXEC) testbenchs
 		expected=$(EXPDIR)/$$name.expected; \
 		echo "--- $$name ---"; \
 		if [ ! -f $$expected ]; then \
-			./executavel < $$input > $$expected 2>&1; \
+			./$(EXEC) < $$input > $$expected 2>&1; \
 			echo "[OK - referencia gerada]"; \
 		else \
-			./executavel < $$input > /tmp/$$name.full 2>&1; \
+			./$(EXEC) < $$input > /tmp/$$name.full 2>&1; \
 			if diff -q /tmp/$$name.full $$expected > /dev/null 2>&1; then \
 				echo "[OK]"; \
 			else \
@@ -181,7 +181,7 @@ simtest-update: $(EXEC)
 		total=$$((total + 1)); \
 		name=$$(basename $$input .txt); \
 		printf "  Atualizando %-40s" "$$name"; \
-		./executavel < $$input > $(EXPDIR)/$$name.expected 2>&1; \
+		./$(EXEC) < $$input > $(EXPDIR)/$$name.expected 2>&1; \
 		echo "$$(printf '\033[0;32mOK\033[0m')"; \
 	done; \
 	echo ""; \

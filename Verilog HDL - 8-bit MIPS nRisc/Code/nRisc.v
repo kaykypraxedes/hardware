@@ -417,7 +417,7 @@ module nRisc(
 	.OpCode0(OpCode0), 
 	.funct(funct),
 	.reg1(reg1),
-	.reg2(reg2),	
+	.reg2(reg2),
 	.imediato(imediato)
     );
     BancoDeRegistradores bancoReg_(
