@@ -16,13 +16,15 @@ class RS {
         bool                     getBusy()               const;
         int                      getContagemRegressiva() const;
         int                      getPosicaoUF()          const;
-        const Instrucao&                getInstrucaoAtual()     const; // const & para evitar cópia
-        FaseInstrucao                   getFaseInstrucao()      const;
-        const std::string&              getId()                 const; // const & para evitar cópia
-        const std::string&              getQj()                 const; // const & para evitar cópia
-        const std::string&              getQk()                 const; // const & para evitar cópia
-        const std::vector<int>&         getTempos()             const; // const & para evitar cópia
-        const std::vector<std::string>& getInstrucoes()         const; // const & para evitar cópia
+
+        FaseInstrucao            getFaseInstrucao()      const;
+        // & const para evitar cópia (tipos pequenos teriam um ganho marginal)
+        const Instrucao&                getInstrucaoAtual() const;
+        const std::string&              getId()             const;
+        const std::string&              getQj()             const;
+        const std::string&              getQk()             const;
+        const std::vector<int>&         getTempos()         const;
+        const std::vector<std::string>& getInstrucoes()     const;
         // Métodos públicos
         bool addIssue(
             Instrucao&,

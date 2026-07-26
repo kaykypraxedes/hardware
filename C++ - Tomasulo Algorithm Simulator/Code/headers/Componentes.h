@@ -21,7 +21,8 @@ class Registrador {
         bool                      getBusy()             const;
         void                      trocaBusy();
         std::vector<int>                getTempoAlocacao()    const;
-        const std::vector<std::string>& getRSalocadas()       const; // const & para evitar cópia
+        // & const para evitar cópia (tipos pequenos teriam um ganho marginal)
+        const std::vector<std::string>& getRSalocadas()       const;
         std::string                     getRSatual()          const; // retorna o produtor mais recente (último de RS_alocadas com tempo_fim == -1)
         bool                      temProdutorPendente() const;
 

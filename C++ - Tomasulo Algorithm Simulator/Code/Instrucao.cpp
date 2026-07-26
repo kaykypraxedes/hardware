@@ -17,7 +17,7 @@ Instrucao::Instrucao(
 {
     stringParaInstrucao();
 }
-// Códigos pequenos:
+
 int Instrucao::getPC()                       const { return PC; }
 int Instrucao::getLatenciaEX()               const { return latencia_EX; }
 int Instrucao::getLatenciaMEM()              const { return latencia_MEM; }
@@ -25,8 +25,9 @@ TipoInstrucao Instrucao::getTipoInstrucao()  const { return tipo; }
 Registrador Instrucao::getRegDestino()       const { return reg_destino; }
 Registrador Instrucao::getJ()                const { return reg_J; }
 Registrador Instrucao::getK()                const { return reg_K; }
-const std::string& Instrucao::getInstrucaoString()  const { return instrucao_em_string; } // const & para evitar cópia
-// Códigos grandes:
+// & const para evitar cópia (tipos pequenos teriam um ganho marginal)
+const std::string& Instrucao::getInstrucaoString()  const { return instrucao_em_string; }
+
 void Instrucao::setLatenciaMEM(
     int latencia
 ){

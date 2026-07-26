@@ -11,14 +11,14 @@ Registrador::Registrador(
     tipo = identificaTipo(registrador_em_string);
     id   = identificaId(registrador_em_string);
 }
-// Códigos pequenos:
+
 char Registrador::getTipo()                                  const { return tipo;}
 int  Registrador::getId()                                    const { return id;}
 bool Registrador::getBusy()                                  const { return busy;}
-const std::vector<std::string>& Registrador::getRSalocadas() const { return RS_alocadas;} // const & para evitar cópia
+// & const para evitar cópia (tipos pequenos teriam um ganho marginal)
+const std::vector<std::string>& Registrador::getRSalocadas() const { return RS_alocadas;}
 void Registrador::trocaBusy()                                { busy = !busy; }
 
-// Códigos grandes:
 // Retorna o produtor pendente mais recente (último RS_alocadas com tempo_fim == -1).
 // É este que novas instruções devem aguardar em caso de WAW.
 std::string Registrador::getRSatual() const {

@@ -50,7 +50,8 @@ class Instrucao {
         Registrador   getRegDestino()      const;
         Registrador   getJ()               const;
         Registrador   getK()               const;
-        const std::string& getInstrucaoString() const; // const & para evitar cópia
+        // & const para evitar cópia (tipos pequenos teriam um ganho marginal)
+        const std::string& getInstrucaoString() const;
 
         void setLatenciaMEM(
             int

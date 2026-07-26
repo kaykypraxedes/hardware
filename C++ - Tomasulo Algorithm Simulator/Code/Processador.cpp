@@ -29,10 +29,10 @@ Processador::Processador(
         iniciarThreads(Assembly, tem_rob, num_threads, num_rs, num_ufs, instrucoes_troca);
 }
 
-// Códigos pequenos:
 TipoProcessador Processador::getTipo() const{ return tipo; }
-const Thread& Processador::getThread(int i)   const{ return threads[i]; }                                           // const & para evitar cópia
-const std::vector<LinhaTabela>& Processador::getTabelaThread(int i) const { return threads[i].getTabela(); }        // const & para evitar cópia
+// & const para evitar cópia (tipos pequenos teriam um ganho marginal)
+const Thread& Processador::getThread(int i)   const{ return threads[i]; }
+const std::vector<LinhaTabela>& Processador::getTabelaThread(int i) const { return threads[i].getTabela(); }
 
 bool Processador::executarCiclo() {
     if(executarExMemWr()) return true;

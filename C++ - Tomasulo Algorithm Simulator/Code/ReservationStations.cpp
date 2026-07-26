@@ -4,22 +4,26 @@
 #include "headers/Instrucao.h"
 #include <string>
 
+static bool mesmoRegistrador(const Registrador& a, const Registrador& b) {
+    return a.getTipo() != 'Z' && a.getTipo() == b.getTipo() && a.getId() == b.getId();
+}
+
 // Métodos públicos
 // Construtor:
 RS::RS(std::string id) : id(id){}
-// Códigos pequenos:
+
 bool                     RS::getBusy()               const { return busy; }
 int                      RS::getContagemRegressiva() const { return contagem_regressiva_alocacao; }
 int                      RS::getPosicaoUF()          const { return posicao_UF; }
-const Instrucao&                RS::getInstrucaoAtual()     const { return instrucao_atual; } // const & para evitar cópia
-FaseInstrucao                   RS::getFaseInstrucao()      const { return fase; }
-const std::string&              RS::getId()                 const { return id; }              // const & para evitar cópia
-const std::string&              RS::getQj()                 const { return Qj.first; }        // const & para evitar cópia
-const std::string&              RS::getQk()                 const { return Qk.first; }        // const & para evitar cópia
-const std::vector<int>&         RS::getTempos()             const { return tempos_alocacao; } // const & para evitar cópia
-const std::vector<std::string>& RS::getInstrucoes()         const { return instrucoes_alocacao; } // const & para evitar cópia
+FaseInstrucao            RS::getFaseInstrucao()      const { return fase; }
+// & const para evitar cópia (tipos pequenos teriam um ganho marginal)
+const Instrucao&                RS::getInstrucaoAtual()     const { return instrucao_atual; }
+const std::string&              RS::getId()                 const { return id; }
+const std::string&              RS::getQj()                 const { return Qj.first; }
+const std::string&              RS::getQk()                 const { return Qk.first; }
+const std::vector<int>&         RS::getTempos()             const { return tempos_alocacao; }
+const std::vector<std::string>& RS::getInstrucoes()         const { return instrucoes_alocacao; }
 
-// Códigos grandes:
 // Lê Qj/Qk do CDB ANTES de marcar o destino para não se auto-bloquear.
 // Qj/Qk são agora std::pair<std::string,int> = {rs_id, ciclo_inicio_no_cdb}.
 // Par {"", -1} significa operando disponível (sem dependência pendente).
@@ -47,17 +51,13 @@ bool RS::addIssue(
     Registrador regJ = instrucao.getJ();
     Registrador regK = instrucao.getK();
 
-    auto mesmo_reg = [](const Registrador& a, const Registrador& b) {
-        return a.getTipo() != 'Z' && a.getTipo() == b.getTipo() && a.getId() == b.getId();
-    };
-
     if (regJ.getTipo() != 'Z' && regJ.getId() >= 0 && regJ.getId() < NUM_REGISTRADORES) {
         Registrador& regCDBj = (regJ.getTipo() == 'F')
             ? cdb.F[regJ.getId()] : cdb.R[regJ.getId()];
         std::string tag = regCDBj.getRSatual();
         if (tag.empty()) {
             Vj = regJ; // operando disponível (inclui WAR sem produtor pendente)
-        } else if (dest_valido && mesmo_reg(regJ, dest) && tag == id) {
+        } else if (dest_valido && mesmoRegistrador(regJ, dest) && tag == id) {
             Vj = regJ; // WAR puro: o único produtor pendente é esta própria instrução
         } else {
             Qj = {tag, regCDBj.getCicloInicioRS(tag)};
@@ -69,7 +69,7 @@ bool RS::addIssue(
         std::string tag = regCDBk.getRSatual();
         if (tag.empty()) {
             Vk = regK;
-        } else if (dest_valido && mesmo_reg(regK, dest) && tag == id) {
+        } else if (dest_valido && mesmoRegistrador(regK, dest) && tag == id) {
             Vk = regK; // WAR puro
         } else {
             Qk = {tag, regCDBk.getCicloInicioRS(tag)};
@@ -157,8 +157,7 @@ bool RS::atualizarDependencias(
     return false;
 }
 
-// Retorna true quando uma fase termina. Já avança 'fase' para o próximo estado
-// para que executaWrTodos possa distinguir as transições sem ambiguidade.
+// Retorna true quando uma fase termina. Já avança 'fase' para o próximo estado para que executaWrTodos possa distinguir as transições sem ambiguidade.
 bool RS::atualizaContagem(
     UnidadesFuncionais& uf,
     int                 ciclo
@@ -194,8 +193,7 @@ bool RS::atualizaContagem(
     return true;
 }
 
-// Broadcast do CDB: se esta RS está esperando por rs_id com aquele ciclo_inicio,
-// captura o valor agora. O par {rs_id, ciclo_inicio} identifica unicamente o produtor.
+// Broadcast do CDB: se esta RS está esperando por rs_id com aquele ciclo_inicio, captura o valor agora. O par {rs_id, ciclo_inicio} identifica unicamente o produtor.
 void RS::resolverDependencia(
     const std::string& rs_id,
     const Registrador& valor
@@ -217,8 +215,8 @@ void RS::liberar(
 }
 
 // Recebe a fase em que a instrução VAI ENTRAR para escolher a UF correta:
-//   LOAD/STORE em EX  → cálculo de endereço → ula_int_basico
-//   LOAD/STORE em MEM → acesso à memória    → acessar_memoria
+// - LOAD/STORE em EX  → cálculo de endereço → ula_int_basico
+// - LOAD/STORE em MEM → acesso à memória    → acessar_memoria
 int RS::alocarUFLivre(
     std::vector<UF>& grupo,
     int              ciclo
@@ -257,8 +255,8 @@ int RS::procuraUFlivre(
 }
 
 // Recebe a fase que ACABOU para saber de qual grupo liberar:
-//   LOAD/STORE saindo de EX  → liberou ula_int_basico
-//   LOAD/STORE saindo de MEM → liberou acessar_memoria
+// - LOAD/STORE saindo de EX  → liberou ula_int_basico
+// - LOAD/STORE saindo de MEM → liberou acessar_memoria
 void RS::desalocarUFdoGrupo(
     std::vector<UF>& grupo,
     int              ciclo

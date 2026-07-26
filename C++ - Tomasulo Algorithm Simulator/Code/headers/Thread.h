@@ -94,21 +94,23 @@ class Thread {
         std::vector<Instrucao>   rob;
         std::vector<LinhaTabela> tabela_de_instrucoes;
 
-        // ─── MÉTODOS PRIVADOS (organizados por estágio) ───
-
-        // Inicialização
+        // Estágios:
         void inicializarComponentes(
             const std::vector<int>&,
             const std::vector<int>&,
             int
         );
 
+        // ISSUE
+        void registrarIssue(int, int);
+
         // EX/MEM
         void iniciarFaseExOuMem(int);
         void coletarCandidatasParaAvancar(std::vector<RS*>&);
+        void coletarCandidatasDoGrupo(std::vector<RS>&, std::vector<RS*>&);
         void tentarAvancarRS(RS&, int);
 
-        // WR (Write Result)
+        // WR
         void realizarWriteResult(int);
         void ordenarBufferWB();
         int  proximoWB() const;
@@ -123,10 +125,12 @@ class Thread {
         void coletarEventosDeTransicao(std::vector<Evento>&, int);
         void ordenarEventosPorPC(std::vector<Evento>&) const;
         void processarTransicao(const Evento&, int);
-        void registrarIssue(int, int);
         void adicionarCicloEX(int, int);
         void adicionarCicloMEM(int, int);
         void definirWR(int, int);
+        void buscarWBNoGrupo(std::vector<RS>&, int, const Registrador&, int);
+        void resolverDependenciaNoGrupo(std::vector<RS>&, const std::string&, const Registrador&);
+        void coletarEventosDoGrupo(std::vector<RS>&, std::vector<Evento>&, int);
 
         // COMMIT
         void liberarRSPorRegistrador(
