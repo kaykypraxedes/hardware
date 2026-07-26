@@ -30,16 +30,16 @@ O Algoritmo de Tomasulo é uma técnica de hardware para escalonamento dinâmico
 ## Estrutura do Projeto
 
 ```
-_codigo/
+Code/
 ├── Main.cpp                     # Leitura da config + simulação + impressão
 ├── Processador.cpp/.h           # Orquestração multiciclo
 ├── Thread.cpp/.h                # Pipeline por thread (Issue, EX, MEM, WB, Commit)
 ├── ReservationStations.cpp/.h   # Estação de reserva individual
 ├── Componentes.cpp/.h           # Registrador, CDB, Unidade Funcional
-└── Instrucao.cpp/.h             # Parsing e tipos de instrução
-test_cases/
-├── inputs/                      # Arquivos de config .txt
-└── expected/                    # Saídas de referência .expected
+├── Instrucao.cpp/.h             # Parsing e tipos de instrução
+└── test-cases/
+    ├── inputs/                  # Arquivos de config .txt
+    └── expected/                # Saídas de referência .expected
 ```
 
 ---
@@ -81,7 +81,7 @@ Compile com `make` e execute os testes com `make test`.
 
 ```bash
 make
-./executavel < arquivo_de_entrada.txt
+cd Code && ./executable < arquivo_de_entrada.txt
 ```
 
-O arquivo de entrada define o tipo de processador, número de threads, largura de despacho, quantidade de estações de reserva e unidades funcionais, latências e o programa assembly. Consulte `test_cases/inputs/` para exemplos completos.
+O arquivo de entrada define o tipo de processador, número de threads, largura de despacho, quantidade de estações de reserva e unidades funcionais, latências e o programa assembly. Consulte `Code/test-cases/inputs/` para exemplos completos.

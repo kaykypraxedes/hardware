@@ -30,16 +30,16 @@ The Tomasulo Algorithm is a hardware technique for dynamic instruction schedulin
 ## Project Structure
 
 ```
-_codigo/
+Code/
 ├── Main.cpp                     # Config reading + simulation + output
 ├── Processador.cpp/.h           # Multi-cycle orchestration
 ├── Thread.cpp/.h                # Per-thread pipeline (Issue, EX, MEM, WB, Commit)
 ├── ReservationStations.cpp/.h   # Individual reservation station
 ├── Componentes.cpp/.h           # Register, CDB, Functional Unit
-└── Instrucao.cpp/.h             # Instruction parsing and types
-test_cases/
-├── inputs/                      # .txt config files
-└── expected/                    # Reference .expected outputs
+├── Instrucao.cpp/.h             # Instruction parsing and types
+└── test-cases/
+    ├── inputs/                  # .txt config files
+    └── expected/                # Reference .expected outputs
 ```
 
 ---
@@ -81,7 +81,7 @@ Compile with `make` and run tests with `make test`.
 
 ```bash
 make
-./executavel < input_file.txt
+cd Code && ./executable < input_file.txt
 ```
 
-The input file defines the processor type, thread count, dispatch width, number of reservation stations and functional units, latencies, and the assembly program. See `test_cases/inputs/` for complete examples.
+The input file defines the processor type, thread count, dispatch width, number of reservation stations and functional units, latencies, and the assembly program. See `Code/test-cases/inputs/` for complete examples.

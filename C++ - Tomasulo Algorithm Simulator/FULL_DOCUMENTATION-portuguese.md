@@ -23,7 +23,7 @@ programa     instrucoes... END_PROG
 ## Hierarquia de Classes
 
 ```
-_codigo/
+Code/
 ├── Main.cpp                     (leitura + impressão)
 ├── Processador.cpp/.h           (orquestração multiciclo)
 ├── Thread.cpp/.h                (Issue, ExMem, Wr, Commit)
@@ -187,24 +187,27 @@ Para cada thread: `ExMem()` → `Wr()` → `Commit()` (Commit unificado: s/ ROB 
 
 ## Estrutura de Arquivos
 ```
-├── _codigo/
+├── Code/
 │   ├── Main.cpp                     # Leitura config + simulação + impressão
 │   ├── Processador.cpp/.h           # Orquestração multiciclo
 │   ├── Thread.cpp/.h                # Pipeline por thread
 │   ├── ReservationStations.cpp/.h   # RS individual
 │   ├── Componentes.cpp/.h           # Registrador, CDB, UF
 │   ├── Instrucao.cpp/.h             # Parsing e tipos de instrução
-│   └── testbenchs/                  # Testes unitários (fontes)
-│       ├── tb_Componentes.cpp
-│       ├── tb_Instrucao.cpp
-│       ├── tb_ReservationStations.cpp
-│       ├── tb_Thread.cpp
-│       └── tb_Processador.cpp
-├── test_cases/
-│   ├── inputs/                      # Arquivos de configuração .txt
-│   └── expected/                    # Saídas de referência .expected
-├── build/                           # Objetos .o e binários dos testbenchs
-├── executavel                       # Binário principal
-├── Makefile
-└── context.md
+│   ├── testbenchs/                  # Testes unitários (fontes)
+│   │   ├── tb_Componentes.cpp
+│   │   ├── tb_Instrucao.cpp
+│   │   ├── tb_ReservationStations.cpp
+│   │   ├── tb_Thread.cpp
+│   │   └── tb_Processador.cpp
+│   ├── test-cases/
+│   │   ├── inputs/                  # Arquivos de configuração .txt
+│   │   └── expected/                # Saídas de referência .expected
+│   ├── build/                       # Objetos .o e binários dos testbenchs
+│   ├── executable                   # Binário principal
+│   └── Makefile
+├── README.md
+├── README-portuguese.md
+├── FULL_DOCUMENTATION-portuguese.md
+└── TODO.md
 ```
