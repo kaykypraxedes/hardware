@@ -1,8 +1,6 @@
 /* Processor.cpp */
 #include "headers/Processor.h"
 #include "headers/Thread.h"
-#include <string>
-#include <vector>
 
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:

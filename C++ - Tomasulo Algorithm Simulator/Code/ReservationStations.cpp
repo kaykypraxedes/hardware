@@ -2,7 +2,6 @@
 #include "headers/ReservationStations.h"
 #include "headers/Components.h"
 #include "headers/Instruction.h"
-#include <string>
 
 static bool mesmoRegistrador(const Register& a, const Register& b) {
     return a.GetType() != 'Z' && a.GetType() == b.GetType() && a.GetId() == b.GetId();

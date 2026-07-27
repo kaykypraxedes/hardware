@@ -2,9 +2,6 @@
 #include "headers/Thread.h"
 #include "headers/Components.h"
 #include "headers/Instruction.h"
-#include "headers/SortUtils.h"
-#include <string>
-#include <vector>
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
 static int pcDeRS(ReservationStation* r) { return r->GetCurrentInstruction().GetPC(); }
@@ -12,23 +9,23 @@ static int pcDeEvento(const EVENT& e)    { return e.pc; }
 
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:
-int Thread::GetPC() const { return PC; }
+int Thread::GetPC()                   const { return PC;         }
 
 // Público:
-int Thread::GetNumStalls() const { return num_stalls; }
+int Thread::GetNumStalls()            const { return num_stalls; }
 
 // Público:
-THREAD_STATE Thread::GetThreadState() const { return state; }
+THREAD_STATE Thread::GetThreadState() const { return state;      }
 
 // Público:
 // const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
 const CDB& Thread::GetCDB() const { return cdb; }
 
 // Público:
-const RESERVATION_STATIONS& Thread::GetRS() const { return rs; }
+const RESERVATION_STATIONS& Thread::GetRS()      const { return rs;                }
 
 // Público:
-const FUNCTIONAL_UNITS& Thread::GetFU() const { return fu; }
+const FUNCTIONAL_UNITS& Thread::GetFU()          const { return fu;                }
 
 // Público:
 const std::vector<TABLE_ROW>& Thread::GetTable() const { return instruction_table; }

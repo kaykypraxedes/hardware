@@ -1,10 +1,10 @@
 /* headers/Processor.h */
 #ifndef PROCESSOR_H
 #define PROCESSOR_H
-#include <string>
-#include <vector>
 #include "Instruction.h"
 #include "Thread.h"
+#include <string>
+#include <vector>
 
 // ─── ENUMS ────────────────────────────────────────────────────────
 enum class PROCESSOR_TYPE {

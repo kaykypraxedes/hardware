@@ -1,11 +1,12 @@
 /* headers/Thread.h */
 #ifndef THREAD_H // Include guard
 #define THREAD_H
+#include "Components.h"
+#include "Instruction.h"
+#include "ReservationStations.h"
+#include "SortUtils.h"
 #include <string>
 #include <vector>
-#include "Instruction.h"
-#include "Components.h"
-#include "ReservationStations.h"
 
 // ─── ELEMENTO STATIC ──────────────────────────────────────────────
 static const int ROB_CAPACITY_DEFAULT = 30;

@@ -1,7 +1,6 @@
 /* Instruction.cpp */
 #include "headers/Instruction.h"
 #include "headers/Components.h"
-#include <string>
 
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────

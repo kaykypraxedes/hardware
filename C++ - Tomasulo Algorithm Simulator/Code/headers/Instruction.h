@@ -1,9 +1,9 @@
 /* headers/Instruction.h */
 #ifndef INSTRUCTION_H
 #define INSTRUCTION_H
+#include "Components.h"
 #include <string>
 #include <vector>
-#include "Components.h"
 
 // ─── ENUMS ────────────────────────────────────────────────────────
 enum class INSTRUCTION_TYPE {
