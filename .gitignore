@@ -1,0 +1,55 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+.eggs/
+dist/
+build/
+venv/
+.venv/
+env/
+.env
+.tox/
+.nox/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# --- C / C++ ---
+build/
+*.o
+*.obj
+*.exe
+*.out
+*.a
+*.lib
+*.dll
+*.dylib
+*.so
+*.exp
+*.ilk
+*.pdb
+Debug/
+Release/
+x64/
+x86/
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.history/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- Temp / Logs ---
+/tmp/
+*.log
