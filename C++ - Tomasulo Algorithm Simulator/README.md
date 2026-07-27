@@ -32,11 +32,11 @@ The Tomasulo Algorithm is a hardware technique for dynamic instruction schedulin
 ```
 Code/
 ├── Main.cpp                     # Config reading + simulation + output
-├── Processador.cpp/.h           # Multi-cycle orchestration
+├── Processor.cpp/.h           # Multi-cycle orchestration
 ├── Thread.cpp/.h                # Per-thread pipeline (Issue, EX, MEM, WB, Commit)
 ├── ReservationStations.cpp/.h   # Individual reservation station
-├── Componentes.cpp/.h           # Register, CDB, Functional Unit
-├── Instrucao.cpp/.h             # Instruction parsing and types
+├── Components.cpp/.h           # Register, CDB, Functional Unit
+├── Instruction.cpp/.h             # Instruction parsing and types
 └── test-cases/
     ├── inputs/                  # .txt config files
     └── expected/                # Reference .expected outputs
@@ -52,17 +52,17 @@ Parses instructions from mnemonics, identifies the type (LOAD, STORE, INT_BASIC,
 
 ### `Componentes`
 
-Defines the three core structures: **Register** (tracks busy and pending producers via CDB), **Common Data Bus (CDB)** (centralized producer tracking per register), and **Functional Unit (UF)** (manages busy state, allocation, and latency countdown).
+Defines the three core structures: **Register** (tracks busy and pending producers via CDB), **Common Data Bus (CDB)** (centralized producer tracking per register), and **Functional Unit (FU)** (manages busy state, allocation, and latency countdown).
 
 ### `ReservationStations`
 
-Implements the algorithm's core logic: `addIssue()` allocates the station while handling WAR (reads Qj/Qk before marking the destination), `atualizarDependencias()` manages pipeline phase transitions (EX, MEM), and `resolverDependencia()` broadcasts results to free dependent instructions.
+Implements the algorithm's core logic: `AddIssue()` allocates the station while handling WAR (reads Qj/Qk before marking the destination), `UpdateDependencies()` manages pipeline phase transitions (EX, MEM), and `ResolveDependency()` broadcasts results to free dependent instructions.
 
 ### `Thread`
 
 Manages a thread's full pipeline: Issue (dispatch to reservation station), ExMem (execution and memory access), Wr (CDB broadcast), and Commit (ROB mode only, ensures in-order completion). Supports context switching according to the multithreading model.
 
-### `Processador`
+### `Processor`
 
 Orchestrates multi-cycle execution: each cycle runs `ExMem -> Wr -> Commit` across all threads, then `Issue` (dispatch), applying the chosen scheduling policy (round-robin, fixed priority, or count-based switching).
 
@@ -70,7 +70,7 @@ Orchestrates multi-cycle execution: each cycle runs `ExMem -> Wr -> Commit` acro
 
 ## Tests
 
-1. **Unit testbenchs** — Validate Componentes, Instrucao, ReservationStations, Thread, and Processador individually.
+1. **Unit testbenchs** — Validate Components, Instruction, ReservationStations, Thread, and Processor individually.
 2. **Comparison simulation** — The simulator's output is compared against `.expected` files to detect regressions.
 
 Compile with `make` and run tests with `make test`.

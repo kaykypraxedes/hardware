@@ -1,8 +1,8 @@
 # TODO — Projeto Tomasulo (Checklist para Finalização)
 
 ## 📋 Itens Críticos (pré-GitHub)
-- [ ] **LICENSE** — Adicionar arquivo de licença (MIT recomendado)
-- [ ] **`.gitignore`** — Ignorar build/, executable, *.o, /tmp/
+- [x] **LICENSE** — Adicionar arquivo de licença (MIT recomendado)
+- [x] **`.gitignore`** — Ignorar build/, executable, *.o, /tmp/
 
 ## 🔧 Refatorações Seguras (não quebram testes)
 
@@ -48,11 +48,9 @@
 - [ ] Considerar `enum FaseInstrucao` + estado na RS em vez de `buffer_WB` duplo
 
 ## 🧹 Limpeza de Código
-- [ ] Unificar idioma (PT→EN) em nomes de classes, métodos, variáveis e comentários
-- [ ] Remover código morto: `UF::id`, `trocaBusy()`, `getTabelaCiclos()`, `num_ufs_por_tipo`
-- [ ] Inicializar `Registrador::id` com valor padrão em `Componentes.h`
+- [ ] Remover código morto: `FU::id`, `ToggleBusy()`, `GetCycleTable()`
+- [ ] Inicializar `Register::id` com valor padrão em `Componentes.h`
 - [ ] Extrair helpers `check()` / `secao()` / `passou`/`falhou` para header compartilhado nos testbenchs
-- [ ] `RS::getInstrucaoAtual()` → retornar `const Instrucao&`
 
 ## 📖 Documentação
 - [ ] Adicionar badges e pré-requisitos ao README.md
@@ -60,6 +58,16 @@
 - [ ] Adicionar seção "Known Issues" / "Future Work" ao README
 
 ---
+
+## 🐛 Observações Adicionais (baixa prioridade)
+
+- [ ] **Comentários ruidosos**: `// & const para evitar cópia (tipos pequenos teriam um ganho marginal)` aparece 15+ vezes em getters de tipos pequenos (int, bool, enum) — comentário enganoso
+- [ ] **Duplicação em Main.cpp**: Código de impressão do CDB (`cdb.F[j]` / `cdb.R[j]`) duplica manualmente a lógica do template `imprimirEstrutura`
+- [ ] **Header com excesso de métodos privados**: `Thread.h` expõe ~30 métodos privados — muitos poderiam ser funções livres ou agrupados em `detail` namespace
+- [ ] **`Instruction::base_ex_latencies/base_mem_latencies` estáticos**: Qualquer mudança nas latências afeta todas as instruções globalmente — poderia ser um parâmetro de construção
+- [ ] **`buffer_WB` como `std::vector`**: Operações `front()`/`erase(begin())` são O(n) — `std::deque` ou `std::queue` seriam mais adequados
+- [ ] **Sem namespaces**: Todo o código está no namespace global — usar `namespace tomasulo`
+- [ ] **`Register::id` no construtor default**: Permanece sem inicialização (`int id;`), enquanto `type` tem `{'Z'}`
 
 ## ✅ Já Concluído (Fases 1-2 + infraestrutura)
 
@@ -83,3 +91,10 @@
 
 ### Limpeza de testbenchs
 - [x] Debug prints removidos de tb_Thread.cpp
+
+### Fase 3 — Padronização de idioma e formatação
+- [x] Classes, structs e enums traduzidos para inglês
+- [x] Métodos e funções renomeados para PascalCase inglês
+- [x] Variáveis e campos renomeados para snake_case inglês
+- [x] `constexpr` → `static const`
+- [x] Comentários preservados em português (elementos passivos)

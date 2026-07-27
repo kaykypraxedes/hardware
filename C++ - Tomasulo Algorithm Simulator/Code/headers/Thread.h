@@ -3,35 +3,34 @@
 #define THREAD_H
 #include <string>
 #include <vector>
-#include "Instrucao.h"
-#include "Componentes.h"
+#include "Instruction.h"
+#include "Components.h"
 #include "ReservationStations.h"
 
-
-constexpr int CAPACIDADE_ROB = 30;
+static const int ROB_CAPACITY_DEFAULT = 30;
 
 // enum:
-enum class EstadoThread {
-    LIBERADA,
-    ESPERA,
-    BLOQUEADA
+enum class THREAD_STATE {
+    FREE,
+    WAITING,
+    BLOCKED
 };
 
 // structs:
-struct LinhaTabela{
-    Instrucao        instrucao;
-    int              posicao_PC{-1};
-    int              ciclo_issue{-1};
-    std::vector<int> ciclo_EX;
-    std::vector<int> ciclo_MEM;
-    int              ciclo_WR{-1};
-    int              ciclo_commit{-1};
+struct TABLE_ROW {
+    Instruction      instruction;
+    int              pc_position{-1};
+    int              issue_cycle{-1};
+    std::vector<int> ex_cycles;
+    std::vector<int> mem_cycles;
+    int              wr_cycle{-1};
+    int              commit_cycle{-1};
 };
-struct Evento {
-    int           pc;
-    FaseInstrucao fase_antes;
-    FaseInstrucao fase_depois;
-    TipoInstrucao tipo;
+struct EVENT {
+    int              pc;
+    INSTRUCTION_PHASE phase_before;
+    INSTRUCTION_PHASE phase_after;
+    INSTRUCTION_TYPE  type;
 };
 
 // classe:
@@ -44,7 +43,7 @@ class Thread {
             const std::vector<int>& = {},
             const std::vector<int>& = {},
             int = 1,
-            int = CAPACIDADE_ROB
+            int = ROB_CAPACITY_DEFAULT
         );
 
         Thread(
@@ -54,94 +53,98 @@ class Thread {
             const std::vector<int>& = {},
             const std::vector<int>& = {},
             int = 1,
-            int = CAPACIDADE_ROB
+            int = ROB_CAPACITY_DEFAULT
         );
+
         // Getters
-        int                             getPC()           const;
-        int                             getNumStalls()    const;
-        EstadoThread                    getEstadoThread() const;
+        int                     GetPC()           const;
+        int                     GetNumStalls()    const;
+        THREAD_STATE            GetThreadState()  const;
         // & const para evitar cópia (para tipos básicos e enums o ganho é marginal)
-        const CDB&                      getCDB()          const;
-        const ReservationStations&      getRS()           const;
-        const UnidadesFuncionais&       getUF()           const;
-        const std::vector<LinhaTabela>& getTabela()       const;
+        const CDB&              GetCDB()          const;
+        const RESERVATION_STATIONS& GetRS()       const;
+        const FUNCTIONAL_UNITS&     GetFU()       const;
+        const std::vector<TABLE_ROW>& GetTable()  const;
+
         // Métodos públicos (estágios da pipeline)
         bool Issue(int);
         bool ExMem(int);
         void Wr(int);
         void Commit(int);
-        void definirLatenciaEspecifica(int, int, int=0);
+        void SetCustomLatency(int, int, int=0);
     private:
         // Atributos
         // Elementos auxiliares dentro da Thread:
-        int                      num_instrucoes_finalizadas{};
-        int                      num_instrucoes_commitadas{};
+        int                      num_finished_instructions{};
+        int                      num_committed_instructions{};
         int                      num_stalls{};
-        int                      ponteiro_commit{};
-        int                      pc_branch_nao_resolvido{-1};
-        EstadoThread             estado{EstadoThread::LIBERADA};
+        int                      commit_pointer{};
+        int                      unresolved_branch_pc{-1};
+        THREAD_STATE             state{THREAD_STATE::FREE};
         // Elementos funcionais da Thread:
-        bool                     tem_rob{false};
-        int                      capacidade_rob{1};
+        bool                     has_rob{false};
+        int                      rob_capacity{1};
         int                      PC{};
-        bool                     tem_previsor{false};
+        bool                     has_predictor{false};
         CDB                      cdb;
-        ReservationStations      rs;
-        UnidadesFuncionais       uf;
-        std::vector<int>         buffer_WB;
-        std::vector<int>         buffer_WB_pendente;
-        std::vector<int>         instrucoes_troca;
-        std::vector<Instrucao>   rob;
-        std::vector<LinhaTabela> tabela_de_instrucoes;
+        RESERVATION_STATIONS     rs;
+        FUNCTIONAL_UNITS         fu;
+        std::vector<int>         wb_buffer;
+        std::vector<int>         pending_wb_buffer;
+        std::vector<int>         switch_instructions;
+        std::vector<Instruction> rob;
+        std::vector<TABLE_ROW>   instruction_table;
 
-        // Estágios:
-        void inicializarComponentes(
+        // ─── MÉTODOS PRIVADOS (organizados por estágio) ───
+
+        // Inicialização
+        void InitializeComponents(
             const std::vector<int>&,
             const std::vector<int>&,
             int
         );
 
         // ISSUE
-        void registrarIssue(int, int);
+        void RegisterIssue(int, int);
 
         // EX/MEM
-        void iniciarFaseExOuMem(int);
-        void coletarCandidatasParaAvancar(std::vector<RS*>&);
-        void coletarCandidatasDoGrupo(std::vector<RS>&, std::vector<RS*>&);
-        void tentarAvancarRS(RS&, int);
+        void StartExOrMemPhase(int);
+        void CollectCandidatesToAdvance(std::vector<ReservationStation*>&);
+        void CollectCandidatesFromGroup(std::vector<ReservationStation>&, std::vector<ReservationStation*>&);
+        void TryAdvanceRS(ReservationStation&, int);
 
-        // WR
-        void realizarWriteResult(int);
-        void ordenarBufferWB();
-        int  proximoWB() const;
-        void removerWB();
-        void adicionarWB(int);
-        void adicionarWBPendente(int);
-        void flushBufferWBPendente();
-        void writeBackStoreComROB(int, int);
-        void writeBackNormal(int, int);
-        void broadcastCDB(int, const Registrador&, int);
-        void detectarTransicoesDeFase(int);
-        void coletarEventosDeTransicao(std::vector<Evento>&, int);
-        void ordenarEventosPorPC(std::vector<Evento>&) const;
-        void processarTransicao(const Evento&, int);
-        void adicionarCicloEX(int, int);
-        void adicionarCicloMEM(int, int);
-        void definirWR(int, int);
-        void buscarWBNoGrupo(std::vector<RS>&, int, const Registrador&, int);
-        void resolverDependenciaNoGrupo(std::vector<RS>&, const std::string&, const Registrador&);
-        void coletarEventosDoGrupo(std::vector<RS>&, std::vector<Evento>&, int);
+        // WR (Write Result)
+        void PerformWriteResult(int);
+        void SortWBBuffer();
+        int  NextWB() const;
+        void RemoveWB();
+        void AddWB(int);
+        void AddPendingWB(int);
+        void FlushPendingWBBuffer();
+        void WriteBackStoreWithROB(int, int);
+        void WriteBackNormal(int, int);
+        void BroadcastCDB(int, const Register&, int);
+        void DetectPhaseTransitions(int);
+        void CollectTransitionEvents(std::vector<EVENT>&, int);
+        void SortEventsByPC(std::vector<EVENT>&) const;
+        void ProcessTransition(const EVENT&, int);
+        void AddExCycle(int, int);
+        void AddMemCycle(int, int);
+        void SetWR(int, int);
+        void FindWBInGroup(std::vector<ReservationStation>&, int, const Register&, int);
+        void ResolveDependencyInGroup(std::vector<ReservationStation>&, const std::string&, const Register&);
+        void CollectEventsFromGroup(std::vector<ReservationStation>&, std::vector<EVENT>&, int);
 
         // COMMIT
-        void liberarRSPorRegistrador(
-            std::vector<RS>&,
-            Registrador,
+        void ReleaseRSByRegister(
+            std::vector<ReservationStation>&,
+            Register,
             int
         );
 
         // Utilitários
-        void ordenarCandidatasPorPC(std::vector<RS*>&) const;
-        void liberarRSPorPC(std::vector<RS>&, int, int);
+        void SortCandidatesByPC(std::vector<ReservationStation*>&) const;
+        void ReleaseRSByPC(std::vector<ReservationStation>&, int, int);
 };
 
 #endif

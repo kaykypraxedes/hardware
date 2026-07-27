@@ -9,8 +9,8 @@ CONFIGURAÇÕES:
 - Despacho: 1
 - Número de RSs: 5 5 5 5 5 3 
 - Número de UFs: 2 2 2 2 1 1 
-- Latêcias de EX: 0 1 1 1 1 4 10 5 14 15 
-- Latêcias de MEM: 1 1 
+- Latências de EX: 0 1 1 1 1 4 10 5 14 15 
+- Latências de MEM: 1 1 
 
 Simulando...
 Concluido!
@@ -50,14 +50,14 @@ store:
 store0              S.D F4, 16(R1) (6-25) 
 store1              S.D F4, 16(R1) (24-55) 
 
-int_basico:
-int_basico0         DADDIU R1, R1, #24 (7-9) | DADDIU R1, R1, #24 (25-27) 
-int_basico1         BNEZ R1, loop (8-11) | BNEZ R1, loop (26-29) 
+int_basic:
+int_basic0          DADDIU R1, R1, #24 (7-9) | DADDIU R1, R1, #24 (25-27) 
+int_basic1          BNEZ R1, loop (8-11) | BNEZ R1, loop (26-29) 
 
 int_mult_div:
 
-float_basico:
-float_basico0       ADD.D F0, F0, F6 (2-10) | ADD.D F0, F0, F6 (10-19) 
+float_basic:
+float_basic0        ADD.D F0, F0, F6 (2-10) | ADD.D F0, F0, F6 (10-19) 
 
 float_mult_div:
 float_mult_div0     DIV.D F2, F2, F0 (3-38) 
@@ -69,12 +69,12 @@ CDB
 =====================
 
 F:
-F0      load0 (1-4) | float_basico0 (2-10) | load0 (4-7) | load0 (9-13) | float_basico0 (10-19) | load1 (12-15) 
+F0      load0 (1-4) | float_basic0 (2-10) | load0 (4-7) | load0 (9-13) | float_basic0 (10-19) | load1 (12-15) 
 F2      float_mult_div0 (3-38) | float_mult_div2 (11-68) 
 F4      float_mult_div1 (5-23) | float_mult_div1 (23-53) 
 
 R:
-R1      int_basico0 (7-9) | int_basico0 (25-27) 
+R1      int_basic0 (7-9) | int_basic0 (25-27) 
 
 =====================
 UNIDADES FUNCIONAIS
@@ -84,12 +84,12 @@ acessar_memoria:
 acessar_memoria0        load0 (3-3) | load0 (6-6) | load0 (12-12) | load1 (14-14) | store0 (24-24) | store1 (54-54) 
 
 ula_int_basico:
-ula_int_basico0         load0 (2-2) | load0 (5-5) | store0 (7-7) | int_basico0 (8-8) | int_basico1 (10-10) | load0 (11-11) | load1 (13-13) | store1 (25-25) | int_basico0 (26-26) | int_basico1 (28-28) 
+ula_int_basico0         load0 (2-2) | load0 (5-5) | store0 (7-7) | int_basic0 (8-8) | int_basic1 (10-10) | load0 (11-11) | load1 (13-13) | store1 (25-25) | int_basic0 (26-26) | int_basic1 (28-28) 
 
 ula_int_mult_div:
 
 ula_float_basico:
-ula_float_basico0       float_basico0 (5-9) | float_basico0 (14-18) 
+ula_float_basico0       float_basic0 (5-9) | float_basic0 (14-18) 
 
 ula_float_mult_div:
 ula_float_mult_div0     float_mult_div1 (8-22) | float_mult_div0 (23-37) | float_mult_div1 (38-52) | float_mult_div2 (53-67) 

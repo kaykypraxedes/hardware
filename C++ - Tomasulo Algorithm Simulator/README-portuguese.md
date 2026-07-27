@@ -32,11 +32,11 @@ O Algoritmo de Tomasulo é uma técnica de hardware para escalonamento dinâmico
 ```
 Code/
 ├── Main.cpp                     # Leitura da config + simulação + impressão
-├── Processador.cpp/.h           # Orquestração multiciclo
+├── Processor.cpp/.h           # Orquestração multiciclo
 ├── Thread.cpp/.h                # Pipeline por thread (Issue, EX, MEM, WB, Commit)
 ├── ReservationStations.cpp/.h   # Estação de reserva individual
-├── Componentes.cpp/.h           # Registrador, CDB, Unidade Funcional
-├── Instrucao.cpp/.h             # Parsing e tipos de instrução
+├── Components.cpp/.h           # Register, CDB, FU
+├── Instruction.cpp/.h             # Parsing e tipos de instrução
 └── test-cases/
     ├── inputs/                  # Arquivos de config .txt
     └── expected/                # Saídas de referência .expected
@@ -48,21 +48,21 @@ Code/
 
 ### `Instrucao`
 
-Faz o parsing da instrução a partir do mnemônico, identifica o tipo (LOAD, STORE, INT_BASICO, INT_MUL, INT_DIV, FLOAT_BASICO, FLOAT_MUL, FLOAT_DIV, BRANCH) e extrai seus operandos (registradores destino, fonte e imediatos) com latências default por tipo.
+Faz o parsing da instrução a partir do mnemônico, identifica o tipo (LOAD, STORE, INT_BASIC, INT_MUL, INT_DIV, FLOAT_BASIC, FLOAT_MUL, FLOAT_DIV, BRANCH) e extrai seus operandos (registradores destino, fonte e imediatos) com latências default por tipo.
 
 ### `Componentes`
 
-Define as três estruturas fundamentais do simulador: **Registrador** (rastreia busy e produtores pendentes via CDB), **Common Data Bus (CDB)** (centraliza o tracking de quem produz cada registrador) e **Unidade Funcional (UF)** (controla busy, alocação e contagem regressiva de latência).
+Define as três estruturas fundamentais do simulador: **Register** (rastreia busy e produtores pendentes via CDB), **Common Data Bus (CDB)** (centraliza o tracking de quem produz cada registrador) e **Functional Unit (FU)** (controla busy, alocação e contagem regressiva de latência).
 
 ### `ReservationStations`
 
-Implementa a lógica central do algoritmo: `addIssue()` aloca a estação resolvendo WAR (lendo Qj/Qk antes de marcar destino), `atualizarDependencias()` gerencia a transição entre fases da pipeline (EX, MEM) e `resolverDependencia()` faz o broadcast do resultado liberando instruções dependentes.
+Implementa a lógica central do algoritmo: `AddIssue()` aloca a estação resolvendo WAR (lendo Qj/Qk antes de marcar destino), `UpdateDependencies()` gerencia a transição entre fases da pipeline (EX, MEM) e `ResolveDependency()` faz o broadcast do resultado liberando instruções dependentes.
 
 ### `Thread`
 
 Gerencia o pipeline completo de uma thread: Issue (despacho para estação de reserva), ExMem (execução e acesso à memória), Wr (broadcast no CDB) e Commit (apenas no modo com ROB, garante finalização em ordem). Suporta troca de contexto entre threads conforme o modelo de multithreading.
 
-### `Processador`
+### `Processor`
 
 Orquestra a execução multiciclo: a cada ciclo executa `ExMem -> Wr -> Commit` em todas as threads e depois `Issue` (despacho), aplicando a política de escalonamento escolhida (round-robin, prioridade fixa ou troca por contagem).
 
@@ -70,7 +70,7 @@ Orquestra a execução multiciclo: a cada ciclo executa `ExMem -> Wr -> Commit` 
 
 ## Testes
 
-1. **Testbenchs unitários** — Validam Componentes, Instrucao, ReservationStations, Thread e Processador individualmente.
+1. **Testbenchs unitários** — Validam Components, Instruction, ReservationStations, Thread e Processor individualmente.
 2. **Simulação comparada** — A saída do simulador é comparada com arquivos `.expected` para detectar regressões.
 
 Compile com `make` e execute os testes com `make test`.

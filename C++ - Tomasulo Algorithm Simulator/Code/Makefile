@@ -1,5 +1,5 @@
 CXX      = g++
-CXXFLAGS = -Wall -Wextra -std=c++17 -g
+CXXFLAGS = -Wall -Wextra -std=c++17 -g -MMD -MP
 LDFLAGS  =
 
 SRCDIR   = .
@@ -12,12 +12,14 @@ SRCS     = $(wildcard $(SRCDIR)/*.cpp)
 OBJS     = $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%.o,$(SRCS))
 MAIN_OBJ = $(OBJDIR)/Main.o
 
-EXEC     = executable
+EXEC     = $(OBJDIR)/executable
 
-TB_NAMES = Componentes Instrucao ReservationStations Thread Processador
+TB_NAMES = Components Instruction ReservationStations Thread Processor
 TB_BINS  = $(addprefix $(OBJDIR)/tb_,$(TB_NAMES))
 
 INPUTS   = $(wildcard $(INPUTDIR)/*.txt)
+
+DEPS     = $(OBJS:.o=.d)
 
 .PHONY: all testbenchs test simtest simtest-completo simtest-update clean rebuild
 
@@ -26,29 +28,31 @@ all: $(EXEC) testbenchs
 $(OBJDIR):
 	mkdir -p $(OBJDIR)
 
-# --- Compilação dos objetos ---
+# --- Compilação dos objetos com dependências automáticas ---
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# --- Executável principal ---
+-include $(DEPS)
+
+# --- Executável principal (dentro de build/) ---
 $(EXEC): $(OBJS)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # --- Testbenchs ---
-$(OBJDIR)/tb_Componentes: $(OBJDIR)/Componentes.o $(TSTDIR)/tb_Componentes.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) $(TSTDIR)/tb_Componentes.cpp $(OBJDIR)/Componentes.o -o $@
+$(OBJDIR)/tb_Components: $(OBJDIR)/Components.o $(TSTDIR)/tb_Components.cpp | $(OBJDIR)
+	$(CXX) $(CXXFLAGS) $(TSTDIR)/tb_Components.cpp $(OBJDIR)/Components.o -o $@
 
-$(OBJDIR)/tb_Instrucao: $(OBJDIR)/Componentes.o $(OBJDIR)/Instrucao.o $(TSTDIR)/tb_Instrucao.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) $(TSTDIR)/tb_Instrucao.cpp $(OBJDIR)/Componentes.o $(OBJDIR)/Instrucao.o -o $@
+$(OBJDIR)/tb_Instruction: $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(TSTDIR)/tb_Instruction.cpp | $(OBJDIR)
+	$(CXX) $(CXXFLAGS) $(TSTDIR)/tb_Instruction.cpp $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o -o $@
 
-$(OBJDIR)/tb_ReservationStations: $(OBJDIR)/Componentes.o $(OBJDIR)/Instrucao.o $(OBJDIR)/ReservationStations.o $(TSTDIR)/tb_ReservationStations.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) $(TSTDIR)/tb_ReservationStations.cpp $(OBJDIR)/Componentes.o $(OBJDIR)/Instrucao.o $(OBJDIR)/ReservationStations.o -o $@
+$(OBJDIR)/tb_ReservationStations: $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(OBJDIR)/ReservationStations.o $(TSTDIR)/tb_ReservationStations.cpp | $(OBJDIR)
+	$(CXX) $(CXXFLAGS) $(TSTDIR)/tb_ReservationStations.cpp $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(OBJDIR)/ReservationStations.o -o $@
 
-$(OBJDIR)/tb_Thread: $(OBJDIR)/Componentes.o $(OBJDIR)/Instrucao.o $(OBJDIR)/ReservationStations.o $(OBJDIR)/Thread.o $(TSTDIR)/tb_Thread.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) $(TSTDIR)/tb_Thread.cpp $(OBJDIR)/Componentes.o $(OBJDIR)/Instrucao.o $(OBJDIR)/ReservationStations.o $(OBJDIR)/Thread.o -o $@
+$(OBJDIR)/tb_Thread: $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(OBJDIR)/ReservationStations.o $(OBJDIR)/Thread.o $(TSTDIR)/tb_Thread.cpp | $(OBJDIR)
+	$(CXX) $(CXXFLAGS) $(TSTDIR)/tb_Thread.cpp $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(OBJDIR)/ReservationStations.o $(OBJDIR)/Thread.o -o $@
 
-$(OBJDIR)/tb_Processador: $(OBJS) $(TSTDIR)/tb_Processador.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) $(TSTDIR)/tb_Processador.cpp $(filter-out $(MAIN_OBJ),$(OBJS)) -o $@
+$(OBJDIR)/tb_Processor: $(OBJS) $(TSTDIR)/tb_Processor.cpp | $(OBJDIR)
+	$(CXX) $(CXXFLAGS) $(TSTDIR)/tb_Processor.cpp $(filter-out $(MAIN_OBJ),$(OBJS)) -o $@
 
 testbenchs: $(TB_BINS)
 
@@ -90,7 +94,7 @@ simtest: $(EXEC)
 		expected=$(EXPDIR)/$$name.expected; \
 		if [ ! -f $$expected ]; then \
 			missing=$$((missing + 1)); \
-			./$(EXEC) < $$input > $$expected 2>&1; \
+			$(EXEC) < $$input > $$expected 2>&1; \
 			echo "  $$name -> referência gerada"; \
 		fi; \
 	done; \
@@ -100,7 +104,7 @@ simtest: $(EXEC)
 		name=$$(basename $$input .txt); \
 		expected=$(EXPDIR)/$$name.expected; \
 		printf "  %-40s" "$$name"; \
-		./$(EXEC) < $$input > /tmp/$$name.out 2>&1; \
+		$(EXEC) < $$input > /tmp/$$name.out 2>&1; \
 		if diff -q /tmp/$$name.out $$expected > /dev/null 2>&1; then \
 			echo "$$(printf '\033[0;32mOK\033[0m')"; \
 		else \
@@ -151,10 +155,10 @@ simtest-completo: $(EXEC) testbenchs
 		expected=$(EXPDIR)/$$name.expected; \
 		echo "--- $$name ---"; \
 		if [ ! -f $$expected ]; then \
-			./$(EXEC) < $$input > $$expected 2>&1; \
+			$(EXEC) < $$input > $$expected 2>&1; \
 			echo "[OK - referencia gerada]"; \
 		else \
-			./$(EXEC) < $$input > /tmp/$$name.full 2>&1; \
+			$(EXEC) < $$input > /tmp/$$name.full 2>&1; \
 			if diff -q /tmp/$$name.full $$expected > /dev/null 2>&1; then \
 				echo "[OK]"; \
 			else \
@@ -181,7 +185,7 @@ simtest-update: $(EXEC)
 		total=$$((total + 1)); \
 		name=$$(basename $$input .txt); \
 		printf "  Atualizando %-40s" "$$name"; \
-		./$(EXEC) < $$input > $(EXPDIR)/$$name.expected 2>&1; \
+		$(EXEC) < $$input > $(EXPDIR)/$$name.expected 2>&1; \
 		echo "$$(printf '\033[0;32mOK\033[0m')"; \
 	done; \
 	echo ""; \
@@ -189,6 +193,6 @@ simtest-update: $(EXEC)
 
 # --- Limpeza ---
 clean:
-	rm -rf $(OBJDIR) $(EXEC)
+	rm -rf $(OBJDIR)
 
 rebuild: clean all

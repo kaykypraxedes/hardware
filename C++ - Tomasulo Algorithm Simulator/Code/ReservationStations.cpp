@@ -1,138 +1,134 @@
 /* ReservationStations.cpp */
 #include "headers/ReservationStations.h"
-#include "headers/Componentes.h"
-#include "headers/Instrucao.h"
+#include "headers/Components.h"
+#include "headers/Instruction.h"
 #include <string>
 
-static bool mesmoRegistrador(const Registrador& a, const Registrador& b) {
-    return a.getTipo() != 'Z' && a.getTipo() == b.getTipo() && a.getId() == b.getId();
+static bool mesmoRegistrador(const Register& a, const Register& b) {
+    return a.GetType() != 'Z' && a.GetType() == b.GetType() && a.GetId() == b.GetId();
 }
 
-// Métodos públicos
-// Construtor:
-RS::RS(std::string id) : id(id){}
+ReservationStation::ReservationStation(std::string id) : id(id){}
+// Códigos pequenos:
+bool                     ReservationStation::GetBusy()                const { return busy; }
+int                      ReservationStation::GetCountdown()           const { return allocation_countdown; }
+int                      ReservationStation::GetFUPosition()          const { return fu_position; }
+INSTRUCTION_PHASE        ReservationStation::GetInstructionPhase()    const { return phase; }
+const Instruction&       ReservationStation::GetCurrentInstruction()  const { return current_instruction; } // const & para evitar cópia
+const std::string&       ReservationStation::GetId()                  const { return id; }              // const & para evitar cópia
+const std::string&       ReservationStation::GetQj()                  const { return Qj.first; }        // const & para evitar cópia
+const std::string&       ReservationStation::GetQk()                  const { return Qk.first; }        // const & para evitar cópia
+const std::vector<int>&  ReservationStation::GetTimes()               const { return allocation_times; } // const & para evitar cópia
+const std::vector<std::string>& ReservationStation::GetInstructions() const { return allocated_instructions; } // const & para evitar cópia
 
-bool                     RS::getBusy()               const { return busy; }
-int                      RS::getContagemRegressiva() const { return contagem_regressiva_alocacao; }
-int                      RS::getPosicaoUF()          const { return posicao_UF; }
-FaseInstrucao            RS::getFaseInstrucao()      const { return fase; }
-// & const para evitar cópia (tipos pequenos teriam um ganho marginal)
-const Instrucao&                RS::getInstrucaoAtual()     const { return instrucao_atual; }
-const std::string&              RS::getId()                 const { return id; }
-const std::string&              RS::getQj()                 const { return Qj.first; }
-const std::string&              RS::getQk()                 const { return Qk.first; }
-const std::vector<int>&         RS::getTempos()             const { return tempos_alocacao; }
-const std::vector<std::string>& RS::getInstrucoes()         const { return instrucoes_alocacao; }
-
+// Códigos grandes:
 // Lê Qj/Qk do CDB ANTES de marcar o destino para não se auto-bloquear.
 // Qj/Qk são agora std::pair<std::string,int> = {rs_id, ciclo_inicio_no_cdb}.
 // Par {"", -1} significa operando disponível (sem dependência pendente).
-bool RS::addIssue(
-    Instrucao& instrucao,
+bool ReservationStation::AddIssue(
+    Instruction& instruction,
     CDB&       cdb,
-    int        ciclo
+    int        cycle
 ){
     if (busy) return false;
     busy            = true;
-    instrucao_atual = instrucao;
-    fase            = FaseInstrucao::ISSUE;
-    contagem_regressiva_alocacao = -1;
-    posicao_UF                   = -1;
+    current_instruction = instruction;
+    phase           = INSTRUCTION_PHASE::ISSUE;
+    allocation_countdown = -1;
+    fu_position                 = -1;
     Qj = Qk = {"", -1};
-    Vj = Vk = Registrador{};
-    destino_pendente_no_cdb = false;
-    instrucoes_alocacao.push_back(instrucao.getInstrucaoString());
-    tempos_alocacao.push_back(ciclo);
+    Vj = Vk = Register{};
+    dest_pending_in_cdb = false;
+    allocated_instructions.push_back(instruction.GetInstructionString());
+    allocation_times.push_back(cycle);
 
-    Registrador dest = instrucao.getRegDestino();
-    bool dest_valido = (dest.getTipo() != 'Z' && dest.getId() >= 0);
+    Register dest = instruction.GetDestRegister();
+    bool dest_valido = (dest.GetType() != 'Z' && dest.GetId() >= 0);
 
-    // Lê dependências ANTES de marcar o destino para não se auto-bloquear (WAR).
-    Registrador regJ = instrucao.getJ();
-    Registrador regK = instrucao.getK();
+    Register regJ = instruction.GetJ();
+    Register regK = instruction.GetK();
 
-    if (regJ.getTipo() != 'Z' && regJ.getId() >= 0 && regJ.getId() < NUM_REGISTRADORES) {
-        Registrador& regCDBj = (regJ.getTipo() == 'F')
-            ? cdb.F[regJ.getId()] : cdb.R[regJ.getId()];
-        std::string tag = regCDBj.getRSatual();
+    if (regJ.GetType() != 'Z' && regJ.GetId() >= 0 && regJ.GetId() < num_registers) {
+        Register& regCDBj = (regJ.GetType() == 'F')
+            ? cdb.F[regJ.GetId()] : cdb.R[regJ.GetId()];
+        std::string tag = regCDBj.GetCurrentRS();
         if (tag.empty()) {
-            Vj = regJ; // operando disponível (inclui WAR sem produtor pendente)
+            Vj = regJ;
         } else if (dest_valido && mesmoRegistrador(regJ, dest) && tag == id) {
-            Vj = regJ; // WAR puro: o único produtor pendente é esta própria instrução
+            Vj = regJ;
         } else {
-            Qj = {tag, regCDBj.getCicloInicioRS(tag)};
+            Qj = {tag, regCDBj.GetRSCycleStart(tag)};
         }
     }
-    if (regK.getTipo() != 'Z' && regK.getId() >= 0 && regK.getId() < NUM_REGISTRADORES) {
-        Registrador& regCDBk = (regK.getTipo() == 'F')
-            ? cdb.F[regK.getId()] : cdb.R[regK.getId()];
-        std::string tag = regCDBk.getRSatual();
+    if (regK.GetType() != 'Z' && regK.GetId() >= 0 && regK.GetId() < num_registers) {
+        Register& regCDBk = (regK.GetType() == 'F')
+            ? cdb.F[regK.GetId()] : cdb.R[regK.GetId()];
+        std::string tag = regCDBk.GetCurrentRS();
         if (tag.empty()) {
             Vk = regK;
         } else if (dest_valido && mesmoRegistrador(regK, dest) && tag == id) {
-            Vk = regK; // WAR puro
+            Vk = regK;
         } else {
-            Qk = {tag, regCDBk.getCicloInicioRS(tag)};
+            Qk = {tag, regCDBk.GetRSCycleStart(tag)};
         }
     }
 
-    // Marca o destino no CDB agora, sempre.
-    if (dest_valido && dest.getId() < NUM_REGISTRADORES) {
-        if      (dest.getTipo() == 'F') cdb.F[dest.getId()].alocarRS(id, ciclo);
-        else if (dest.getTipo() == 'R') cdb.R[dest.getId()].alocarRS(id, ciclo);
+    if (dest_valido && dest.GetId() < num_registers) {
+        if      (dest.GetType() == 'F') cdb.F[dest.GetId()].AllocateRS(id, cycle);
+        else if (dest.GetType() == 'R') cdb.R[dest.GetId()].AllocateRS(id, cycle);
     }
     return true;
 }
 
 // Resolve Qj/Qk consultando o CDB via dependenciaResolvida(rs_id, ciclo_inicio).
 // Quando prontos, aloca UF e inicia contagem.
-bool RS::atualizarDependencias(
+bool ReservationStation::UpdateDependencies(
     CDB&                cdb,
-    UnidadesFuncionais& uf,
-    int                 ciclo
+    FUNCTIONAL_UNITS&   fu,
+    int                 cycle
 ){
-    if (!busy || contagem_regressiva_alocacao != -1) return false;
+    if (!busy || allocation_countdown != -1) return false;
 
-    Registrador regJ = instrucao_atual.getJ();
-    Registrador regK = instrucao_atual.getK();
+    Register regJ = current_instruction.GetJ();
+    Register regK = current_instruction.GetK();
 
     // Resolver Vj / Qj
-    if (Vj.getTipo() == 'Z' && !Qj.first.empty()
-        && regJ.getId() >= 0 && regJ.getId() < NUM_REGISTRADORES) {
-        Registrador& regCDB = (regJ.getTipo() == 'F')
-            ? cdb.F[regJ.getId()] : cdb.R[regJ.getId()];
-        if (regCDB.dependenciaResolvida(Qj.first, Qj.second)) {
+    if (Vj.GetType() == 'Z' && !Qj.first.empty()
+        && regJ.GetId() >= 0 && regJ.GetId() < num_registers) {
+        Register& regCDB = (regJ.GetType() == 'F')
+            ? cdb.F[regJ.GetId()] : cdb.R[regJ.GetId()];
+        if (regCDB.IsDependencyResolved(Qj.first, Qj.second)) {
             Vj = regJ;
             Qj = {"", -1};
         }
     }
     // Resolver Vk / Qk
-    if (Vk.getTipo() == 'Z' && !Qk.first.empty()
-        && regK.getId() >= 0 && regK.getId() < NUM_REGISTRADORES) {
-        Registrador& regCDB = (regK.getTipo() == 'F')
-            ? cdb.F[regK.getId()] : cdb.R[regK.getId()];
-        if (regCDB.dependenciaResolvida(Qk.first, Qk.second)) {
+    if (Vk.GetType() == 'Z' && !Qk.first.empty()
+        && regK.GetId() >= 0 && regK.GetId() < num_registers) {
+        Register& regCDB = (regK.GetType() == 'F')
+            ? cdb.F[regK.GetId()] : cdb.R[regK.GetId()];
+        if (regCDB.IsDependencyResolved(Qk.first, Qk.second)) {
             Vk = regK;
             Qk = {"", -1};
         }
     }
 
-    TipoInstrucao tipo = instrucao_atual.getTipoInstrucao();
-    bool load_store = (tipo == TipoInstrucao::LOAD || tipo == TipoInstrucao::STORE);
+    INSTRUCTION_TYPE tipo = current_instruction.GetInstructionType();
+    bool load_store = (tipo == INSTRUCTION_TYPE::LOAD || tipo == INSTRUCTION_TYPE::STORE);
 
     if (load_store) {
-        if (fase == FaseInstrucao::ISSUE && Qk.first.empty()) {
-            posicao_UF = procuraUFlivre(uf, ciclo, FaseInstrucao::EX);
-            if (posicao_UF == -1) return false;
-            contagem_regressiva_alocacao = instrucao_atual.getLatenciaEX();
-            fase = FaseInstrucao::EX;
+        if (phase == INSTRUCTION_PHASE::ISSUE && Qk.first.empty()) {
+            fu_position = FindFreeFU(fu, cycle, INSTRUCTION_PHASE::EX);
+            if (fu_position == -1) return false;
+            allocation_countdown = current_instruction.GetExLatency();
+            phase = INSTRUCTION_PHASE::EX;
             return true;
         }
-        if (fase == FaseInstrucao::MEM && contagem_regressiva_alocacao == -1
-            && ((tipo == TipoInstrucao::STORE && Qj.first.empty()) || tipo == TipoInstrucao::LOAD)) {
-            posicao_UF = procuraUFlivre(uf, ciclo, FaseInstrucao::MEM);
-            if (posicao_UF == -1) return false;
-            contagem_regressiva_alocacao = instrucao_atual.getLatenciaMEM();
+        if (phase == INSTRUCTION_PHASE::MEM && allocation_countdown == -1
+            && ((tipo == INSTRUCTION_TYPE::STORE && Qj.first.empty()) || tipo == INSTRUCTION_TYPE::LOAD)) {
+            fu_position = FindFreeFU(fu, cycle, INSTRUCTION_PHASE::MEM);
+            if (fu_position == -1) return false;
+            allocation_countdown = current_instruction.GetMemLatency();
             return true;
         }
         return false;
@@ -140,153 +136,154 @@ bool RS::atualizarDependencias(
 
     // Instrução comum: precisa de Qj e Qk resolvidos
     if (Qj.first.empty() && Qk.first.empty()) {
-        posicao_UF = procuraUFlivre(uf, ciclo, FaseInstrucao::EX);
-        if (posicao_UF == -1) return false;
-        contagem_regressiva_alocacao = instrucao_atual.getLatenciaEX();
-        fase = FaseInstrucao::EX;
-        if (destino_pendente_no_cdb) {
-            Registrador dest = instrucao_atual.getRegDestino();
-            if (dest.getId() >= 0 && dest.getId() < NUM_REGISTRADORES) {
-                if (dest.getTipo() == 'F') cdb.F[dest.getId()].alocarRS(id, ciclo);
-                else if (dest.getTipo() == 'R') cdb.R[dest.getId()].alocarRS(id, ciclo);
+        fu_position = FindFreeFU(fu, cycle, INSTRUCTION_PHASE::EX);
+        if (fu_position == -1) return false;
+        allocation_countdown = current_instruction.GetExLatency();
+        phase = INSTRUCTION_PHASE::EX;
+        if (dest_pending_in_cdb) {
+            Register dest = current_instruction.GetDestRegister();
+            if (dest.GetId() >= 0 && dest.GetId() < num_registers) {
+                if (dest.GetType() == 'F') cdb.F[dest.GetId()].AllocateRS(id, cycle);
+                else if (dest.GetType() == 'R') cdb.R[dest.GetId()].AllocateRS(id, cycle);
             }
-            destino_pendente_no_cdb = false;
+            dest_pending_in_cdb = false;
         }
         return true;
     }
     return false;
 }
 
-// Retorna true quando uma fase termina. Já avança 'fase' para o próximo estado para que executaWrTodos possa distinguir as transições sem ambiguidade.
-bool RS::atualizaContagem(
-    UnidadesFuncionais& uf,
-    int                 ciclo
+// Retorna true quando uma fase termina. Já avança 'fase' para o próximo estado
+// para que executaWrTodos possa distinguir as transições sem ambiguidade.
+bool ReservationStation::UpdateCountdown(
+    FUNCTIONAL_UNITS& fu,
+    int               cycle
 ){
-    if (!busy || contagem_regressiva_alocacao <= 0) return false;
+    if (!busy || allocation_countdown <= 0) return false;
 
-    contagem_regressiva_alocacao--;
-    if (contagem_regressiva_alocacao > 0) return false;
+    allocation_countdown--;
+    if (allocation_countdown > 0) return false;
 
-    TipoInstrucao tipo = instrucao_atual.getTipoInstrucao();
+    INSTRUCTION_TYPE tipo = current_instruction.GetInstructionType();
 
-    if (tipo == TipoInstrucao::LOAD && fase == FaseInstrucao::EX) {
-        liberarUF(uf, ciclo, FaseInstrucao::EX);
-        contagem_regressiva_alocacao = -1;
-        fase = FaseInstrucao::MEM; // avança para que executaWrTodos detecte EX→MEM
+    if (tipo == INSTRUCTION_TYPE::LOAD && phase == INSTRUCTION_PHASE::EX) {
+        ReleaseFU(fu, cycle, INSTRUCTION_PHASE::EX);
+        allocation_countdown = -1;
+        phase = INSTRUCTION_PHASE::MEM;
         return true;
     }
 
-    if (tipo == TipoInstrucao::STORE && fase == FaseInstrucao::EX) {
-        liberarUF(uf, ciclo, FaseInstrucao::EX);
-        contagem_regressiva_alocacao = -1;
-        fase = FaseInstrucao::MEM; // avança para que executaWrTodos detecte EX→MEM
+    if (tipo == INSTRUCTION_TYPE::STORE && phase == INSTRUCTION_PHASE::EX) {
+        ReleaseFU(fu, cycle, INSTRUCTION_PHASE::EX);
+        allocation_countdown = -1;
+        phase = INSTRUCTION_PHASE::MEM;
         return true;
     }
 
-    if (fase == FaseInstrucao::MEM) {
-        liberarUF(uf, ciclo, FaseInstrucao::MEM);
-        fase = FaseInstrucao::WB;
+    if (phase == INSTRUCTION_PHASE::MEM) {
+        ReleaseFU(fu, cycle, INSTRUCTION_PHASE::MEM);
+        phase = INSTRUCTION_PHASE::WB;
         return true;
     }
-    liberarUF(uf, ciclo, FaseInstrucao::EX);
-    fase = FaseInstrucao::WB;
+    ReleaseFU(fu, cycle, INSTRUCTION_PHASE::EX);
+    phase = INSTRUCTION_PHASE::WB;
     return true;
 }
 
-// Broadcast do CDB: se esta RS está esperando por rs_id com aquele ciclo_inicio, captura o valor agora. O par {rs_id, ciclo_inicio} identifica unicamente o produtor.
-void RS::resolverDependencia(
+// Broadcast do CDB: se esta RS está esperando por rs_id com aquele ciclo_inicio,
+// captura o valor agora. O par {rs_id, ciclo_inicio} identifica unicamente o produtor.
+void ReservationStation::ResolveDependency(
     const std::string& rs_id,
-    const Registrador& valor
+    const Register& value
 ){
-    if (Qj.first == rs_id) { Vj = valor; Qj = {"", -1}; }
-    if (Qk.first == rs_id) { Vk = valor; Qk = {"", -1}; }
+    if (Qj.first == rs_id) { Vj = value; Qj = {"", -1}; }
+    if (Qk.first == rs_id) { Vk = value; Qk = {"", -1}; }
 }
 
-void RS::liberar(
-    int ciclo
+void ReservationStation::Release(
+    int cycle
 ){
-    tempos_alocacao.push_back(ciclo);
+    allocation_times.push_back(cycle);
     busy                         = false;
-    contagem_regressiva_alocacao = -1;
-    posicao_UF                   = -1;
+    allocation_countdown = -1;
+    fu_position                   = -1;
     Qj = Qk                      = {"", -1};
-    Vj = Vk                      = Registrador{};
-    fase                         = FaseInstrucao::ISSUE;
+    Vj = Vk                      = Register{};
+    phase                         = INSTRUCTION_PHASE::ISSUE;
 }
 
 // Recebe a fase em que a instrução VAI ENTRAR para escolher a UF correta:
-// - LOAD/STORE em EX  → cálculo de endereço → ula_int_basico
-// - LOAD/STORE em MEM → acesso à memória    → acessar_memoria
-int RS::alocarUFLivre(
-    std::vector<UF>& grupo,
-    int              ciclo
+//   LOAD/STORE em EX  → cálculo de endereço → ula_int_basico
+//   LOAD/STORE em MEM → acesso à memória    → acessar_memoria
+int ReservationStation::AllocateFreeFU(
+    std::vector<FU>& group,
+    int              cycle
 ) const {
-    for (int i = 0; i < (int)grupo.size(); i++) {
-        if (!grupo[i].busy) {
-            grupo[i].busy     = true;
-            grupo[i].RS_atual = id;
-            grupo[i].RS_alocadas.push_back(id);
-            grupo[i].tempo_alocacao.push_back(ciclo);
+    for (int i = 0; i < (int)group.size(); i++) {
+        if (!group[i].busy) {
+            group[i].busy     = true;
+            group[i].current_rs = id;
+            group[i].allocated_rs.push_back(id);
+            group[i].allocation_times.push_back(cycle);
             return i;
         }
     }
     return -1;
 }
 
-int RS::procuraUFlivre(
-    UnidadesFuncionais& uf,
-    int                 ciclo,
-    FaseInstrucao       fase_destino
+int ReservationStation::FindFreeFU(
+    FUNCTIONAL_UNITS& fu,
+    int               cycle,
+    INSTRUCTION_PHASE       target_phase
 ) const {
-    TipoInstrucao tipo = instrucao_atual.getTipoInstrucao();
-    // LOAD e STORE: EX = cálculo de endereço (ULA inteira), MEM = acesso à memória
-    if (tipo == TipoInstrucao::LOAD || tipo == TipoInstrucao::STORE) {
-        if (fase_destino == FaseInstrucao::EX)  return alocarUFLivre(uf.ula_int_basico, ciclo);
-        else                                    return alocarUFLivre(uf.acessar_memoria, ciclo);
+    INSTRUCTION_TYPE tipo = current_instruction.GetInstructionType();
+    if (tipo == INSTRUCTION_TYPE::LOAD || tipo == INSTRUCTION_TYPE::STORE) {
+        if (target_phase == INSTRUCTION_PHASE::EX)  return AllocateFreeFU(fu.int_basic_alu, cycle);
+        else                                        return AllocateFreeFU(fu.memory_access, cycle);
     }
     switch (tipo) {
-        case TipoInstrucao::INT_MUL:
-        case TipoInstrucao::INT_DIV:      return alocarUFLivre(uf.ula_int_mult_div, ciclo);
-        case TipoInstrucao::FLOAT_BASICO: return alocarUFLivre(uf.ula_float_basico, ciclo);
-        case TipoInstrucao::FLOAT_MUL:
-        case TipoInstrucao::FLOAT_DIV:    return alocarUFLivre(uf.ula_float_mult_div, ciclo);
-        default:                          return alocarUFLivre(uf.ula_int_basico, ciclo);
+        case INSTRUCTION_TYPE::INT_MUL:
+        case INSTRUCTION_TYPE::INT_DIV:      return AllocateFreeFU(fu.int_mult_div_alu, cycle);
+        case INSTRUCTION_TYPE::FLOAT_BASIC:  return AllocateFreeFU(fu.float_basic_alu, cycle);
+        case INSTRUCTION_TYPE::FLOAT_MUL:
+        case INSTRUCTION_TYPE::FLOAT_DIV:    return AllocateFreeFU(fu.float_mult_div_alu, cycle);
+        default:                             return AllocateFreeFU(fu.int_basic_alu, cycle);
     }
 }
 
 // Recebe a fase que ACABOU para saber de qual grupo liberar:
-// - LOAD/STORE saindo de EX  → liberou ula_int_basico
-// - LOAD/STORE saindo de MEM → liberou acessar_memoria
-void RS::desalocarUFdoGrupo(
-    std::vector<UF>& grupo,
-    int              ciclo
+//   LOAD/STORE saindo de EX  → liberou ula_int_basico
+//   LOAD/STORE saindo de MEM → liberou acessar_memoria
+void ReservationStation::DeallocateFUFromGroup(
+    std::vector<FU>& group,
+    int              cycle
 ) {
-    if (posicao_UF < (int)grupo.size()) {
-        grupo[posicao_UF].busy = false;
-        grupo[posicao_UF].RS_atual = "";
-        grupo[posicao_UF].tempo_alocacao.push_back(ciclo);
+    if (fu_position < (int)group.size()) {
+        group[fu_position].busy = false;
+        group[fu_position].current_rs = "";
+        group[fu_position].allocation_times.push_back(cycle);
     }
 }
 
-void RS::liberarUF(
-    UnidadesFuncionais& uf,
-    int                 ciclo,
-    FaseInstrucao       fase_que_terminou
+void ReservationStation::ReleaseFU(
+    FUNCTIONAL_UNITS& fu,
+    int               cycle,
+    INSTRUCTION_PHASE finished_phase
 ){
-    if (posicao_UF == -1) return;
-    TipoInstrucao tipo = instrucao_atual.getTipoInstrucao();
-    if (tipo == TipoInstrucao::LOAD || tipo == TipoInstrucao::STORE) {
-        if (fase_que_terminou == FaseInstrucao::EX) desalocarUFdoGrupo(uf.ula_int_basico, ciclo);
-        else                                        desalocarUFdoGrupo(uf.acessar_memoria, ciclo);
+    if (fu_position == -1) return;
+    INSTRUCTION_TYPE tipo = current_instruction.GetInstructionType();
+    if (tipo == INSTRUCTION_TYPE::LOAD || tipo == INSTRUCTION_TYPE::STORE) {
+        if (finished_phase == INSTRUCTION_PHASE::EX) DeallocateFUFromGroup(fu.int_basic_alu, cycle);
+        else                                        DeallocateFUFromGroup(fu.memory_access, cycle);
     } else {
         switch (tipo) {
-            case TipoInstrucao::INT_MUL:
-            case TipoInstrucao::INT_DIV:      desalocarUFdoGrupo(uf.ula_int_mult_div, ciclo);   break;
-            case TipoInstrucao::FLOAT_BASICO: desalocarUFdoGrupo(uf.ula_float_basico, ciclo);   break;
-            case TipoInstrucao::FLOAT_MUL:
-            case TipoInstrucao::FLOAT_DIV:    desalocarUFdoGrupo(uf.ula_float_mult_div, ciclo); break;
-            default:                          desalocarUFdoGrupo(uf.ula_int_basico, ciclo);     break;
+            case INSTRUCTION_TYPE::INT_MUL:
+            case INSTRUCTION_TYPE::INT_DIV:      DeallocateFUFromGroup(fu.int_mult_div_alu, cycle);   break;
+            case INSTRUCTION_TYPE::FLOAT_BASIC:  DeallocateFUFromGroup(fu.float_basic_alu, cycle);    break;
+            case INSTRUCTION_TYPE::FLOAT_MUL:
+            case INSTRUCTION_TYPE::FLOAT_DIV:    DeallocateFUFromGroup(fu.float_mult_div_alu, cycle); break;
+            default:                             DeallocateFUFromGroup(fu.int_basic_alu, cycle);      break;
         }
     }
-    posicao_UF = -1;
+    fu_position = -1;
 }

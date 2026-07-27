@@ -4,100 +4,99 @@
 #include <string>
 #include <vector>
 #include <utility>
-#include "Instrucao.h"
-#include "Componentes.h"
+#include "Instruction.h"
+#include "Components.h"
 
 // classe:
-class RS {
+class ReservationStation {
     public:
         // Construtor
-        RS(std::string);
-        // Getters
-        bool                     getBusy()               const;
-        int                      getContagemRegressiva() const;
-        int                      getPosicaoUF()          const;
+        ReservationStation(std::string);
 
-        FaseInstrucao            getFaseInstrucao()      const;
-        // & const para evitar cópia (tipos pequenos teriam um ganho marginal)
-        const Instrucao&                getInstrucaoAtual() const;
-        const std::string&              getId()             const;
-        const std::string&              getQj()             const;
-        const std::string&              getQk()             const;
-        const std::vector<int>&         getTempos()         const;
-        const std::vector<std::string>& getInstrucoes()     const;
+        bool                     GetBusy()                const;
+        int                      GetCountdown()           const;
+        int                      GetFUPosition()          const;
+        INSTRUCTION_PHASE        GetInstructionPhase()    const;
+        const Instruction&       GetCurrentInstruction()  const; // const & para evitar cópia
+        const std::string&       GetId()                  const; // const & para evitar cópia
+        const std::string&       GetQj()                  const; // const & para evitar cópia
+        const std::string&       GetQk()                  const; // const & para evitar cópia
+        const std::vector<int>&  GetTimes()               const; // const & para evitar cópia
+        const std::vector<std::string>& GetInstructions() const; // const & para evitar cópia
+
         // Métodos públicos
-        bool addIssue(
-            Instrucao&,
+        bool AddIssue(
+            Instruction&,
             CDB&,
             int
         );
 
-        bool atualizarDependencias(
+        bool UpdateDependencies(
             CDB&,
-            UnidadesFuncionais&,
+            FUNCTIONAL_UNITS&,
             int
         );
 
-        bool atualizaContagem(
-            UnidadesFuncionais&,
+        bool UpdateCountdown(
+            FUNCTIONAL_UNITS&,
             int
         );
 
-        void liberar(
+        void Release(
             int
         );
 
-        void resolverDependencia(
+        void ResolveDependency(
             const std::string& rs_id,
-            const Registrador& valor
+            const Register& value
         );
     private:
         // Atributos
         bool                        busy{false};
-        bool                        destino_pendente_no_cdb{false};
-        int                         contagem_regressiva_alocacao{-1};
-        int                         posicao_UF{-1};
+        bool                        dest_pending_in_cdb{false};
+        int                         allocation_countdown{-1};
+        int                         fu_position{-1};
         std::string                 id;         // Nome do RS ("load1", "addInt3", etc.)
-        Instrucao                   instrucao_atual;
-        FaseInstrucao               fase;
-        Registrador                 Vj;                            // Valor do operand J (se Qj vazio)
-        Registrador                 Vk;                            // Valor do operand K (se Qk vazio)
+        Instruction                 current_instruction;
+        INSTRUCTION_PHASE           phase;
+        Register                    Vj;                            // Valor do operand J (se Qj vazio)
+        Register                    Vk;                            // Valor do operand K (se Qk vazio)
         std::pair<std::string, int> Qj{"", -1};                    // Qj/Qk: {rs_id, ciclo_inicio} — produtor pendente
         std::pair<std::string, int> Qk{"", -1};                    // par vazio {"", -1} = operando disponível
-        std::vector<int>            tempos_alocacao;     // De 2 em 2, início da alocação e fim da alocação
-        std::vector<std::string>    instrucoes_alocacao; // De 1 em 1, instruções alocadas na RS
+        std::vector<int>            allocation_times;     // De 2 em 2, início da alocação e fim da alocação
+        std::vector<std::string>    allocated_instructions; // De 1 em 1, instruções alocadas na RS
         // Métodos privados
-        int procuraUFlivre(
-            UnidadesFuncionais&,
+        int FindFreeFU(
+            FUNCTIONAL_UNITS&,
             int,
-            FaseInstrucao
+            INSTRUCTION_PHASE
         ) const;
 
-        int alocarUFLivre(
-            std::vector<UF>&,
+        int AllocateFreeFU(
+            std::vector<FU>&,
             int
         ) const;
 
-        void liberarUF(
-            UnidadesFuncionais&,
+        void ReleaseFU(
+            FUNCTIONAL_UNITS&,
             int,
-            FaseInstrucao
+            INSTRUCTION_PHASE
         );
 
-        void desalocarUFdoGrupo(
-            std::vector<UF>&,
+        void DeallocateFUFromGroup(
+            std::vector<FU>&,
             int
         );
     };
 
 // struct:
-struct ReservationStations {
-    std::vector<RS> load;
-    std::vector<RS> store;
-    std::vector<RS> int_basico;
-    std::vector<RS> int_mult_div;
-    std::vector<RS> float_basico;
-    std::vector<RS> float_mult_div;
+struct RESERVATION_STATIONS {
+    std::vector<ReservationStation> load;
+    std::vector<ReservationStation> store;
+    std::vector<ReservationStation> int_basic;
+    std::vector<ReservationStation> int_mult_div;
+    std::vector<ReservationStation> float_basic;
+    std::vector<ReservationStation> float_mult_div;
 };
 
 #endif

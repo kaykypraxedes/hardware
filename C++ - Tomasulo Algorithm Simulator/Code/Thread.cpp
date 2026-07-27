@@ -1,470 +1,466 @@
 /* Thread.cpp */
 #include "headers/Thread.h"
-#include "headers/Componentes.h"
-#include "headers/Instrucao.h"
-#include "SortUtils.h"
+#include "headers/Components.h"
+#include "headers/Instruction.h"
+#include "headers/SortUtils.h"
 #include <string>
 #include <vector>
 
-// Métodos públicos
-// Construtores:
 Thread::Thread(
     const std::vector<std::string>& assembly,
-    bool                           tem_rob,
+    bool                           has_rob,
     const std::vector<int>&        num_rs,
-    const std::vector<int>&        num_ufs,
-    int                            largura_despacho,
-    int                            capacidade_rob
+    const std::vector<int>&        num_fus,
+    int                            dispatch_width,
+    int                            rob_capacity
 ):
-    tem_rob(tem_rob),
-    capacidade_rob(tem_rob ? capacidade_rob : 1)
+    has_rob(has_rob),
+    rob_capacity(has_rob ? rob_capacity : 1)
 {
     int i{};
     for (const std::string& instr : assembly)
-        tabela_de_instrucoes.push_back({Instrucao(i++, instr), 0, 0, {}, {}, 0, 0});
-    inicializarComponentes(num_rs, num_ufs, largura_despacho);
+        instruction_table.push_back({Instruction(i++, instr), 0, 0, {}, {}, 0, 0});
+    InitializeComponents(num_rs, num_fus, dispatch_width);
 }
 
 Thread::Thread(
-    const std::vector<int>&         instrucoes_troca,
+    const std::vector<int>&         switch_instructions,
     const std::vector<std::string>& assembly,
-    bool                            tem_rob,
+    bool                            has_rob,
     const std::vector<int>&         num_rs,
-    const std::vector<int>&         num_ufs,
-    int                             largura_despacho,
-    int                             capacidade_rob
+    const std::vector<int>&         num_fus,
+    int                             dispatch_width,
+    int                             rob_capacity
 ):
-    tem_rob(tem_rob),
-    capacidade_rob(tem_rob ? capacidade_rob : 1),
-    instrucoes_troca(instrucoes_troca)
+    has_rob(has_rob),
+    rob_capacity(has_rob ? rob_capacity : 1),
+    switch_instructions(switch_instructions)
 {
     int i{};
     for (const std::string& instr : assembly)
-        tabela_de_instrucoes.push_back({Instrucao(i++, instr), 0, 0, {}, {}, 0, 0});
-    inicializarComponentes(num_rs, num_ufs, largura_despacho);
+        instruction_table.push_back({Instruction(i++, instr), 0, 0, {}, {}, 0, 0});
+    InitializeComponents(num_rs, num_fus, dispatch_width);
 }
 
-// Getters:
-int                             Thread::getPC()           const { return PC; }
-int                             Thread::getNumStalls()    const { return num_stalls; }
-EstadoThread                    Thread::getEstadoThread() const { return estado; }
-// & const para evitar cópia (tipos pequenos teriam um ganho marginal)
-const CDB&                      Thread::getCDB()          const { return cdb; }
-const ReservationStations&      Thread::getRS()           const { return rs; }
-const UnidadesFuncionais&       Thread::getUF()           const { return uf; }
-const std::vector<LinhaTabela>& Thread::getTabela()       const { return tabela_de_instrucoes; }
+// Códigos pequenos:
+int                             Thread::GetPC()           const { return PC; }
+int                             Thread::GetNumStalls()    const { return num_stalls; }
+THREAD_STATE                    Thread::GetThreadState()  const { return state; }
+const CDB&                      Thread::GetCDB()          const { return cdb; }      // const & para evitar cópia
+const RESERVATION_STATIONS&      Thread::GetRS()           const { return rs; }       // const & para evitar cópia
+const FUNCTIONAL_UNITS&         Thread::GetFU()           const { return fu; }       // const & para evitar cópia
+const std::vector<TABLE_ROW>& Thread::GetTable()       const { return instruction_table; } // const & para evitar cópia
 
-static int pcDeRS(RS* r) { return r->getInstrucaoAtual().getPC(); }
-static int pcDeEvento(const Evento& e) { return e.pc; }
+static int pcDeRS(ReservationStation* r) { return r->GetCurrentInstruction().GetPC(); }
+static int pcDeEvento(const EVENT& e) { return e.pc; }
 
-void Thread::inicializarComponentes(
+// Códigos grandes:
+
+// ─── INICIALIZAÇÃO ─────────────────────────────────────────────────
+void Thread::InitializeComponents(
     const std::vector<int>& num_rs,
-    const std::vector<int>& num_ufs,
-    int                     largura_despacho
+    const std::vector<int>& num_fus,
+    int                     dispatch_width
 ){
-    for(int i{}; i < NUM_REGISTRADORES; i++){
-        cdb.R.push_back(Registrador("R" + std::to_string(i)));
-        cdb.F.push_back(Registrador("F" + std::to_string(i)));
+    for(int i{}; i < num_registers; i++){
+        cdb.R.push_back(Register("R" + std::to_string(i)));
+        cdb.F.push_back(Register("F" + std::to_string(i)));
     }
-    // Inicializa os Reservation Stations
     std::vector<int> aux;
     if(num_rs.size() >= 6) aux = num_rs;
     else aux = {5,5,5,4,3,2};
-    for(int i{}; i < aux[0]; i++) rs.load.push_back(RS("load" + std::to_string(i)));
-    for(int i{}; i < aux[1]; i++) rs.store.push_back(RS("store" + std::to_string(i)));
-    for(int i{}; i < aux[2]; i++) rs.int_basico.push_back(RS("int_basico" + std::to_string(i)));
-    for(int i{}; i < aux[3]; i++) rs.int_mult_div.push_back(RS("int_mult_div" + std::to_string(i)));
-    for(int i{}; i < aux[4]; i++) rs.float_basico.push_back(RS("float_basico" + std::to_string(i)));
-    for(int i{}; i < aux[5]; i++) rs.float_mult_div.push_back(RS("float_mult_div" + std::to_string(i)));
-    // Inicializa as Unidades Funcionais
-    if(num_ufs.size() >= 6) aux = num_ufs;
+    for(int i{}; i < aux[0]; i++) rs.load.push_back(ReservationStation("load" + std::to_string(i)));
+    for(int i{}; i < aux[1]; i++) rs.store.push_back(ReservationStation("store" + std::to_string(i)));
+    for(int i{}; i < aux[2]; i++) rs.int_basic.push_back(ReservationStation("int_basic" + std::to_string(i)));
+    for(int i{}; i < aux[3]; i++) rs.int_mult_div.push_back(ReservationStation("int_mult_div" + std::to_string(i)));
+    for(int i{}; i < aux[4]; i++) rs.float_basic.push_back(ReservationStation("float_basic" + std::to_string(i)));
+    for(int i{}; i < aux[5]; i++) rs.float_mult_div.push_back(ReservationStation("float_mult_div" + std::to_string(i)));
+    if(num_fus.size() >= 6) aux = num_fus;
     else aux = {1,1,1,1,1,2};
-    for(int i{}; i < aux[0]; i++) uf.acessar_memoria.push_back(UF{});
-    for(int i{}; i < aux[1]; i++) uf.ula_int_basico.push_back(UF{});
-    for(int i{}; i < aux[2]; i++) uf.ula_int_mult_div.push_back(UF{});
-    for(int i{}; i < aux[3]; i++) uf.ula_float_basico.push_back(UF{});
-    for(int i{}; i < aux[4]; i++) uf.ula_float_mult_div.push_back(UF{});
-    uf.wr     = aux[5];
-    uf.commit = largura_despacho;
+    for(int i{}; i < aux[0]; i++) fu.memory_access.push_back(FU{});
+    for(int i{}; i < aux[1]; i++) fu.int_basic_alu.push_back(FU{});
+    for(int i{}; i < aux[2]; i++) fu.int_mult_div_alu.push_back(FU{});
+    for(int i{}; i < aux[3]; i++) fu.float_basic_alu.push_back(FU{});
+    for(int i{}; i < aux[4]; i++) fu.float_mult_div_alu.push_back(FU{});
+    fu.wr     = aux[5];
+    fu.commit = dispatch_width;
 }
 
-void Thread::definirLatenciaEspecifica(
-    int posicao,
-    int latencia_EX,
-    int latencia_MEM
+void Thread::SetCustomLatency(
+    int position,
+    int ex_latency,
+    int mem_latency
 ){
-    if (posicao < 0 || static_cast<size_t>(posicao) >= tabela_de_instrucoes.size()) return;
-    tabela_de_instrucoes[posicao].instrucao.setLatenciaEX(latencia_EX);
-    if (latencia_MEM > 0)
-        tabela_de_instrucoes[posicao].instrucao.setLatenciaMEM(latencia_MEM);
+    if (position < 0 || static_cast<size_t>(position) >= instruction_table.size()) return;
+    instruction_table[position].instruction.SetExLatency(ex_latency);
+    if (mem_latency > 0)
+        instruction_table[position].instruction.SetMemLatency(mem_latency);
 }
 
-// ISSUE:
+// ─── ESTÁGIO ISSUE ────────────────────────────────────────────────
+bool Thread::Issue(int cycle) {
+    if (state == THREAD_STATE::BLOCKED) return false;
+    if (PC >= static_cast<int>(instruction_table.size())) return false;
+    if (rob.size() >= static_cast<size_t>(rob_capacity)) return false;
 
-bool Thread::Issue(int ciclo) {
-    if (estado == EstadoThread::BLOQUEADA) return false;
-    if (PC >= static_cast<int>(tabela_de_instrucoes.size())) return false;
-    if (rob.size() >= static_cast<size_t>(capacidade_rob)) return false;
+    Instruction& instruction = instruction_table[PC].instruction;
+    INSTRUCTION_TYPE tipo   = instruction.GetInstructionType();
+    if (tipo == INSTRUCTION_TYPE::NONEXISTENT) { PC++; return false; }
 
-    Instrucao& instrucao = tabela_de_instrucoes[PC].instrucao;
-    TipoInstrucao tipo   = instrucao.getTipoInstrucao();
-    if (tipo == TipoInstrucao::NAO_EXISTE) { PC++; return false; }
-
-    std::vector<RS>* grupo = nullptr;
+    std::vector<ReservationStation>* group = nullptr;
     switch (tipo) {
-        case TipoInstrucao::LOAD:         grupo = &rs.load;          break;
-        case TipoInstrucao::STORE:        grupo = &rs.store;         break;
-        case TipoInstrucao::FLOAT_BASICO: grupo = &rs.float_basico;  break;
-        case TipoInstrucao::INT_MUL:
-        case TipoInstrucao::INT_DIV:      grupo = &rs.int_mult_div;  break;
-        case TipoInstrucao::FLOAT_MUL:
-        case TipoInstrucao::FLOAT_DIV:    grupo = &rs.float_mult_div;break;
-        default:                          grupo = &rs.int_basico;    break;
+        case INSTRUCTION_TYPE::LOAD:         group = &rs.load;          break;
+        case INSTRUCTION_TYPE::STORE:        group = &rs.store;         break;
+        case INSTRUCTION_TYPE::FLOAT_BASIC:  group = &rs.float_basic;   break;
+        case INSTRUCTION_TYPE::INT_MUL:
+        case INSTRUCTION_TYPE::INT_DIV:      group = &rs.int_mult_div;  break;
+        case INSTRUCTION_TYPE::FLOAT_MUL:
+        case INSTRUCTION_TYPE::FLOAT_DIV:    group = &rs.float_mult_div;break;
+        default:                             group = &rs.int_basic;     break;
     }
 
-    for (RS& r : *grupo) {
-        if (r.addIssue(instrucao, cdb, ciclo)) {
-            registrarIssue(PC, ciclo);
-            if(tem_rob) rob.push_back(instrucao);
+    for (ReservationStation& r : *group) {
+        if (r.AddIssue(instruction, cdb, cycle)) {
+            RegisterIssue(PC, cycle);
+            if(has_rob) rob.push_back(instruction);
             PC++;
-            if (tipo == TipoInstrucao::BRANCH && !tem_rob)
-                pc_branch_nao_resolvido = PC - 1;
+            if (tipo == INSTRUCTION_TYPE::BRANCH && !has_rob)
+                unresolved_branch_pc = PC - 1;
             return true;
         }
     }
     return false;
 }
 
-// EX/MEM:
-
-bool Thread::ExMem(int ciclo) {
-    if(static_cast<size_t>(num_instrucoes_commitadas) == tabela_de_instrucoes.size() ||
-       (!tem_rob && static_cast<size_t>(num_instrucoes_finalizadas) == tabela_de_instrucoes.size()))
+// ─── ESTÁGIO EX/MEM ───────────────────────────────────────────────
+bool Thread::ExMem(int cycle) {
+    if(static_cast<size_t>(num_committed_instructions) == instruction_table.size() ||
+       (!has_rob && static_cast<size_t>(num_finished_instructions) == instruction_table.size()))
        return true;
-    if (estado == EstadoThread::ESPERA)
-        estado = EstadoThread::LIBERADA;
-    if(static_cast<size_t>(num_instrucoes_finalizadas) != tabela_de_instrucoes.size())
-        iniciarFaseExOuMem(ciclo);
+    if (state == THREAD_STATE::WAITING)
+        state = THREAD_STATE::FREE;
+    if(static_cast<size_t>(num_finished_instructions) != instruction_table.size())
+        StartExOrMemPhase(cycle);
     return false;
 }
 
-void Thread::iniciarFaseExOuMem(int ciclo) {
-    std::vector<RS*> candidatas;
-    coletarCandidatasParaAvancar(candidatas);
-    ordenarCandidatasPorPC(candidatas);
+void Thread::StartExOrMemPhase(int cycle) {
+    std::vector<ReservationStation*> candidates;
+    CollectCandidatesToAdvance(candidates);
+    SortCandidatesByPC(candidates);
 
-    for (RS* rp : candidatas) {
-        RS& r = *rp;
-        tentarAvancarRS(r, ciclo);
+    for (ReservationStation* rp : candidates) {
+        ReservationStation& r = *rp;
+        TryAdvanceRS(r, cycle);
     }
 }
 
-void Thread::coletarCandidatasParaAvancar(std::vector<RS*>& candidatas) {
-    coletarCandidatasDoGrupo(rs.load, candidatas);
-    coletarCandidatasDoGrupo(rs.store, candidatas);
-    coletarCandidatasDoGrupo(rs.int_basico, candidatas);
-    coletarCandidatasDoGrupo(rs.int_mult_div, candidatas);
-    coletarCandidatasDoGrupo(rs.float_basico, candidatas);
-    coletarCandidatasDoGrupo(rs.float_mult_div, candidatas);
+void Thread::CollectCandidatesToAdvance(std::vector<ReservationStation*>& candidates) {
+    CollectCandidatesFromGroup(rs.load, candidates);
+    CollectCandidatesFromGroup(rs.store, candidates);
+    CollectCandidatesFromGroup(rs.int_basic, candidates);
+    CollectCandidatesFromGroup(rs.int_mult_div, candidates);
+    CollectCandidatesFromGroup(rs.float_basic, candidates);
+    CollectCandidatesFromGroup(rs.float_mult_div, candidates);
 }
 
-void Thread::coletarCandidatasDoGrupo(std::vector<RS>& grupo, std::vector<RS*>& candidatas) {
-    for (RS& r : grupo) {
-        if (!r.getBusy()) continue;
-        int inst_pc = r.getInstrucaoAtual().getPC();
-        if (pc_branch_nao_resolvido >= 0 && inst_pc > pc_branch_nao_resolvido) continue;
-        TipoInstrucao tipo = r.getInstrucaoAtual().getTipoInstrucao();
-        if (tipo == TipoInstrucao::STORE && tem_rob && r.getFaseInstrucao() == FaseInstrucao::MEM)
+void Thread::CollectCandidatesFromGroup(std::vector<ReservationStation>& group, std::vector<ReservationStation*>& candidates) {
+    for (ReservationStation& r : group) {
+        if (!r.GetBusy()) continue;
+        int inst_pc = r.GetCurrentInstruction().GetPC();
+        if (unresolved_branch_pc >= 0 && inst_pc > unresolved_branch_pc) continue;
+        INSTRUCTION_TYPE tipo = r.GetCurrentInstruction().GetInstructionType();
+        if (tipo == INSTRUCTION_TYPE::STORE && has_rob && r.GetInstructionPhase() == INSTRUCTION_PHASE::MEM)
             continue;
-        candidatas.push_back(&r);
+        candidates.push_back(&r);
     }
 }
 
-void Thread::ordenarCandidatasPorPC(std::vector<RS*>& candidatas) const {
-    sort_utils::insertionSort(candidatas, pcDeRS);
+void Thread::SortCandidatesByPC(std::vector<ReservationStation*>& candidates) const {
+    sort_utils::insertionSort(candidates, pcDeRS);
 }
 
-void Thread::tentarAvancarRS(RS& r, int ciclo) {
-    if (r.atualizarDependencias(cdb, uf, ciclo)) {
-        int pc = r.getInstrucaoAtual().getPC();
-        if (r.getFaseInstrucao() == FaseInstrucao::EX)
-            adicionarCicloEX(pc, ciclo);
-        else if (r.getFaseInstrucao() == FaseInstrucao::MEM)
-            adicionarCicloMEM(pc, ciclo);
-        if (pc == pc_branch_nao_resolvido && r.getFaseInstrucao() == FaseInstrucao::EX)
-            pc_branch_nao_resolvido = -1;
+void Thread::TryAdvanceRS(ReservationStation& r, int cycle) {
+    if (r.UpdateDependencies(cdb, fu, cycle)) {
+        int pc = r.GetCurrentInstruction().GetPC();
+        if (r.GetInstructionPhase() == INSTRUCTION_PHASE::EX)
+            AddExCycle(pc, cycle);
+        else if (r.GetInstructionPhase() == INSTRUCTION_PHASE::MEM)
+            AddMemCycle(pc, cycle);
+        if (pc == unresolved_branch_pc && r.GetInstructionPhase() == INSTRUCTION_PHASE::EX)
+            unresolved_branch_pc = -1;
     }
 }
 
-// WR:
-
-void Thread::Wr(int ciclo) {
-    flushBufferWBPendente();
-    realizarWriteResult(ciclo);
-    detectarTransicoesDeFase(ciclo);
-    if (!tem_rob) {
-        for (int i : buffer_WB_pendente) {
-            if (tabela_de_instrucoes[i].instrucao.getTipoInstrucao() == TipoInstrucao::BRANCH)
-                estado = EstadoThread::ESPERA;
+// ─── ESTÁGIO WR (WRITE RESULT) ──────────────────────────────────
+void Thread::Wr(int cycle) {
+    FlushPendingWBBuffer();
+    PerformWriteResult(cycle);
+    DetectPhaseTransitions(cycle);
+    if (!has_rob) {
+        for (int i : pending_wb_buffer) {
+            if (instruction_table[i].instruction.GetInstructionType() == INSTRUCTION_TYPE::BRANCH)
+                state = THREAD_STATE::WAITING;
         }
     }
 }
 
-void Thread::ordenarBufferWB() {
-    sort_utils::insertionSort(buffer_WB);
+void Thread::SortWBBuffer() {
+    sort_utils::insertionSort(wb_buffer);
 }
 
-void Thread::realizarWriteResult(int ciclo) {
-    ordenarBufferWB();
+void Thread::PerformWriteResult(int cycle) {
+    SortWBBuffer();
 
     int escritas{};
-    while (!buffer_WB.empty() && escritas < uf.wr) {
-        int pc = proximoWB();
-        TipoInstrucao auxTipo{tabela_de_instrucoes[pc].instrucao.getTipoInstrucao()};
-        bool store_com_rob = (auxTipo == TipoInstrucao::STORE && tem_rob);
+    while (!wb_buffer.empty() && escritas < fu.wr) {
+        int pc = NextWB();
+        INSTRUCTION_TYPE auxTipo{instruction_table[pc].instruction.GetInstructionType()};
+        bool store_with_rob = (auxTipo == INSTRUCTION_TYPE::STORE && has_rob);
 
-        if (store_com_rob) {
-            writeBackStoreComROB(pc, ciclo);
+        if (store_with_rob) {
+            WriteBackStoreWithROB(pc, cycle);
             continue;
         }
 
-        writeBackNormal(pc, ciclo);
-        removerWB();
-        num_instrucoes_finalizadas++;
-        if(auxTipo != TipoInstrucao::BRANCH) escritas++;
+        WriteBackNormal(pc, cycle);
+        RemoveWB();
+        num_finished_instructions++;
+        if(auxTipo != INSTRUCTION_TYPE::BRANCH) escritas++;
     }
 }
 
-void Thread::writeBackStoreComROB(int pc, int ciclo) {
-    for (RS& r : rs.store)
-        if (r.getBusy() && r.getInstrucaoAtual().getPC() == pc)
-            r.liberar(ciclo);
-    removerWB();
-    num_instrucoes_finalizadas++;
+void Thread::WriteBackStoreWithROB(int pc, int cycle) {
+    for (ReservationStation& r : rs.store)
+        if (r.GetBusy() && r.GetCurrentInstruction().GetPC() == pc)
+            r.Release(cycle);
+    RemoveWB();
+    num_finished_instructions++;
 }
 
-void Thread::writeBackNormal(int pc, int ciclo) {
-    if(tabela_de_instrucoes[pc].instrucao.getTipoInstrucao() != TipoInstrucao::STORE &&
-       tabela_de_instrucoes[pc].instrucao.getTipoInstrucao() != TipoInstrucao::BRANCH)
-        definirWR(pc, ciclo);
+void Thread::WriteBackNormal(int pc, int cycle) {
+    if(instruction_table[pc].instruction.GetInstructionType() != INSTRUCTION_TYPE::STORE &&
+       instruction_table[pc].instruction.GetInstructionType() != INSTRUCTION_TYPE::BRANCH)
+        SetWR(pc, cycle);
 
-    Registrador dest = tabela_de_instrucoes[pc].instrucao.getRegDestino();
-    broadcastCDB(pc, dest, ciclo);
+    Register dest = instruction_table[pc].instruction.GetDestRegister();
+    BroadcastCDB(pc, dest, cycle);
 
-    TipoInstrucao t{tabela_de_instrucoes[pc].instrucao.getTipoInstrucao()};
-    if(t == TipoInstrucao::LOAD)
-        liberarRSPorRegistrador(rs.load, dest, ciclo);
-    else if(t == TipoInstrucao::STORE)
-        liberarRSPorPC(rs.store, pc, ciclo);
-    else if(t == TipoInstrucao::BRANCH)
-        liberarRSPorPC(rs.int_basico, pc, ciclo);
-    else if(t == TipoInstrucao::FLOAT_BASICO)
-        liberarRSPorRegistrador(rs.float_basico, dest, ciclo);
-    else if(t == TipoInstrucao::INT_MUL || t == TipoInstrucao::INT_DIV)
-        liberarRSPorRegistrador(rs.int_mult_div, dest, ciclo);
-    else if(t == TipoInstrucao::FLOAT_MUL || t == TipoInstrucao::FLOAT_DIV)
-        liberarRSPorRegistrador(rs.float_mult_div, dest, ciclo);
+    INSTRUCTION_TYPE t{instruction_table[pc].instruction.GetInstructionType()};
+    if(t == INSTRUCTION_TYPE::LOAD)
+        ReleaseRSByRegister(rs.load, dest, cycle);
+    else if(t == INSTRUCTION_TYPE::STORE)
+        ReleaseRSByPC(rs.store, pc, cycle);
+    else if(t == INSTRUCTION_TYPE::BRANCH)
+        ReleaseRSByPC(rs.int_basic, pc, cycle);
+    else if(t == INSTRUCTION_TYPE::FLOAT_BASIC)
+        ReleaseRSByRegister(rs.float_basic, dest, cycle);
+    else if(t == INSTRUCTION_TYPE::INT_MUL || t == INSTRUCTION_TYPE::INT_DIV)
+        ReleaseRSByRegister(rs.int_mult_div, dest, cycle);
+    else if(t == INSTRUCTION_TYPE::FLOAT_MUL || t == INSTRUCTION_TYPE::FLOAT_DIV)
+        ReleaseRSByRegister(rs.float_mult_div, dest, cycle);
     else
-        liberarRSPorRegistrador(rs.int_basico, dest, ciclo);
+        ReleaseRSByRegister(rs.int_basic, dest, cycle);
 }
 
-void Thread::broadcastCDB(int pc, const Registrador& dest, int ciclo) {
-    buscarWBNoGrupo(rs.load, pc, dest, ciclo);
-    buscarWBNoGrupo(rs.store, pc, dest, ciclo);
-    buscarWBNoGrupo(rs.int_basico, pc, dest, ciclo);
-    buscarWBNoGrupo(rs.int_mult_div, pc, dest, ciclo);
-    buscarWBNoGrupo(rs.float_basico, pc, dest, ciclo);
-    buscarWBNoGrupo(rs.float_mult_div, pc, dest, ciclo);
+void Thread::BroadcastCDB(int pc, const Register& dest, int cycle) {
+    FindWBInGroup(rs.load, pc, dest, cycle);
+    FindWBInGroup(rs.store, pc, dest, cycle);
+    FindWBInGroup(rs.int_basic, pc, dest, cycle);
+    FindWBInGroup(rs.int_mult_div, pc, dest, cycle);
+    FindWBInGroup(rs.float_basic, pc, dest, cycle);
+    FindWBInGroup(rs.float_mult_div, pc, dest, cycle);
 }
 
-void Thread::buscarWBNoGrupo(std::vector<RS>& grupo, int pc, const Registrador& dest, int ciclo) {
-    for (RS& r : grupo) {
-        if (!r.getBusy() || r.getFaseInstrucao() != FaseInstrucao::WB) continue;
-        if (r.getInstrucaoAtual().getPC() != pc) continue;
-        if (dest.getTipo() == 'Z' || dest.getId() < 0 || dest.getId() >= NUM_REGISTRADORES) continue;
-        std::string rs_id = r.getId();
-        if (dest.getTipo() == 'F') {
-            int ciclo_inicio = cdb.F[dest.getId()].getCicloInicioRS(rs_id);
-            cdb.F[dest.getId()].desalocarRS(rs_id, ciclo_inicio, ciclo);
-        } else if (dest.getTipo() == 'R') {
-            int ciclo_inicio = cdb.R[dest.getId()].getCicloInicioRS(rs_id);
-            cdb.R[dest.getId()].desalocarRS(rs_id, ciclo_inicio, ciclo);
+void Thread::FindWBInGroup(std::vector<ReservationStation>& group, int pc, const Register& dest, int cycle) {
+    for (ReservationStation& r : group) {
+        if (!r.GetBusy() || r.GetInstructionPhase() != INSTRUCTION_PHASE::WB) continue;
+        if (r.GetCurrentInstruction().GetPC() != pc) continue;
+        if (dest.GetType() == 'Z' || dest.GetId() < 0 || dest.GetId() >= num_registers) continue;
+        std::string rs_id = r.GetId();
+        if (dest.GetType() == 'F') {
+            int start_cycle = cdb.F[dest.GetId()].GetRSCycleStart(rs_id);
+            cdb.F[dest.GetId()].DeallocateRS(rs_id, start_cycle, cycle);
+        } else if (dest.GetType() == 'R') {
+            int start_cycle = cdb.R[dest.GetId()].GetRSCycleStart(rs_id);
+            cdb.R[dest.GetId()].DeallocateRS(rs_id, start_cycle, cycle);
         }
-        resolverDependenciaNoGrupo(rs.load, rs_id, dest);
-        resolverDependenciaNoGrupo(rs.store, rs_id, dest);
-        resolverDependenciaNoGrupo(rs.int_basico, rs_id, dest);
-        resolverDependenciaNoGrupo(rs.int_mult_div, rs_id, dest);
-        resolverDependenciaNoGrupo(rs.float_basico, rs_id, dest);
-        resolverDependenciaNoGrupo(rs.float_mult_div, rs_id, dest);
+        ResolveDependencyInGroup(rs.load, rs_id, dest);
+        ResolveDependencyInGroup(rs.store, rs_id, dest);
+        ResolveDependencyInGroup(rs.int_basic, rs_id, dest);
+        ResolveDependencyInGroup(rs.int_mult_div, rs_id, dest);
+        ResolveDependencyInGroup(rs.float_basic, rs_id, dest);
+        ResolveDependencyInGroup(rs.float_mult_div, rs_id, dest);
     }
 }
 
-void Thread::resolverDependenciaNoGrupo(std::vector<RS>& grupo, const std::string& rs_id, const Registrador& dest) {
-    for (RS& dep : grupo)
-        if (dep.getBusy()) dep.resolverDependencia(rs_id, dest);
+void Thread::ResolveDependencyInGroup(std::vector<ReservationStation>& group, const std::string& rs_id, const Register& dest) {
+    for (ReservationStation& dep : group)
+        if (dep.GetBusy()) dep.ResolveDependency(rs_id, dest);
 }
 
-void Thread::detectarTransicoesDeFase(int ciclo) {
-    std::vector<Evento> eventos;
-    coletarEventosDeTransicao(eventos, ciclo);
+void Thread::DetectPhaseTransitions(int cycle) {
+    std::vector<EVENT> events;
+    CollectTransitionEvents(events, cycle);
 
-    ordenarEventosPorPC(eventos);
+    SortEventsByPC(events);
 
-    for (const Evento& e : eventos)
-        processarTransicao(e, ciclo);
+    for (const EVENT& e : events)
+        ProcessTransition(e, cycle);
 }
 
-void Thread::ordenarEventosPorPC(std::vector<Evento>& eventos) const {
-    sort_utils::insertionSort(eventos, pcDeEvento);
+void Thread::SortEventsByPC(std::vector<EVENT>& events) const {
+    sort_utils::insertionSort(events, pcDeEvento);
 }
 
-void Thread::coletarEventosDeTransicao(std::vector<Evento>& eventos, int ciclo) {
-    coletarEventosDoGrupo(rs.load, eventos, ciclo);
-    coletarEventosDoGrupo(rs.store, eventos, ciclo);
-    coletarEventosDoGrupo(rs.int_basico, eventos, ciclo);
-    coletarEventosDoGrupo(rs.int_mult_div, eventos, ciclo);
-    coletarEventosDoGrupo(rs.float_basico, eventos, ciclo);
-    coletarEventosDoGrupo(rs.float_mult_div, eventos, ciclo);
+void Thread::CollectTransitionEvents(std::vector<EVENT>& events, int cycle) {
+    CollectEventsFromGroup(rs.load, events, cycle);
+    CollectEventsFromGroup(rs.store, events, cycle);
+    CollectEventsFromGroup(rs.int_basic, events, cycle);
+    CollectEventsFromGroup(rs.int_mult_div, events, cycle);
+    CollectEventsFromGroup(rs.float_basic, events, cycle);
+    CollectEventsFromGroup(rs.float_mult_div, events, cycle);
 }
 
-void Thread::coletarEventosDoGrupo(std::vector<RS>& grupo, std::vector<Evento>& eventos, int ciclo) {
-    for (RS& r : grupo) {
-        if (!r.getBusy()) continue;
-        FaseInstrucao fase_antes = r.getFaseInstrucao();
-        if (r.atualizaContagem(uf, ciclo)) {
-            eventos.push_back({
-                r.getInstrucaoAtual().getPC(),
-                fase_antes,
-                r.getFaseInstrucao(),
-                r.getInstrucaoAtual().getTipoInstrucao()
+void Thread::CollectEventsFromGroup(std::vector<ReservationStation>& group, std::vector<EVENT>& events, int cycle) {
+    for (ReservationStation& r : group) {
+        if (!r.GetBusy()) continue;
+        INSTRUCTION_PHASE phase_before = r.GetInstructionPhase();
+        if (r.UpdateCountdown(fu, cycle)) {
+            events.push_back({
+                r.GetCurrentInstruction().GetPC(),
+                phase_before,
+                r.GetInstructionPhase(),
+                r.GetCurrentInstruction().GetInstructionType()
             });
         }
     }
 }
 
-void Thread::processarTransicao(const Evento& e, int ciclo) {
+void Thread::ProcessTransition(const EVENT& e, int cycle) {
     int pc             = e.pc;
-    bool tem_mem       = (e.tipo == TipoInstrucao::LOAD || e.tipo == TipoInstrucao::STORE);
-    bool store_com_rob = (e.tipo == TipoInstrucao::STORE && tem_rob);
+    bool has_mem       = (e.type == INSTRUCTION_TYPE::LOAD || e.type == INSTRUCTION_TYPE::STORE);
+    bool store_with_rob = (e.type == INSTRUCTION_TYPE::STORE && has_rob);
 
-    if (e.fase_antes == FaseInstrucao::EX && e.fase_depois == FaseInstrucao::MEM) {
-        tabela_de_instrucoes[pc].ciclo_EX.push_back(ciclo);
-        if (store_com_rob)
-            adicionarWBPendente(pc);
-    } else if (e.fase_depois == FaseInstrucao::WB) {
-        if (tem_mem && !store_com_rob)
-            adicionarCicloMEM(pc, ciclo);
-        else if (!tem_mem)
-            adicionarCicloEX(pc, ciclo);
-        adicionarWBPendente(pc);
+    if (e.phase_before == INSTRUCTION_PHASE::EX && e.phase_after == INSTRUCTION_PHASE::MEM) {
+        instruction_table[pc].ex_cycles.push_back(cycle);
+        if (store_with_rob)
+            AddPendingWB(pc);
+    } else if (e.phase_after == INSTRUCTION_PHASE::WB) {
+        if (has_mem && !store_with_rob)
+            AddMemCycle(pc, cycle);
+        else if (!has_mem)
+            AddExCycle(pc, cycle);
+        AddPendingWB(pc);
     }
 }
 
-// COMMIT:
-
-void Thread::Commit(int ciclo) {
-    if (!tem_rob) return;
+// ─── ESTÁGIO COMMIT ──────────────────────────────────────────────
+void Thread::Commit(int cycle) {
+    if (!has_rob) return;
 
     int escritas{};
-    while (!rob.empty() && escritas < uf.commit){
-        LinhaTabela& linha{tabela_de_instrucoes[ponteiro_commit]};
-        TipoInstrucao tipo = linha.instrucao.getTipoInstrucao();
-        bool store_com_rob = (tipo == TipoInstrucao::STORE && tem_rob);
+    while (!rob.empty() && escritas < fu.commit){
+        TABLE_ROW& linha{instruction_table[commit_pointer]};
+        INSTRUCTION_TYPE tipo = linha.instruction.GetInstructionType();
+        bool store_with_rob = (tipo == INSTRUCTION_TYPE::STORE && has_rob);
         bool pronto = false;
 
-        if (store_com_rob) {
-            if (linha.ciclo_MEM.empty()) {
-                linha.ciclo_MEM.push_back(ciclo);
+        if (store_with_rob) {
+            if (linha.mem_cycles.empty()) {
+                linha.mem_cycles.push_back(cycle);
             }
-            if (linha.ciclo_MEM.size() == 1) {
-                int fim_mem = linha.ciclo_MEM[0] + linha.instrucao.getLatenciaMEM() - 1;
-                if (ciclo >= fim_mem) {
-                    linha.ciclo_MEM.pop_back();
+            if (linha.mem_cycles.size() == 1) {
+                int fim_mem = linha.mem_cycles[0] + linha.instruction.GetMemLatency() - 1;
+                if (cycle >= fim_mem) {
+                    linha.mem_cycles.pop_back();
                     pronto = true;
                 }
             }
-        } else if (tipo == TipoInstrucao::BRANCH) {
-            pronto = (linha.ciclo_EX.size() == 2);
+        } else if (tipo == INSTRUCTION_TYPE::BRANCH) {
+            pronto = (linha.ex_cycles.size() == 2);
         } else {
-            pronto = (linha.ciclo_WR != 0 && linha.ciclo_WR < ciclo);
+            pronto = (linha.wr_cycle != 0 && linha.wr_cycle < cycle);
         }
 
         if (pronto) {
-            linha.ciclo_commit = ciclo;
-            num_instrucoes_commitadas++;
+            linha.commit_cycle = cycle;
+            num_committed_instructions++;
             escritas++;
-            ponteiro_commit++;
+            commit_pointer++;
             rob.erase(rob.begin());
-            if (tipo == TipoInstrucao::BRANCH && !(tem_previsor && tem_rob)) break;
+            if (tipo == INSTRUCTION_TYPE::BRANCH && !(has_predictor && has_rob)) break;
         }
         else break;
     }
 }
 
-// UTILITÁRIOS
+// ─── UTILITÁRIOS ─────────────────────────────────────────────────
 
-void Thread::liberarRSPorRegistrador(
-    std::vector<RS>& rs,
-    Registrador      reg_destino,
-    int              ciclo
+void Thread::ReleaseRSByRegister(
+    std::vector<ReservationStation>& rs,
+    Register      reg_destino,
+    int              cycle
 ){
-    for(RS& r : rs){
-        if(!r.getBusy()) continue;
-        Registrador aux{r.getInstrucaoAtual().getRegDestino()};
-        if(r.getFaseInstrucao() == FaseInstrucao::WB &&
-            aux.getTipo() == reg_destino.getTipo() &&
-            aux.getId() == reg_destino.getId())
-            r.liberar(ciclo);
+    for(ReservationStation& r : rs){
+        if(!r.GetBusy()) continue;
+        Register aux{r.GetCurrentInstruction().GetDestRegister()};
+        if(r.GetInstructionPhase() == INSTRUCTION_PHASE::WB &&
+            aux.GetType() == reg_destino.GetType() &&
+            aux.GetId() == reg_destino.GetId())
+            r.Release(cycle);
     }
 }
 
-void Thread::liberarRSPorPC(
-    std::vector<RS>& grupo,
+void Thread::ReleaseRSByPC(
+    std::vector<ReservationStation>& group,
     int              pc,
-    int              ciclo
+    int              cycle
 ){
-    for (RS& r : grupo) {
-        if (r.getBusy() && r.getFaseInstrucao() == FaseInstrucao::WB
-            && r.getInstrucaoAtual().getPC() == pc)
-            r.liberar(ciclo);
+    for (ReservationStation& r : group) {
+        if (r.GetBusy() && r.GetInstructionPhase() == INSTRUCTION_PHASE::WB
+            && r.GetCurrentInstruction().GetPC() == pc)
+            r.Release(cycle);
     }
 }
 
-void Thread::registrarIssue(int pc, int ciclo) {
-    tabela_de_instrucoes[pc].ciclo_issue = ciclo;
-    tabela_de_instrucoes[pc].posicao_PC  = pc;
+// ─── ENCAPSULAMENTO ──────────────────────────────────────────────
+
+void Thread::RegisterIssue(int pc, int cycle) {
+    instruction_table[pc].issue_cycle = cycle;
+    instruction_table[pc].pc_position  = pc;
 }
 
-void Thread::adicionarCicloEX(int pc, int ciclo) {
-    tabela_de_instrucoes[pc].ciclo_EX.push_back(ciclo);
+void Thread::AddExCycle(int pc, int cycle) {
+    instruction_table[pc].ex_cycles.push_back(cycle);
 }
 
-void Thread::adicionarCicloMEM(int pc, int ciclo) {
-    tabela_de_instrucoes[pc].ciclo_MEM.push_back(ciclo);
+void Thread::AddMemCycle(int pc, int cycle) {
+    instruction_table[pc].mem_cycles.push_back(cycle);
 }
 
-void Thread::definirWR(int pc, int ciclo) {
-    tabela_de_instrucoes[pc].ciclo_WR = ciclo;
+void Thread::SetWR(int pc, int cycle) {
+    instruction_table[pc].wr_cycle = cycle;
 }
 
-int Thread::proximoWB() const {
-    return buffer_WB.front();
+int Thread::NextWB() const {
+    return wb_buffer.front();
 }
 
-void Thread::removerWB() {
-    buffer_WB.erase(buffer_WB.begin());
+void Thread::RemoveWB() {
+    wb_buffer.erase(wb_buffer.begin());
 }
 
-void Thread::adicionarWB(int pc) {
-    buffer_WB.push_back(pc);
+void Thread::AddWB(int pc) {
+    wb_buffer.push_back(pc);
 }
 
-void Thread::adicionarWBPendente(int pc) {
-    buffer_WB_pendente.push_back(pc);
+void Thread::AddPendingWB(int pc) {
+    pending_wb_buffer.push_back(pc);
 }
 
-void Thread::flushBufferWBPendente() {
-    for (int pc : buffer_WB_pendente)
-        buffer_WB.push_back(pc);
-    buffer_WB_pendente.clear();
+void Thread::FlushPendingWBBuffer() {
+    for (int pc : pending_wb_buffer)
+        wb_buffer.push_back(pc);
+    pending_wb_buffer.clear();
 }
