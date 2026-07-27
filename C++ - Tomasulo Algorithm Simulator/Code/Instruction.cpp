@@ -130,13 +130,13 @@ void Instruction::SetLatencies(){
 void Instruction::SetAttributes(
     std::vector<std::string>& tokens
 ){
-    // LOAD  R1 n(R2)    => regDestino = R1, J = -,   K = R2
-    // STORE R1 n(R2)    => regDestino = -,  J = R1,  K = R2
-    // BEQ   R1 R2 label => regDestino = -,  J = R1,  K = R2
-    // BNEZ  R1 label    => regDestino = -,  J = R1,  K = -
-    // JR    R1          => regDestino = -,  J = R1,  K = -
-    // J     label       => regDestino = -,  J = -,   K = -
-    // ADD   R1 R2 R3    => regDestino = R1, J = R2,  K = R3
+    // LOAD  R1 n(R2)    => dest_register = R1, J = -,   K = R2
+    // STORE R1 n(R2)    => dest_register = -,  J = R1,  K = R2
+    // BEQ   R1 R2 label => dest_register = -,  J = R1,  K = R2
+    // BNEZ  R1 label    => dest_register = -,  J = R1,  K = -
+    // JR    R1          => dest_register = -,  J = R1,  K = -
+    // J     label       => dest_register = -,  J = -,   K = -
+    // ADD   R1 R2 R3    => dest_register = R1, J = R2,  K = R3
     if (type == INSTRUCTION_TYPE::LOAD){
         dest_register = Register(tokens[1]);
         reg_k         = Register(tokens[3]);

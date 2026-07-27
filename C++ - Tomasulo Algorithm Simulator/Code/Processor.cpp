@@ -83,7 +83,7 @@ bool Processor::ExecuteExMemWr() {
 // Privado:
 // Loop de dispatch até dispatch_width. A política de escalonamento varia conforme mt_model:
 // - FINE_GRAINED mantém thread até falhar;
-// - SMT rotaciona a cada despacho,
+// - SMT rotaciona a cada dispatch,
 // - BRANCH s/ previsor interrompe o ciclo.
 void Processor::ExecuteIssue() {
     int despachadas   = 0;
@@ -101,7 +101,7 @@ void Processor::ExecuteIssue() {
                 && !has_predictor) // Instrução é um branch
                 break;
             // SMT: rotaciona após issue bem-sucedido
-            // (garante alternância entre threads a cada despacho)
+            // (garante alternância entre threads a cada dispatch)
             if (mt_model == MULTITHREADING_MODEL::SMT) AdvanceRoundRobinPointer();
         } else {
             voltas++;

@@ -27,7 +27,7 @@ std::string CycleStr(
     return (c == 0 ? "--" : std::to_string(c));
 }
 
-std::string VecStr(
+std::string FormatCycles(
     const std::vector<int>& v
 ){
     if (v.empty()) return "--";
@@ -45,7 +45,7 @@ std::string VecStr(
     return oss.str();
 }
 
-int TotalWidth(
+int SeparatorWidth(
     bool rob
 ){
     int total =
@@ -192,7 +192,7 @@ void PrintTable(
 
     std::cout << '\n';
 
-    std::cout << std::string(TotalWidth(rob), '-') << '\n';
+    std::cout << std::string(SeparatorWidth(rob), '-') << '\n';
 
     for (const auto& l : table) {
         std::cout << std::left
@@ -206,10 +206,10 @@ void PrintTable(
                   << CycleStr(l.issue_cycle)
 
                   << std::setw(W_EX)
-                  << VecStr(l.ex_cycles)
+                  << FormatCycles(l.ex_cycles)
 
                   << std::setw(W_MEM)
-                  << VecStr(l.mem_cycles)
+                  << FormatCycles(l.mem_cycles)
 
                   << std::setw(W_WR)
                   << CycleStr(l.wr_cycle);

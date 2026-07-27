@@ -3,7 +3,7 @@
 
 namespace processor {
 
-static bool mesmoRegistrador(const Register& a, const Register& b) {
+static bool SameRegister(const Register& a, const Register& b) {
     return a.GetType() != 'Z' && a.GetType() == b.GetType() && a.GetId() == b.GetId();
 }
 
@@ -21,7 +21,7 @@ int ReservationStation::GetFUPosition() const { return fu_position;          }
 INSTRUCTION_PHASE ReservationStation::GetInstructionPhase() const { return phase; }
 
 // Público:
-// const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
+// const & para evitar cópia (não usado em types pequenos por ganho marginal pequeno)
 const std::string& ReservationStation::GetId() const { return id;       }
 
 // Público:
@@ -31,10 +31,10 @@ const std::string& ReservationStation::GetQj() const { return Qj.first; }
 const std::string& ReservationStation::GetQk() const { return Qk.first; }
 
 // Público:
-const std::vector<int>& ReservationStation::GetTimes() const { return allocation_times; }
+const std::vector<int>& ReservationStation::GetTimes()                const { return allocation_times;       }
 
 // Público:
-const Instruction& ReservationStation::GetCurrentInstruction() const { return current_instruction; }
+const Instruction& ReservationStation::GetCurrentInstruction()        const { return current_instruction;    }
 
 // Público:
 const std::vector<std::string>& ReservationStation::GetInstructions() const { return allocated_instructions; }
@@ -103,7 +103,7 @@ void ReservationStation::ReadSourceOperand(
     std::string tag = regCDB.GetCurrentRS();
     if (tag.empty()) {
         V = src;
-    } else if (dest_is_valid && mesmoRegistrador(src, dest) && tag == id) {
+    } else if (dest_is_valid && SameRegister(src, dest) && tag == id) {
         V = src;
     } else {
         Q = {tag, regCDB.GetRSCycleStart(tag)};
@@ -132,8 +132,8 @@ bool ReservationStation::UpdateDependencies(
 
     ResolveBothDependencies(cdb);
 
-    INSTRUCTION_TYPE tipo = current_instruction.GetInstructionType();
-    if (tipo == INSTRUCTION_TYPE::LOAD || tipo == INSTRUCTION_TYPE::STORE)
+    INSTRUCTION_TYPE type = current_instruction.GetInstructionType();
+    if (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE)
         return TryAllocateLoadStore(cdb, fu, cycle);
     return TryAllocateNormal(cdb, fu, cycle);
 }
@@ -176,9 +176,9 @@ bool ReservationStation::TryAllocateLoadStore(
         phase = INSTRUCTION_PHASE::EX;
         return true;
     }
-    INSTRUCTION_TYPE tipo = current_instruction.GetInstructionType();
+    INSTRUCTION_TYPE type = current_instruction.GetInstructionType();
     if (phase == INSTRUCTION_PHASE::MEM && allocation_countdown == -1
-        && ((tipo == INSTRUCTION_TYPE::STORE && Qj.first.empty()) || tipo == INSTRUCTION_TYPE::LOAD)) {
+        && ((type == INSTRUCTION_TYPE::STORE && Qj.first.empty()) || type == INSTRUCTION_TYPE::LOAD)) {
         fu_position = FindFreeFU(fu, cycle, INSTRUCTION_PHASE::MEM);
         if (fu_position == -1) return false;
         allocation_countdown = current_instruction.GetMemLatency();
@@ -207,19 +207,19 @@ bool ReservationStation::TryAllocateNormal(
 
 // Privado:
 // Recebe a fase em que a instrução VAI ENTRAR para escolher a UF correta:
-// - LOAD/STORE em EX  → cálculo de endereço → ula_int_basico
-// - LOAD/STORE em MEM → acesso à memória    → acessar_memoria
+// - LOAD/STORE em EX  → cálculo de endereço → int_basic_alu
+// - LOAD/STORE em MEM → acesso à memória    → memory_access
 int ReservationStation::FindFreeFU(
     FUNCTIONAL_UNITS& fu,
     int               cycle,
     INSTRUCTION_PHASE target_phase
 ) const {
-    INSTRUCTION_TYPE tipo = current_instruction.GetInstructionType();
-    if (tipo == INSTRUCTION_TYPE::LOAD || tipo == INSTRUCTION_TYPE::STORE) {
+    INSTRUCTION_TYPE type = current_instruction.GetInstructionType();
+    if (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE) {
         if (target_phase == INSTRUCTION_PHASE::EX)  return AllocateFreeFU(fu.int_basic_alu, cycle);
         else                                        return AllocateFreeFU(fu.memory_access, cycle);
     }
-    switch (tipo) {
+    switch (type) {
         case INSTRUCTION_TYPE::INT_MUL:
         case INSTRUCTION_TYPE::INT_DIV:      return AllocateFreeFU(fu.int_mult_div_alu, cycle);
         case INSTRUCTION_TYPE::FLOAT_BASIC:  return AllocateFreeFU(fu.float_basic_alu, cycle);
@@ -247,8 +247,9 @@ int ReservationStation::AllocateFreeFU(
 }
 
 // Público:
-// Retorna true quando uma fase termina. Já avança 'fase' para o próximo estado
-// para que executaWrTodos possa distinguir as transições sem ambiguidade.
+// Decrementa o contador de ciclos da fase atual.
+// Retorna true quando a fase termina (countdown chegou a 0), já tendo liberado a FU e avançado 'phase' para o próximo estado (EX->MEM ou EX/MEM->WB).
+// O caller compara o phase anterior com o atual para identificar a transição.
 bool ReservationStation::UpdateCountdown(
     FUNCTIONAL_UNITS& fu,
     int               cycle
@@ -258,16 +259,16 @@ bool ReservationStation::UpdateCountdown(
     allocation_countdown--;
     if (allocation_countdown > 0) return false;
 
-    INSTRUCTION_TYPE tipo = current_instruction.GetInstructionType();
+    INSTRUCTION_TYPE type = current_instruction.GetInstructionType();
 
-    if (tipo == INSTRUCTION_TYPE::LOAD && phase == INSTRUCTION_PHASE::EX) {
+    if (type == INSTRUCTION_TYPE::LOAD && phase == INSTRUCTION_PHASE::EX) {
         ReleaseFU(fu, cycle, INSTRUCTION_PHASE::EX);
         allocation_countdown = -1;
         phase = INSTRUCTION_PHASE::MEM;
         return true;
     }
 
-    if (tipo == INSTRUCTION_TYPE::STORE && phase == INSTRUCTION_PHASE::EX) {
+    if (type == INSTRUCTION_TYPE::STORE && phase == INSTRUCTION_PHASE::EX) {
         ReleaseFU(fu, cycle, INSTRUCTION_PHASE::EX);
         allocation_countdown = -1;
         phase = INSTRUCTION_PHASE::MEM;
@@ -286,20 +287,20 @@ bool ReservationStation::UpdateCountdown(
 
 // Privado:
 // Recebe a fase que ACABOU para saber de qual grupo liberar:
-// - LOAD/STORE saindo de EX  → liberou ula_int_basico
-// - LOAD/STORE saindo de MEM → liberou acessar_memoria
+// - LOAD/STORE saindo de EX  → liberou int_basic_alu
+// - LOAD/STORE saindo de MEM → liberou memory_access
 void ReservationStation::ReleaseFU(
     FUNCTIONAL_UNITS& fu,
     int               cycle,
     INSTRUCTION_PHASE finished_phase
 ){
     if (fu_position == -1) return;
-    INSTRUCTION_TYPE tipo = current_instruction.GetInstructionType();
-    if (tipo == INSTRUCTION_TYPE::LOAD || tipo == INSTRUCTION_TYPE::STORE) {
+    INSTRUCTION_TYPE type = current_instruction.GetInstructionType();
+    if (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE) {
         if (finished_phase == INSTRUCTION_PHASE::EX) DeallocateFUFromGroup(fu.int_basic_alu, cycle);
         else                                         DeallocateFUFromGroup(fu.memory_access, cycle);
     } else {
-        switch (tipo) {
+        switch (type) {
             case INSTRUCTION_TYPE::INT_MUL:
             case INSTRUCTION_TYPE::INT_DIV:      DeallocateFUFromGroup(fu.int_mult_div_alu, cycle);   break;
             case INSTRUCTION_TYPE::FLOAT_BASIC:  DeallocateFUFromGroup(fu.float_basic_alu, cycle);    break;
@@ -324,7 +325,8 @@ void ReservationStation::DeallocateFUFromGroup(
 }
 
 // Público:
-// Broadcast do CDB: se esta RS está esperando por rs_id com aquele ciclo_inicio, captura o valor agora. O par {rs_id, ciclo_inicio} identifica unicamente o produtor.
+// Resolve dependência de Qj/Qk: se esta RS estiver esperando pelo produtor 'rs_id', captura o valor e limpa a pendência.
+// Nota: apenas o rs_id é verificado (não o start_cycle) porque uma RS ocupada sempre tem suas dependências resolvidas antes de ser liberada, não havendo Qj/Qk stale de alocações anteriores.
 void ReservationStation::ResolveDependency(
     const std::string& rs_id,
     const Register& value

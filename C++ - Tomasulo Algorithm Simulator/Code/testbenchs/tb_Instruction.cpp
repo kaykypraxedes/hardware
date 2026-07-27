@@ -1,6 +1,6 @@
 // ──────────────────────────────────────────────────────────────────────────
 //  tb_Instruction.cpp  —  Testbench isolado de Instruction.cpp
-//  Compile: g++ -o tb_Instrucao tb_Instrucao.cpp ../Componentes.cpp ../Instrucao.cpp
+//  Compile: g++ -o tb_Instruction tb_Instruction.cpp ../Components.cpp ../Instruction.cpp
 // ──────────────────────────────────────────────────────────────────────────
 #include "../headers/Instruction.h"
 #include "../headers/Components.h"

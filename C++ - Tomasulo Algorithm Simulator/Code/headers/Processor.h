@@ -57,7 +57,7 @@ class Processor {
         int                  dispatch_width{1};
         int                  current_cycle{1};
         int                  thread_pointer{};
-        int                  num_ufs_por_tipo{1};
+        int                  fus_per_type{1};
         bool                 has_predictor;
         PROCESSOR_TYPE       type;
         MULTITHREADING_MODEL mt_model;

@@ -1,6 +1,6 @@
 // ──────────────────────────────────────────────────────────────────────────
 //  tb_Thread.cpp  —  Testbench isolado de Thread.cpp
-//  Compile: g++ -o tb_Thread tb_Thread.cpp ../Componentes.cpp ../Instrucao.cpp ../ReservationStations.cpp ../Thread.cpp
+//  Compile: g++ -o tb_Thread tb_Thread.cpp ../Components.cpp ../Instruction.cpp ../ReservationStations.cpp ../Thread.cpp
 // ──────────────────────────────────────────────────────────────────────────
 #include "../headers/Thread.h"
 #include "../headers/Instruction.h"
@@ -92,7 +92,7 @@ int main() {
         Thread t(prog, false, NUM_RS_PADRAO, NUM_FUS_PADRAO);
 
         t.Issue(1);
-        check("estado ainda FREE após BNEZ (controle de despacho é do Processador)",
+        check("estado ainda FREE após BNEZ (controle de dispatch é do Processor)",
               t.GetThreadState() == THREAD_STATE::FREE);
         check("PC avança para 1 após issue do BNEZ", t.GetPC() == 1);
     }

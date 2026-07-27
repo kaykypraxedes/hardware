@@ -1,6 +1,6 @@
 // ──────────────────────────────────────────────────────────────────────────
 //  tb_Processor.cpp  —  Testbench de integração de Processor
-//  Compile: g++ -o tb_Processador tb_Processador.cpp ../Componentes.cpp ../Instrucao.cpp ../ReservationStations.cpp ../Thread.cpp ../Processador.cpp
+//  Compile: g++ -o tb_Processor tb_Processor.cpp ../Components.cpp ../Instruction.cpp ../ReservationStations.cpp ../Thread.cpp ../Processor.cpp
 // ──────────────────────────────────────────────────────────────────────────
 #include "../headers/Processor.h"
 #include "../headers/Instruction.h"

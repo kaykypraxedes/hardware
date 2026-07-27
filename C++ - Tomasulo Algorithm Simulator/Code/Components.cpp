@@ -56,7 +56,7 @@ int Register::IdentifyId(
 void Register::ToggleBusy() { busy = !busy; }
 
 // Público:
-// Retorna o produtor pendente mais recente (último RS_alocadas com tempo_fim == -1).
+// Retorna o produtor pendente mais recente (último allocated_rs com end_times == -1).
 // É este que novas instruções devem aguardar em caso de WAW.
 std::string Register::GetCurrentRS() const {
     for (int i = (int)allocated_rs.size() - 1; i >= 0; i--) {
@@ -73,8 +73,8 @@ bool Register::HasPendingProducer() const {
 }
 
 // Público:
-// Retorna o ciclo_inicio do produtor pendente mais recente com esse nome.
-// Usado pelo addIssue para montar o par (rs_id, ciclo_inicio) de Qj/Qk.
+// Retorna o start_cycle do produtor pendente mais recente com esse nome.
+// Usado pelo AddIssue para montar o par (rs_id, start_cycle) de Qj/Qk.
 int Register::GetRSCycleStart(
     const std::string& rs_id
 ) const {
@@ -111,8 +111,8 @@ std::vector<int> Register::GetAllocationTimes() const {
 }
 
 // Público:
-// Registra o novo produtor. tempo_fim começa em -1 (pendente).
-// Múltiplos produtores pendentes (WAW) ficam na sequência de RS_alocadas.
+// Registra o novo produtor. end_times começa em -1 (pendente).
+// Múltiplos produtores pendentes (WAW) ficam na sequência de allocated_rs.
 void Register::AllocateRS(
     const std::string& rs,
     int start
@@ -124,7 +124,7 @@ void Register::AllocateRS(
 }
 
 // Público:
-// Usa o par (rs_id, ciclo_inicio) para identificar a entrada exata, evitando ambiguidade quando o mesmo RS foi reutilizado múltiplas vezes (WAW).
+// Usa o par (rs_id, start_cycle) para identificar a entrada exata, evitando ambiguidade quando o mesmo RS foi reutilizado múltiplas vezes (WAW).
 void Register::DeallocateRS(
     const std::string& rs_id,
     int start_cycle,

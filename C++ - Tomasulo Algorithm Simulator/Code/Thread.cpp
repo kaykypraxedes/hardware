@@ -7,13 +7,13 @@ namespace processor {
 static const int NUM_RS_GROUPS = 6;
 static const int NUM_FU_GROUPS = 6;
 
-static int pcDeRS(
+static int PCOfRS(
     ReservationStation* r
 ){
     return r->GetCurrentInstruction().GetPC();
 }
 
-static int pcDeEvento(
+static int PCOfEvent(
     const EVENT& e
 ){
     return e.pc;
@@ -22,7 +22,7 @@ static int pcDeEvento(
 static void SortCandidatesByPC(
     std::vector<ReservationStation*>& candidates
 ){
-    sort_utils::insertionSort(candidates, pcDeRS);
+    sort_utils::insertionSort(candidates, PCOfRS);
 }
 
 static void ResolveDependencyInGroup(
@@ -37,20 +37,20 @@ static void ResolveDependencyInGroup(
 static void SortEventsByPC(
     std::vector<EVENT>& events
 ){
-    sort_utils::insertionSort(events, pcDeEvento);
+    sort_utils::insertionSort(events, PCOfEvent);
 }
 
 static void ReleaseRSByRegister(
     std::vector<ReservationStation>& rs,
-    Register      reg_destino,
+    Register      dest_reg,
     int              cycle
 ){
     for(ReservationStation& r : rs){
         if(!r.GetBusy()) continue;
         Register aux{r.GetCurrentInstruction().GetDestRegister()};
         if(r.GetInstructionPhase() == INSTRUCTION_PHASE::WB &&
-            aux.GetType() == reg_destino.GetType() &&
-            aux.GetId() == reg_destino.GetId())
+            aux.GetType() == dest_reg.GetType() &&
+            aux.GetId() == dest_reg.GetId())
             r.Release(cycle);
     }
 }
@@ -127,7 +127,7 @@ Thread::Thread(
     has_predictor      (has_predictor),
     switch_instructions(switch_instructions)
 {
-    int i{};
+    int i{}; // Usado dentro do for para obter o PC de cada instrução
     for (const std::string& instr : assembly)
         instruction_table.push_back({Instruction(i++, instr), 0, 0, {}, {}, 0, 0});
     InitializeComponents(num_rs, num_fus, dispatch_width);
@@ -186,11 +186,11 @@ bool Thread::Issue(
     if (rob.size() >= static_cast<size_t>(rob_capacity)) return false;
 
     Instruction& instruction = instruction_table[PC].instruction;
-    INSTRUCTION_TYPE tipo   = instruction.GetInstructionType();
-    if (tipo == INSTRUCTION_TYPE::NONEXISTENT) { PC++; return false; }
+    INSTRUCTION_TYPE type   = instruction.GetInstructionType();
+    if (type == INSTRUCTION_TYPE::NONEXISTENT) { PC++; return false; }
 
     std::vector<ReservationStation>* group = nullptr;
-    switch (tipo) {
+    switch (type) {
         case INSTRUCTION_TYPE::LOAD:         group = &rs.load;          break;
         case INSTRUCTION_TYPE::STORE:        group = &rs.store;         break;
         case INSTRUCTION_TYPE::FLOAT_BASIC:  group = &rs.float_basic;   break;
@@ -206,7 +206,7 @@ bool Thread::Issue(
             RegisterIssue(PC, cycle);
             if(has_rob) rob.push_back(instruction);
             PC++;
-            if (tipo == INSTRUCTION_TYPE::BRANCH && !has_rob)
+            if (type == INSTRUCTION_TYPE::BRANCH && !has_rob)
                 unresolved_branch_pc = PC - 1;
             return true;
         }
@@ -273,8 +273,8 @@ void Thread::CollectCandidatesFromGroup(
         if (!r.GetBusy()) continue;
         int inst_pc = r.GetCurrentInstruction().GetPC();
         if (unresolved_branch_pc >= 0 && inst_pc > unresolved_branch_pc) continue;
-        INSTRUCTION_TYPE tipo = r.GetCurrentInstruction().GetInstructionType();
-        if (tipo == INSTRUCTION_TYPE::STORE && has_rob && r.GetInstructionPhase() == INSTRUCTION_PHASE::MEM)
+        INSTRUCTION_TYPE type = r.GetCurrentInstruction().GetInstructionType();
+        if (type == INSTRUCTION_TYPE::STORE && has_rob && r.GetInstructionPhase() == INSTRUCTION_PHASE::MEM)
             continue;
         candidates.push_back(&r);
     }
@@ -342,11 +342,11 @@ void Thread::PerformWriteResult(
 ){
     SortWBBuffer();
 
-    int escritas{};
-    while (!wb_buffer.empty() && escritas < fu.wr) {
+    int writes{};
+    while (!wb_buffer.empty() && writes < fu.wr) {
         int pc = NextWB();
-        INSTRUCTION_TYPE auxTipo{instruction_table[pc].instruction.GetInstructionType()};
-        bool store_with_rob = (auxTipo == INSTRUCTION_TYPE::STORE && has_rob);
+        INSTRUCTION_TYPE instr_type{instruction_table[pc].instruction.GetInstructionType()};
+        bool store_with_rob = (instr_type == INSTRUCTION_TYPE::STORE && has_rob);
 
         if (store_with_rob) {
             WriteBackStoreWithROB(pc, cycle);
@@ -356,7 +356,7 @@ void Thread::PerformWriteResult(
         WriteBackNormal(pc, cycle);
         RemoveWB();
         num_finished_instructions++;
-        if(auxTipo != INSTRUCTION_TYPE::BRANCH) escritas++;
+        if(instr_type != INSTRUCTION_TYPE::BRANCH) writes++;
     }
 }
 
@@ -396,7 +396,7 @@ void Thread::WriteBackStoreWithROB(
 
 // Privado:
 // 3 etapas: (1) marca WR para instruções c/ destino; (2) broadcast CDB p/ liberar
-// dependências; (3) switch por tipo p/ grupo RS correto (LOAD → rs.load, etc.)
+// dependências; (3) switch por type p/ grupo RS correto (LOAD → rs.load, etc.)
 void Thread::WriteBackNormal(
     int pc,
     int cycle
@@ -553,46 +553,46 @@ void Thread::AddPendingWB(
 // ─── COMMIT ───────────────────────────────────────────────────────
 // Público:
 // Apenas c/ ROB. Itera ROB em ordem (commit_pointer). Lógica de "pronto"
-// varia por tipo: STORE simula latência MEM, BRANCH espera 2 ciclos EX,
+// varia por type: STORE simula latência MEM, BRANCH espera 2 ciclos EX,
 // demais aguardam WR < ciclo atual. BRANCH s/ previsor trava no ciclo.
 void Thread::Commit(
     int cycle
 ){
     if (!has_rob) return;
 
-    int escritas{};
-    while (!rob.empty() && escritas < fu.commit){
-        TABLE_ROW& linha{instruction_table[commit_pointer]};
-        INSTRUCTION_TYPE tipo = linha.instruction.GetInstructionType();
-        bool store_with_rob = (tipo == INSTRUCTION_TYPE::STORE && has_rob);
+    int writes{};
+    while (!rob.empty() && writes < fu.commit){
+        TABLE_ROW& row{instruction_table[commit_pointer]};
+        INSTRUCTION_TYPE type = row.instruction.GetInstructionType();
+        bool store_with_rob = (type == INSTRUCTION_TYPE::STORE && has_rob);
         bool pronto = false;
 
         if (store_with_rob) {
-            if (linha.store_commit_state == STORE_COMMIT_STATE::IDLE) {
-                linha.store_commit_state = STORE_COMMIT_STATE::WAITING_MEM;
-                linha.mem_cycles.push_back(cycle);
+            if (row.store_commit_state == STORE_COMMIT_STATE::IDLE) {
+                row.store_commit_state = STORE_COMMIT_STATE::WAITING_MEM;
+                row.mem_cycles.push_back(cycle);
             }
-            if (linha.store_commit_state == STORE_COMMIT_STATE::WAITING_MEM) {
-                int fim_mem = linha.mem_cycles.back() + linha.instruction.GetMemLatency() - 1;
-                if (cycle >= fim_mem) {
-                    linha.store_commit_state = STORE_COMMIT_STATE::READY;
-                    linha.mem_cycles.pop_back();
+            if (row.store_commit_state == STORE_COMMIT_STATE::WAITING_MEM) {
+                int mem_end = row.mem_cycles.back() + row.instruction.GetMemLatency() - 1;
+                if (cycle >= mem_end) {
+                    row.store_commit_state = STORE_COMMIT_STATE::READY;
+                    row.mem_cycles.pop_back();
                     pronto = true;
                 }
             }
-        } else if (tipo == INSTRUCTION_TYPE::BRANCH) {
-            pronto = (linha.ex_cycles.size() == 2);
+        } else if (type == INSTRUCTION_TYPE::BRANCH) {
+            pronto = (row.ex_cycles.size() == 2);
         } else {
-            pronto = (linha.wr_cycle != 0 && linha.wr_cycle < cycle);
+            pronto = (row.wr_cycle != 0 && row.wr_cycle < cycle);
         }
 
         if (pronto) {
-            linha.commit_cycle = cycle;
+            row.commit_cycle = cycle;
             num_committed_instructions++;
-            escritas++;
+            writes++;
             commit_pointer++;
             rob.erase(rob.begin());
-            if (tipo == INSTRUCTION_TYPE::BRANCH && !(has_predictor && has_rob)) break;
+            if (type == INSTRUCTION_TYPE::BRANCH && !(has_predictor && has_rob)) break;
         }
         else break;
     }

@@ -63,7 +63,7 @@ class ReservationStation {
         INSTRUCTION_PHASE           phase;
         Register                    Vj;                     // Valor do operand J (se Qj vazio)
         Register                    Vk;                     // Valor do operand K (se Qk vazio)
-        std::pair<std::string, int> Qj{"", -1};             // Qj/Qk: {rs_id, ciclo_inicio} — produtor pendente
+        std::pair<std::string, int> Qj{"", -1};             // Qj/Qk: {rs_id, start_cycle} — produtor pendente
         std::pair<std::string, int> Qk{"", -1};             // par vazio {"", -1} = operando disponível
         std::vector<int>            allocation_times;       // De 2 em 2, início da alocação e fim da alocação
         std::vector<std::string>    allocated_instructions; // De 1 em 1, instruções alocadas na RS

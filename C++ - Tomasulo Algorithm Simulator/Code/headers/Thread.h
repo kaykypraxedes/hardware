@@ -72,7 +72,7 @@ class Thread {
         int          GetPC()          const;
         int          GetNumStalls()   const;
         THREAD_STATE GetThreadState() const;
-        // & const para evitar cópia (para tipos básicos e enums o ganho é marginal)
+        // const & para evitar cópia (para tipos básicos e enums o ganho é marginal)
         const CDB&                    GetCDB()   const;
         const RESERVATION_STATIONS&   GetRS()    const;
         const FUNCTIONAL_UNITS&       GetFU()    const;

@@ -24,7 +24,7 @@ class Register {
         int                             GetId()              const;
         bool                            GetBusy()            const;
         std::vector<int>                GetAllocationTimes() const;
-        std::string                     GetCurrentRS()       const; // retorna o produtor mais recente (último de RS_alocadas com tempo_fim == -1)
+        std::string                     GetCurrentRS()       const; // retorna o produtor mais recente (último de allocated_rs com end_times == -1)
         bool                            HasPendingProducer() const;
         // const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
         const std::vector<std::string>& GetAllocatedRS()     const;
@@ -36,7 +36,7 @@ class Register {
         ) const;
         int GetRSCycleStart(
             const std::string& rs_id
-        ) const; // ciclo_inicio do produtor pendente mais recente com esse nome
+        ) const; // start_cycle do produtor pendente mais recente com esse nome
         void AllocateRS(
             const std::string&,
             int

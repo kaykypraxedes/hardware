@@ -1,6 +1,6 @@
 // ──────────────────────────────────────────────────────────────────────────
 //  tb_ReservationStations.cpp  —  Testbench isolado de RS
-//  Compile: g++ -o tb_ReservationStations tb_ReservationStations.cpp ../Componentes.cpp ../Instrucao.cpp ../ReservationStations.cpp
+//  Compile: g++ -o tb_ReservationStations tb_ReservationStations.cpp ../Components.cpp ../Instruction.cpp ../ReservationStations.cpp
 // ──────────────────────────────────────────────────────────────────────────
 #include "../headers/ReservationStations.h"
 #include "../headers/Components.h"
@@ -161,8 +161,8 @@ int main() {
         check("LOAD: UpdateDependencies inicia MEM no ciclo 3", iniciou_mem);
         check("LOAD: countdown == latMEM == 1 após iniciar MEM", rs.GetCountdown() == 1);
 
-        bool fim_mem = rs.UpdateCountdown(fu, 3);
-        check("LOAD: UpdateCountdown sinaliza fim do MEM", fim_mem);
+        bool mem_end = rs.UpdateCountdown(fu, 3);
+        check("LOAD: UpdateCountdown sinaliza fim do MEM", mem_end);
         check("LOAD: fase == WB após MEM",                 rs.GetInstructionPhase() == INSTRUCTION_PHASE::WB);
     }
 
@@ -187,8 +187,8 @@ int main() {
         check("STORE: UpdateDependencies inicia MEM após dado liberado", mem_ok);
         check("STORE: fase == MEM", rs.GetInstructionPhase() == INSTRUCTION_PHASE::MEM);
 
-        bool fim_mem = rs.UpdateCountdown(fu, 4);
-        check("STORE: fim do MEM sinalizado", fim_mem);
+        bool mem_end = rs.UpdateCountdown(fu, 4);
+        check("STORE: fim do MEM sinalizado", mem_end);
         check("STORE: fase == WB", rs.GetInstructionPhase() == INSTRUCTION_PHASE::WB);
     }
 

@@ -79,9 +79,9 @@ int main() {
     secao("DeallocateRS(rs_id, start_cycle, end_cycle)");
     {
         Register r("R2");
-        std::string rs = "int_basico0";
+        std::string rs = "int_basic0";
         r.AllocateRS(rs, 5);
-        r.DeallocateRS("int_basico0", 5, 8);
+        r.DeallocateRS("int_basic0", 5, 8);
 
         check("busy == false após DeallocateRS",       r.GetBusy() == false);
         check("GetCurrentRS() vazio após desalocar",    r.GetCurrentRS().empty());
@@ -89,8 +89,8 @@ int main() {
               r.GetAllocationTimes().size() == 2
            && r.GetAllocationTimes()[0] == 5
            && r.GetAllocationTimes()[1] == 8);
-        check("GetAllocatedRS() ainda contem 'int_basico0'",
-              !r.GetAllocatedRS().empty() && r.GetAllocatedRS()[0] == "int_basico0");
+        check("GetAllocatedRS() ainda contem 'int_basic0'",
+              !r.GetAllocatedRS().empty() && r.GetAllocatedRS()[0] == "int_basic0");
     }
 
     secao("Ciclo completo: aloca -> desaloca -> aloca novamente");
