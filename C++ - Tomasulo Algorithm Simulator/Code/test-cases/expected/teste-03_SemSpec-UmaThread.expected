@@ -9,6 +9,7 @@ CONFIGURAÇÕES:
 - Despacho: 1
 - Número de RSs: 5 5 5 5 5 3 
 - Número de UFs: 2 2 2 2 1 1 
+- Ciclo limite: 10000
 - Latências de EX: 0 1 1 1 1 4 10 5 14 15 
 - Latências de MEM: 1 1 
 

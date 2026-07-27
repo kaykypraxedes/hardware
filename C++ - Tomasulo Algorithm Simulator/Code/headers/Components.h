@@ -49,7 +49,7 @@ class Register {
     private:
         // Atributos
         char                     type{'Z'};
-        int                      id;
+        int                      id{-1};
         bool                     busy{false};
         std::vector<int>         start_times;
         std::vector<int>         end_times;     // Pares (inicio[n] - fim[n]); fim == -1 enquanto pendente

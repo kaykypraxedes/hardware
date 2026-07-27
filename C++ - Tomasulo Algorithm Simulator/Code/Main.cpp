@@ -11,8 +11,6 @@
 #include <string>
 #include <vector>
 
-static const int CYCLE_LIMIT = 10000;
-
 static const int W_PC       = 6;
 static const int W_INST     = 30;
 static const int W_ISSUE    = 10;
@@ -84,6 +82,7 @@ struct CONFIG {
     std::vector<int>     num_fus        = {1, 1, 1, 1, 1, 2};
     std::vector<int>     ex_latencies   = Instruction::base_ex_latencies;
     std::vector<int>     mem_latencies  = Instruction::base_mem_latencies;
+    int                  cycle_limit    = 10000;
     std::vector<std::string> prog;
 };
 
@@ -118,7 +117,8 @@ CONFIG ReadConfig() {
             cfg.model = (aux == 2 ? MULTITHREADING_MODEL::SMT :
                 (aux == 0 ? MULTITHREADING_MODEL::FINE_GRAINED : MULTITHREADING_MODEL::COARSE_GRAINED));
         }
-        else if (key == "despacho")    { iss >> cfg.dispatch;    }
+        else if (key == "despacho")    { iss >> cfg.dispatch;       }
+        else if (key == "ciclo_limite"){ iss >> cfg.cycle_limit;   }
         else if (key == "num_rs")      { cfg.num_rs       = ReadIntVector(iss, 6, 1); }
         else if (key == "num_ufs")     { cfg.num_fus      = ReadIntVector(iss, 6, 1); }
         else if (key == "latencias_ex"){ cfg.ex_latencies = ReadIntVector(iss, 10, 1); }
@@ -157,6 +157,7 @@ void PrintConfig(
         for(int i : cfg.num_fus){
             std::cout << i << ' ';
         }
+        std::cout << "\n- Ciclo limite: " << cfg.cycle_limit;
         std::cout << "\n- Latências de EX: ";
         for(int i : cfg.ex_latencies){
             std::cout << i << ' ';
@@ -324,14 +325,14 @@ int main() {
 
     int result{};
 
-    for (int c{}; c < CYCLE_LIMIT && !result; c++) {
+    for (int c{}; c < cfg.cycle_limit && !result; c++) {
         result = p.ExecuteCycle();
     }
 
     std::cout
         << (result
             ? "Concluido!\n"
-            : "Limite de " + std::to_string(CYCLE_LIMIT) + " ciclos atingido.\n");
+            : "Limite de " + std::to_string(cfg.cycle_limit) + " ciclos atingido.\n");
 
     std::cout << '\n';
 
