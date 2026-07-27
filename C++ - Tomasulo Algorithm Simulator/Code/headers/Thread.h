@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+namespace processor {
+
 // ─── ELEMENTO STATIC ──────────────────────────────────────────────
 static const int ROB_CAPACITY_DEFAULT = 30;
 
@@ -19,6 +21,12 @@ enum class THREAD_STATE {
 };
 
 // ─── STRUCTS ──────────────────────────────────────────────────────
+enum class STORE_COMMIT_STATE {
+    IDLE,
+    WAITING_MEM,
+    READY
+};
+
 struct TABLE_ROW {
     Instruction       instruction;
     int               pc_position{-1};
@@ -27,6 +35,7 @@ struct TABLE_ROW {
     std::vector<int>  mem_cycles;
     int               wr_cycle{-1};
     int               commit_cycle{-1};
+    STORE_COMMIT_STATE store_commit_state{STORE_COMMIT_STATE::IDLE};
 };
 struct EVENT {
     int               pc;
@@ -45,7 +54,8 @@ class Thread {
             const std::vector<int>& = {},
             const std::vector<int>& = {},
             int = 1,
-            int = ROB_CAPACITY_DEFAULT
+            int = ROB_CAPACITY_DEFAULT,
+            bool = false
         );
         Thread(
             const std::vector<int>&,
@@ -54,7 +64,8 @@ class Thread {
             const std::vector<int>& = {},
             const std::vector<int>& = {},
             int = 1,
-            int = ROB_CAPACITY_DEFAULT
+            int = ROB_CAPACITY_DEFAULT,
+            bool = false
         );
 
         // Getters:
@@ -173,9 +184,6 @@ class Thread {
             std::vector<EVENT>&,
             int
         );
-        void SortEventsByPC(
-            std::vector<EVENT>&
-        ) const;
         void ProcessTransition(
             const EVENT&,
             int
@@ -198,33 +206,13 @@ class Thread {
             const Register&,
             int
         );
-        void ResolveDependencyInGroup(
-            std::vector<ReservationStation>&,
-            const std::string&,
-            const Register&
-        );
         void CollectEventsFromGroup(
             std::vector<ReservationStation>&,
             std::vector<EVENT>&,
             int
         );
 
-        // COMMIT
-        void ReleaseRSByRegister(
-            std::vector<ReservationStation>&,
-            Register,
-            int
-        );
-
-        // Utilitários
-        void SortCandidatesByPC(
-            std::vector<ReservationStation*>&
-        ) const;
-        void ReleaseRSByPC(
-            std::vector<ReservationStation>&,
-            int,
-            int
-        );
 };
+} // namespace processor
 
 #endif

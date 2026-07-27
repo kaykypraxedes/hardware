@@ -5,6 +5,9 @@
 #include "../headers/Instruction.h"
 #include "../headers/Components.h"
 #include "tb_helpers.h"
+
+using namespace processor;
+
 int main() {
 
     secao("Instruction() — construtor padrão");

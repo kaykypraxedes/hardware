@@ -1,5 +1,5 @@
 // ──────────────────────────────────────────────────────────
-// Para rodar: ./executable < test-cases/inputs/<arquivo>.txt
+// Para rodar: ./build/executable < test-cases/inputs/<arquivo>.txt
 // ──────────────────────────────────────────────────────────
 
 #include "headers/Processor.h"
@@ -11,13 +11,15 @@
 #include <string>
 #include <vector>
 
-static const int W_PC       = 6;
-static const int W_INST     = 30;
-static const int W_ISSUE    = 10;
-static const int W_EX       = 16;
-static const int W_MEM      = 16;
-static const int W_WR       = 10;
-static const int W_COMMIT   = 10;
+namespace processor {
+
+static const int W_PC     = 6;
+static const int W_INST   = 30;
+static const int W_ISSUE  = 10;
+static const int W_EX     = 16;
+static const int W_MEM    = 16;
+static const int W_WR     = 10;
+static const int W_COMMIT = 10;
 
 std::string CycleStr(
     int c
@@ -73,16 +75,16 @@ std::vector<int> ReadIntVector(
 }
 
 struct CONFIG {
-    PROCESSOR_TYPE       type           = PROCESSOR_TYPE::TOMASULO_WITHOUT_ROB;
-    int                  num_threads    = 1;
-    MULTITHREADING_MODEL model          = MULTITHREADING_MODEL::FINE_GRAINED;
-    bool                 predictor      = false;
-    int                  dispatch       = 2;
-    std::vector<int>     num_rs         = {5, 5, 5, 4, 3, 2};
-    std::vector<int>     num_fus        = {1, 1, 1, 1, 1, 2};
-    std::vector<int>     ex_latencies   = Instruction::base_ex_latencies;
-    std::vector<int>     mem_latencies  = Instruction::base_mem_latencies;
-    int                  cycle_limit    = 10000;
+    PROCESSOR_TYPE       type          = PROCESSOR_TYPE::TOMASULO_WITHOUT_ROB;
+    int                  num_threads   = 1;
+    MULTITHREADING_MODEL model         = MULTITHREADING_MODEL::FINE_GRAINED;
+    bool                 predictor     = false;
+    int                  dispatch      = 2;
+    std::vector<int>     num_rs        = {5, 5, 5, 4, 3, 2};
+    std::vector<int>     num_fus       = {1, 1, 1, 1, 1, 2};
+    std::vector<int>     ex_latencies  = Instruction::base_ex_latencies;
+    std::vector<int>     mem_latencies = Instruction::base_mem_latencies;
+    int                  cycle_limit   = 10000;
     std::vector<std::string> prog;
 };
 
@@ -118,10 +120,10 @@ CONFIG ReadConfig() {
                 (aux == 0 ? MULTITHREADING_MODEL::FINE_GRAINED : MULTITHREADING_MODEL::COARSE_GRAINED));
         }
         else if (key == "despacho")    { iss >> cfg.dispatch;       }
-        else if (key == "ciclo_limite"){ iss >> cfg.cycle_limit;   }
-        else if (key == "num_rs")      { cfg.num_rs       = ReadIntVector(iss, 6, 1); }
-        else if (key == "num_ufs")     { cfg.num_fus      = ReadIntVector(iss, 6, 1); }
-        else if (key == "latencias_ex"){ cfg.ex_latencies = ReadIntVector(iss, 10, 1); }
+        else if (key == "ciclo_limite"){ iss >> cfg.cycle_limit;    }
+        else if (key == "num_rs")      { cfg.num_rs       = ReadIntVector(iss, 6, 1);   }
+        else if (key == "num_ufs")     { cfg.num_fus      = ReadIntVector(iss, 6, 1);   }
+        else if (key == "latencias_ex"){ cfg.ex_latencies = ReadIntVector(iss, 10, 1);  }
         else if (key == "latencias_mem"){ cfg.mem_latencies = ReadIntVector(iss, 2, 1); }
         else if (key == "programa")    {
             while (std::getline(std::cin, line)) {
@@ -301,16 +303,38 @@ void PrintFU(
     std::cout << '\n';
 }
 
+void PrintRegisters(
+    const std::string&          label,
+    const std::vector<Register>& regs
+) {
+    for (int j{}; j < num_registers; j++) {
+        auto tempos = regs[j].GetAllocationTimes();
+        auto rsaloc = regs[j].GetAllocatedRS();
+        if (tempos.empty()) continue;
+
+        std::cout << std::setw(8) << (label + std::to_string(j));
+        for (int i{1}; i < (int)tempos.size(); i += 2) {
+            std::cout << rsaloc[(i - 1) / 2]
+                      << " (" << tempos[i - 1] << '-' << tempos[i] << ") ";
+            if (i + 1 < (int)tempos.size()) std::cout << "| ";
+        }
+        std::cout << '\n';
+    }
+    std::cout << '\n';
+}
+
+} // namespace processor
+
 int main() {
 
-    CONFIG cfg = ReadConfig();
+    processor::CONFIG cfg = processor::ReadConfig();
 
-    PrintConfig(cfg);
+    processor::PrintConfig(cfg);
 
-    Instruction::base_ex_latencies  = cfg.ex_latencies;
-    Instruction::base_mem_latencies = cfg.mem_latencies;
+    processor::Instruction::base_ex_latencies  = cfg.ex_latencies;
+    processor::Instruction::base_mem_latencies = cfg.mem_latencies;
 
-    Processor p(
+    processor::Processor p(
         cfg.num_threads,
         cfg.dispatch,
         cfg.predictor,
@@ -338,7 +362,7 @@ int main() {
 
     PrintTable(
         p.GetThreadTable(0),
-        p.GetType() == PROCESSOR_TYPE::TOMASULO_WITH_ROB
+        p.GetType() == processor::PROCESSOR_TYPE::TOMASULO_WITH_ROB
     );
 
     std::cout << "=====================\n";
@@ -347,12 +371,12 @@ int main() {
 
     auto rs = p.GetThread(0).GetRS();
 
-    PrintStructure("load", rs.load);
-    PrintStructure("store", rs.store);
-    PrintStructure("int_basic", rs.int_basic);
-    PrintStructure("int_mult_div", rs.int_mult_div);
-    PrintStructure("float_basic", rs.float_basic);
-    PrintStructure("float_mult_div", rs.float_mult_div);
+    processor::PrintStructure("load", rs.load);
+    processor::PrintStructure("store", rs.store);
+    processor::PrintStructure("int_basic", rs.int_basic);
+    processor::PrintStructure("int_mult_div", rs.int_mult_div);
+    processor::PrintStructure("float_basic", rs.float_basic);
+    processor::PrintStructure("float_mult_div", rs.float_mult_div);
 
     std::cout << "=====================\n";
     std::cout << "CDB\n";
@@ -361,66 +385,9 @@ int main() {
     auto cdb = p.GetThread(0).GetCDB();
 
     std::cout << "F:\n";
-
-    for (int j{}; j < num_registers; j++) {
-
-        auto tempos = cdb.F[j].GetAllocationTimes();
-        auto rsaloc = cdb.F[j].GetAllocatedRS();
-
-        if (tempos.empty())
-            continue;
-
-        std::cout << std::setw(8)
-                  << ("F" + std::to_string(j));
-
-        for (int i{1}; i < (int)tempos.size(); i += 2) {
-
-            std::cout
-                << rsaloc[(i - 1) / 2]
-                << " ("
-                << tempos[i - 1]
-                << '-'
-                << tempos[i]
-                << ") ";
-
-            if (i + 1 < (int)tempos.size())
-                std::cout << "| ";
-        }
-
-        std::cout << '\n';
-    }
-
-    std::cout << "\nR:\n";
-
-    for (int j{}; j < num_registers; j++) {
-
-        auto tempos = cdb.R[j].GetAllocationTimes();
-        auto rsaloc = cdb.R[j].GetAllocatedRS();
-
-        if (tempos.empty())
-            continue;
-
-        std::cout << std::setw(8)
-                  << ("R" + std::to_string(j));
-
-        for (int i{1}; i < (int)tempos.size(); i += 2) {
-
-            std::cout
-                << rsaloc[(i - 1) / 2]
-                << " ("
-                << tempos[i - 1]
-                << '-'
-                << tempos[i]
-                << ") ";
-
-            if (i + 1 < (int)tempos.size())
-                std::cout << "| ";
-        }
-
-        std::cout << '\n';
-    }
-
-    std::cout << '\n';
+    processor::PrintRegisters("F", cdb.F);
+    std::cout << "R:\n";
+    processor::PrintRegisters("R", cdb.R);
 
     std::cout << "=====================\n";
     std::cout << "UNIDADES FUNCIONAIS\n";
@@ -428,11 +395,11 @@ int main() {
 
     auto fu = p.GetThread(0).GetFU();
 
-    PrintFU("acessar_memoria", fu.memory_access);
-    PrintFU("ula_int_basico", fu.int_basic_alu);
-    PrintFU("ula_int_mult_div", fu.int_mult_div_alu);
-    PrintFU("ula_float_basico", fu.float_basic_alu);
-    PrintFU("ula_float_mult_div", fu.float_mult_div_alu);
+    processor::PrintFU("acessar_memoria", fu.memory_access);
+    processor::PrintFU("ula_int_basico", fu.int_basic_alu);
+    processor::PrintFU("ula_int_mult_div", fu.int_mult_div_alu);
+    processor::PrintFU("ula_float_basico", fu.float_basic_alu);
+    processor::PrintFU("ula_float_mult_div", fu.float_mult_div_alu);
 
     return 0;
 }

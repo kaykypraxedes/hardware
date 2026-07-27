@@ -1,7 +1,7 @@
 /* ReservationStations.cpp */
 #include "headers/ReservationStations.h"
-#include "headers/Components.h"
-#include "headers/Instruction.h"
+
+namespace processor {
 
 static bool mesmoRegistrador(const Register& a, const Register& b) {
     return a.GetType() != 'Z' && a.GetType() == b.GetType() && a.GetId() == b.GetId();
@@ -41,150 +41,178 @@ const std::vector<std::string>& ReservationStation::GetInstructions() const { re
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
-ReservationStation::ReservationStation(std::string id) : id(id){}
+ReservationStation::ReservationStation(
+    std::string id
+) :
+id(id)
+{}
 
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Público:
-// Lê Qj/Qk do CDB ANTES de marcar o destino para não se auto-bloquear.
-// Qj/Qk são agora std::pair<std::string,int> = {rs_id, ciclo_inicio_no_cdb}.
-// Par {"", -1} significa operando disponível (sem dependência pendente).
 bool ReservationStation::AddIssue(
     Instruction& instruction,
     CDB&         cdb,
     int          cycle
 ){
     if (busy) return false;
+
+    SetupNewIssue(instruction, cycle);
+
+    Register dest    = instruction.GetDestRegister();
+    bool dest_valido = (dest.GetType() != 'Z' && dest.GetId() >= 0);
+    Register regJ    = instruction.GetJ();
+    Register regK    = instruction.GetK();
+
+    ReadSourceOperand(regJ, cdb, Vj, Qj, dest, dest_valido);
+    ReadSourceOperand(regK, cdb, Vk, Qk, dest, dest_valido);
+
+    AllocateDestInCDB(dest, cdb, cycle);
+    return true;
+}
+
+// Privado:
+void ReservationStation::SetupNewIssue(
+    const Instruction& instruction,
+    int                cycle
+){
     busy                 = true;
     current_instruction  = instruction;
     phase                = INSTRUCTION_PHASE::ISSUE;
     allocation_countdown = -1;
     fu_position          = -1;
-    Qj = Qk = {"", -1};
-    Vj = Vk = Register{};
-    dest_pending_in_cdb = false;
+    Qj = Qk              = {"", -1};
+    Vj = Vk              = Register{};
+    dest_pending_on_cdb  = false;
     allocated_instructions.push_back(instruction.GetInstructionString());
     allocation_times.push_back(cycle);
+}
 
-    Register dest = instruction.GetDestRegister();
-    bool dest_valido = (dest.GetType() != 'Z' && dest.GetId() >= 0);
-
-    Register regJ = instruction.GetJ();
-    Register regK = instruction.GetK();
-
-    if (regJ.GetType() != 'Z' && regJ.GetId() >= 0 && regJ.GetId() < num_registers) {
-        Register& regCDBj = (regJ.GetType() == 'F')
-            ? cdb.F[regJ.GetId()] : cdb.R[regJ.GetId()];
-        std::string tag = regCDBj.GetCurrentRS();
-        if (tag.empty()) {
-            Vj = regJ;
-        } else if (dest_valido && mesmoRegistrador(regJ, dest) && tag == id) {
-            Vj = regJ;
-        } else {
-            Qj = {tag, regCDBj.GetRSCycleStart(tag)};
-        }
+// Privado:
+void ReservationStation::ReadSourceOperand(
+    const Register&              src,
+    CDB&                         cdb,
+    Register&                    V,
+    std::pair<std::string, int>& Q,
+    const Register&              dest,
+    bool                         dest_is_valid
+){
+    if (src.GetType() == 'Z' || src.GetId() < 0 || src.GetId() >= num_registers)
+        return;
+    Register& regCDB = (src.GetType() == 'F')
+        ? cdb.F[src.GetId()] : cdb.R[src.GetId()];
+    std::string tag = regCDB.GetCurrentRS();
+    if (tag.empty()) {
+        V = src;
+    } else if (dest_is_valid && mesmoRegistrador(src, dest) && tag == id) {
+        V = src;
+    } else {
+        Q = {tag, regCDB.GetRSCycleStart(tag)};
     }
-    if (regK.GetType() != 'Z' && regK.GetId() >= 0 && regK.GetId() < num_registers) {
-        Register& regCDBk = (regK.GetType() == 'F')
-            ? cdb.F[regK.GetId()] : cdb.R[regK.GetId()];
-        std::string tag = regCDBk.GetCurrentRS();
-        if (tag.empty()) {
-            Vk = regK;
-        } else if (dest_valido && mesmoRegistrador(regK, dest) && tag == id) {
-            Vk = regK;
-        } else {
-            Qk = {tag, regCDBk.GetRSCycleStart(tag)};
-        }
-    }
+}
 
-    if (dest_valido && dest.GetId() < num_registers) {
-        if      (dest.GetType() == 'F') cdb.F[dest.GetId()].AllocateRS(id, cycle);
-        else if (dest.GetType() == 'R') cdb.R[dest.GetId()].AllocateRS(id, cycle);
-    }
-    return true;
+// Privado:
+void ReservationStation::AllocateDestInCDB(
+    const Register& dest,
+    CDB&            cdb,
+    int             cycle
+){
+    if (dest.GetType() == 'Z' || dest.GetId() < 0 || dest.GetId() >= num_registers)
+        return;
+    if (dest.GetType() == 'F') cdb.F[dest.GetId()].AllocateRS(id, cycle);
+    else                       cdb.R[dest.GetId()].AllocateRS(id, cycle);
 }
 
 // Público:
-// Resolve Qj/Qk consultando o CDB via dependenciaResolvida(rs_id, ciclo_inicio).
-// Quando prontos, aloca UF e inicia contagem.
 bool ReservationStation::UpdateDependencies(
-    CDB&                cdb,
-    FUNCTIONAL_UNITS&   fu,
-    int                 cycle
+    CDB&              cdb,
+    FUNCTIONAL_UNITS& fu,
+    int               cycle
 ){
     if (!busy || allocation_countdown != -1) return false;
 
-    Register regJ = current_instruction.GetJ();
-    Register regK = current_instruction.GetK();
-
-    // Resolver Vj / Qj
-    if (Vj.GetType() == 'Z' && !Qj.first.empty()
-        && regJ.GetId() >= 0 && regJ.GetId() < num_registers) {
-        Register& regCDB = (regJ.GetType() == 'F')
-            ? cdb.F[regJ.GetId()] : cdb.R[regJ.GetId()];
-        if (regCDB.IsDependencyResolved(Qj.first, Qj.second)) {
-            Vj = regJ;
-            Qj = {"", -1};
-        }
-    }
-    // Resolver Vk / Qk
-    if (Vk.GetType() == 'Z' && !Qk.first.empty()
-        && regK.GetId() >= 0 && regK.GetId() < num_registers) {
-        Register& regCDB = (regK.GetType() == 'F')
-            ? cdb.F[regK.GetId()] : cdb.R[regK.GetId()];
-        if (regCDB.IsDependencyResolved(Qk.first, Qk.second)) {
-            Vk = regK;
-            Qk = {"", -1};
-        }
-    }
+    ResolveBothDependencies(cdb);
 
     INSTRUCTION_TYPE tipo = current_instruction.GetInstructionType();
-    bool load_store = (tipo == INSTRUCTION_TYPE::LOAD || tipo == INSTRUCTION_TYPE::STORE);
+    if (tipo == INSTRUCTION_TYPE::LOAD || tipo == INSTRUCTION_TYPE::STORE)
+        return TryAllocateLoadStore(cdb, fu, cycle);
+    return TryAllocateNormal(cdb, fu, cycle);
+}
 
-    if (load_store) {
-        if (phase == INSTRUCTION_PHASE::ISSUE && Qk.first.empty()) {
-            fu_position = FindFreeFU(fu, cycle, INSTRUCTION_PHASE::EX);
-            if (fu_position == -1) return false;
-            allocation_countdown = current_instruction.GetExLatency();
-            phase = INSTRUCTION_PHASE::EX;
-            return true;
-        }
-        if (phase == INSTRUCTION_PHASE::MEM && allocation_countdown == -1
-            && ((tipo == INSTRUCTION_TYPE::STORE && Qj.first.empty()) || tipo == INSTRUCTION_TYPE::LOAD)) {
-            fu_position = FindFreeFU(fu, cycle, INSTRUCTION_PHASE::MEM);
-            if (fu_position == -1) return false;
-            allocation_countdown = current_instruction.GetMemLatency();
-            return true;
-        }
-        return false;
+// Privado:
+void ReservationStation::ResolveSingleDependency(
+    CDB&                         cdb,
+    const Register&              reg,
+    Register&                    V,
+    std::pair<std::string, int>& Q
+){
+    if (V.GetType() != 'Z' || Q.first.empty()) return;
+    if (reg.GetId() < 0 || reg.GetId() >= num_registers) return;
+    Register& regCDB = (reg.GetType() == 'F')
+        ? cdb.F[reg.GetId()] : cdb.R[reg.GetId()];
+    if (regCDB.IsDependencyResolved(Q.first, Q.second)) {
+        V = reg;
+        Q = {"", -1};
     }
+}
 
-    // Instrução comum: precisa de Qj e Qk resolvidos
-    if (Qj.first.empty() && Qk.first.empty()) {
+// Privado:
+void ReservationStation::ResolveBothDependencies(
+    CDB& cdb
+){
+    ResolveSingleDependency(cdb, current_instruction.GetJ(), Vj, Qj);
+    ResolveSingleDependency(cdb, current_instruction.GetK(), Vk, Qk);
+}
+
+// Privado:
+bool ReservationStation::TryAllocateLoadStore(
+    CDB&,
+    FUNCTIONAL_UNITS& fu,
+    int               cycle
+){
+    if (phase == INSTRUCTION_PHASE::ISSUE && Qk.first.empty()) {
         fu_position = FindFreeFU(fu, cycle, INSTRUCTION_PHASE::EX);
         if (fu_position == -1) return false;
         allocation_countdown = current_instruction.GetExLatency();
         phase = INSTRUCTION_PHASE::EX;
-        if (dest_pending_in_cdb) {
-            Register dest = current_instruction.GetDestRegister();
-            if (dest.GetId() >= 0 && dest.GetId() < num_registers) {
-                if (dest.GetType() == 'F') cdb.F[dest.GetId()].AllocateRS(id, cycle);
-                else if (dest.GetType() == 'R') cdb.R[dest.GetId()].AllocateRS(id, cycle);
-            }
-            dest_pending_in_cdb = false;
-        }
+        return true;
+    }
+    INSTRUCTION_TYPE tipo = current_instruction.GetInstructionType();
+    if (phase == INSTRUCTION_PHASE::MEM && allocation_countdown == -1
+        && ((tipo == INSTRUCTION_TYPE::STORE && Qj.first.empty()) || tipo == INSTRUCTION_TYPE::LOAD)) {
+        fu_position = FindFreeFU(fu, cycle, INSTRUCTION_PHASE::MEM);
+        if (fu_position == -1) return false;
+        allocation_countdown = current_instruction.GetMemLatency();
         return true;
     }
     return false;
 }
 
 // Privado:
+bool ReservationStation::TryAllocateNormal(
+    CDB&              cdb,
+    FUNCTIONAL_UNITS& fu,
+    int               cycle
+){
+    if (!Qj.first.empty() || !Qk.first.empty()) return false;
+    fu_position = FindFreeFU(fu, cycle, INSTRUCTION_PHASE::EX);
+    if (fu_position == -1) return false;
+    allocation_countdown = current_instruction.GetExLatency();
+    phase = INSTRUCTION_PHASE::EX;
+    if (dest_pending_on_cdb) {
+        AllocateDestInCDB(current_instruction.GetDestRegister(), cdb, cycle);
+        dest_pending_on_cdb = false;
+    }
+    return true;
+}
+
+// Privado:
 // Recebe a fase em que a instrução VAI ENTRAR para escolher a UF correta:
-//   LOAD/STORE em EX  → cálculo de endereço → ula_int_basico
-//   LOAD/STORE em MEM → acesso à memória    → acessar_memoria
+// - LOAD/STORE em EX  → cálculo de endereço → ula_int_basico
+// - LOAD/STORE em MEM → acesso à memória    → acessar_memoria
 int ReservationStation::FindFreeFU(
     FUNCTIONAL_UNITS& fu,
     int               cycle,
-    INSTRUCTION_PHASE       target_phase
+    INSTRUCTION_PHASE target_phase
 ) const {
     INSTRUCTION_TYPE tipo = current_instruction.GetInstructionType();
     if (tipo == INSTRUCTION_TYPE::LOAD || tipo == INSTRUCTION_TYPE::STORE) {
@@ -258,8 +286,8 @@ bool ReservationStation::UpdateCountdown(
 
 // Privado:
 // Recebe a fase que ACABOU para saber de qual grupo liberar:
-//   LOAD/STORE saindo de EX  → liberou ula_int_basico
-//   LOAD/STORE saindo de MEM → liberou acessar_memoria
+// - LOAD/STORE saindo de EX  → liberou ula_int_basico
+// - LOAD/STORE saindo de MEM → liberou acessar_memoria
 void ReservationStation::ReleaseFU(
     FUNCTIONAL_UNITS& fu,
     int               cycle,
@@ -296,8 +324,7 @@ void ReservationStation::DeallocateFUFromGroup(
 }
 
 // Público:
-// Broadcast do CDB: se esta RS está esperando por rs_id com aquele ciclo_inicio,
-// captura o valor agora. O par {rs_id, ciclo_inicio} identifica unicamente o produtor.
+// Broadcast do CDB: se esta RS está esperando por rs_id com aquele ciclo_inicio, captura o valor agora. O par {rs_id, ciclo_inicio} identifica unicamente o produtor.
 void ReservationStation::ResolveDependency(
     const std::string& rs_id,
     const Register& value
@@ -318,3 +345,5 @@ void ReservationStation::Release(
     Vj = Vk              = Register{};
     phase                = INSTRUCTION_PHASE::ISSUE;
 }
+
+} // namespace processor

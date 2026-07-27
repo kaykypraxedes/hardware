@@ -1,11 +1,71 @@
 /* Thread.cpp */
 #include "headers/Thread.h"
-#include "headers/Components.h"
-#include "headers/Instruction.h"
+
+namespace processor {
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
-static int pcDeRS(ReservationStation* r) { return r->GetCurrentInstruction().GetPC(); }
-static int pcDeEvento(const EVENT& e)    { return e.pc; }
+static const int NUM_RS_GROUPS = 6;
+static const int NUM_FU_GROUPS = 6;
+
+static int pcDeRS(
+    ReservationStation* r
+){
+    return r->GetCurrentInstruction().GetPC();
+}
+
+static int pcDeEvento(
+    const EVENT& e
+){
+    return e.pc;
+}
+
+static void SortCandidatesByPC(
+    std::vector<ReservationStation*>& candidates
+){
+    sort_utils::insertionSort(candidates, pcDeRS);
+}
+
+static void ResolveDependencyInGroup(
+    std::vector<ReservationStation>& group,
+    const std::string& rs_id,
+    const Register& dest
+){
+   for (ReservationStation& dep : group)
+        if (dep.GetBusy()) dep.ResolveDependency(rs_id, dest);
+}
+
+static void SortEventsByPC(
+    std::vector<EVENT>& events
+){
+    sort_utils::insertionSort(events, pcDeEvento);
+}
+
+static void ReleaseRSByRegister(
+    std::vector<ReservationStation>& rs,
+    Register      reg_destino,
+    int              cycle
+){
+    for(ReservationStation& r : rs){
+        if(!r.GetBusy()) continue;
+        Register aux{r.GetCurrentInstruction().GetDestRegister()};
+        if(r.GetInstructionPhase() == INSTRUCTION_PHASE::WB &&
+            aux.GetType() == reg_destino.GetType() &&
+            aux.GetId() == reg_destino.GetId())
+            r.Release(cycle);
+    }
+}
+
+static void ReleaseRSByPC(
+    std::vector<ReservationStation>& group,
+    int              pc,
+    int              cycle
+){
+    for (ReservationStation& r : group) {
+        if (r.GetBusy() && r.GetInstructionPhase() == INSTRUCTION_PHASE::WB
+            && r.GetCurrentInstruction().GetPC() == pc)
+            r.Release(cycle);
+    }
+}
 
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:
@@ -38,10 +98,12 @@ Thread::Thread(
     const std::vector<int>&         num_rs,
     const std::vector<int>&         num_fus,
     int                             dispatch_width,
-    int                             rob_capacity
+    int                             rob_capacity,
+    bool                            has_predictor
 ):
-    has_rob     (has_rob),
-    rob_capacity(has_rob ? rob_capacity : 1)
+    has_rob      (has_rob),
+    rob_capacity (has_rob ? rob_capacity : 1),
+    has_predictor(has_predictor)
 {
     int i{};
     for (const std::string& instr : assembly)
@@ -57,10 +119,12 @@ Thread::Thread(
     const std::vector<int>&         num_rs,
     const std::vector<int>&         num_fus,
     int                             dispatch_width,
-    int                             rob_capacity
+    int                             rob_capacity,
+    bool                            has_predictor
 ):
     has_rob            (has_rob),
     rob_capacity       (has_rob ? rob_capacity : 1),
+    has_predictor      (has_predictor),
     switch_instructions(switch_instructions)
 {
     int i{};
@@ -81,7 +145,7 @@ void Thread::InitializeComponents(
         cdb.F.push_back(Register("F" + std::to_string(i)));
     }
     std::vector<int> aux;
-    if(num_rs.size() >= 6) aux = num_rs;
+    if(num_rs.size() >= NUM_RS_GROUPS) aux = num_rs;
     else aux = {5,5,5,4,3,2};
     for(int i{}; i < aux[0]; i++) rs.load.push_back(ReservationStation("load" + std::to_string(i)));
     for(int i{}; i < aux[1]; i++) rs.store.push_back(ReservationStation("store" + std::to_string(i)));
@@ -89,7 +153,7 @@ void Thread::InitializeComponents(
     for(int i{}; i < aux[3]; i++) rs.int_mult_div.push_back(ReservationStation("int_mult_div" + std::to_string(i)));
     for(int i{}; i < aux[4]; i++) rs.float_basic.push_back(ReservationStation("float_basic" + std::to_string(i)));
     for(int i{}; i < aux[5]; i++) rs.float_mult_div.push_back(ReservationStation("float_mult_div" + std::to_string(i)));
-    if(num_fus.size() >= 6) aux = num_fus;
+    if(num_fus.size() >= NUM_FU_GROUPS) aux = num_fus;
     else aux = {1,1,1,1,1,2};
     for(int i{}; i < aux[0]; i++) fu.memory_access.push_back(FU{});
     for(int i{}; i < aux[1]; i++) fu.int_basic_alu.push_back(FU{});
@@ -217,12 +281,6 @@ void Thread::CollectCandidatesFromGroup(
 }
 
 // Privado:
-void Thread::SortCandidatesByPC(
-    std::vector<ReservationStation*>& candidates
-)const {
-    sort_utils::insertionSort(candidates, pcDeRS);
-}
-
 // Privado:
 void Thread::TryAdvanceRS(
     ReservationStation& r,
@@ -337,6 +395,8 @@ void Thread::WriteBackStoreWithROB(
 }
 
 // Privado:
+// 3 etapas: (1) marca WR para instruções c/ destino; (2) broadcast CDB p/ liberar
+// dependências; (3) switch por tipo p/ grupo RS correto (LOAD → rs.load, etc.)
 void Thread::WriteBackNormal(
     int pc,
     int cycle
@@ -374,6 +434,8 @@ void Thread::SetWR(
 }
 
 // Privado:
+// Percorre todos os 6 grupos de RS resolvendo dependências de Qj/Qk que
+// apontam para esta instrução (rs_id), e desaloca o produtor do CDB.
 void Thread::BroadcastCDB(
     int pc,
     const Register& dest,
@@ -416,15 +478,6 @@ void Thread::FindWBInGroup(
 }
 
 // Privado:
-void Thread::ResolveDependencyInGroup(
-    std::vector<ReservationStation>& group,
-    const std::string& rs_id,
-    const Register& dest
-){
-    for (ReservationStation& dep : group)
-        if (dep.GetBusy()) dep.ResolveDependency(rs_id, dest);
-}
-
 // Privado:
 void Thread::DetectPhaseTransitions(
     int cycle
@@ -452,12 +505,6 @@ void Thread::CollectTransitionEvents(
 }
 
 // Privado:
-void Thread::SortEventsByPC(
-    std::vector<EVENT>& events
-) const {
-    sort_utils::insertionSort(events, pcDeEvento);
-}
-
 // Privado:
 void Thread::CollectEventsFromGroup(std::vector<ReservationStation>& group, std::vector<EVENT>& events, int cycle) {
     for (ReservationStation& r : group) {
@@ -505,6 +552,9 @@ void Thread::AddPendingWB(
 
 // ─── COMMIT ───────────────────────────────────────────────────────
 // Público:
+// Apenas c/ ROB. Itera ROB em ordem (commit_pointer). Lógica de "pronto"
+// varia por tipo: STORE simula latência MEM, BRANCH espera 2 ciclos EX,
+// demais aguardam WR < ciclo atual. BRANCH s/ previsor trava no ciclo.
 void Thread::Commit(
     int cycle
 ){
@@ -518,12 +568,14 @@ void Thread::Commit(
         bool pronto = false;
 
         if (store_with_rob) {
-            if (linha.mem_cycles.empty()) {
+            if (linha.store_commit_state == STORE_COMMIT_STATE::IDLE) {
+                linha.store_commit_state = STORE_COMMIT_STATE::WAITING_MEM;
                 linha.mem_cycles.push_back(cycle);
             }
-            if (linha.mem_cycles.size() == 1) {
-                int fim_mem = linha.mem_cycles[0] + linha.instruction.GetMemLatency() - 1;
+            if (linha.store_commit_state == STORE_COMMIT_STATE::WAITING_MEM) {
+                int fim_mem = linha.mem_cycles.back() + linha.instruction.GetMemLatency() - 1;
                 if (cycle >= fim_mem) {
+                    linha.store_commit_state = STORE_COMMIT_STATE::READY;
                     linha.mem_cycles.pop_back();
                     pronto = true;
                 }
@@ -546,31 +598,4 @@ void Thread::Commit(
     }
 }
 
-// Privado: (usado em WR/WriteBackNormal)
-void Thread::ReleaseRSByRegister(
-    std::vector<ReservationStation>& rs,
-    Register      reg_destino,
-    int              cycle
-){
-    for(ReservationStation& r : rs){
-        if(!r.GetBusy()) continue;
-        Register aux{r.GetCurrentInstruction().GetDestRegister()};
-        if(r.GetInstructionPhase() == INSTRUCTION_PHASE::WB &&
-            aux.GetType() == reg_destino.GetType() &&
-            aux.GetId() == reg_destino.GetId())
-            r.Release(cycle);
-    }
-}
-
-// Privado: (usado em WR/WriteBackNormal)
-void Thread::ReleaseRSByPC(
-    std::vector<ReservationStation>& group,
-    int              pc,
-    int              cycle
-){
-    for (ReservationStation& r : group) {
-        if (r.GetBusy() && r.GetInstructionPhase() == INSTRUCTION_PHASE::WB
-            && r.GetCurrentInstruction().GetPC() == pc)
-            r.Release(cycle);
-    }
-}
+} // namespace processor

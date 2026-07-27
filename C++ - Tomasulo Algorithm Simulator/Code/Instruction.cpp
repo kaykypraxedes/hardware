@@ -1,7 +1,7 @@
 /* Instruction.cpp */
 #include "headers/Instruction.h"
-#include "headers/Components.h"
 
+namespace processor {
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
 std::vector<int> Instruction::base_ex_latencies  = {0,1,1,1,1,4,10,9,14,40};
@@ -168,3 +168,5 @@ void Instruction::SetExLatency(
 ){
     ex_latency = latency;
 }
+
+} // namespace processor

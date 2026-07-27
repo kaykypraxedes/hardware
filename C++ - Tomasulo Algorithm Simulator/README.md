@@ -49,11 +49,11 @@ Code/
 
 ## Modules
 
-### `Instrucao`
+### `Instruction`
 
 Parses instructions from mnemonics, identifies the type (LOAD, STORE, INT_BASIC, INT_MUL, INT_DIV, FLOAT_BASIC, FLOAT_MUL, FLOAT_DIV, BRANCH), and extracts operands (destination, source registers, and immediates) with default latencies per type.
 
-### `Componentes`
+### `Components`
 
 Defines the three core structures: **Register** (tracks busy and pending producers via CDB), **Common Data Bus (CDB)** (centralized producer tracking per register), and **Functional Unit (FU)** (manages busy state, allocation, and latency countdown).
 

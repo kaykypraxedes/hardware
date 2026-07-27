@@ -6,6 +6,9 @@
 #include "../headers/Instruction.h"
 #include "tb_helpers.h"
 #include <vector>
+
+using namespace processor;
+
 static int rodarAteOFim(Processor& p, int limite = 200) {
     int c = 0;
     while (c++ < limite)

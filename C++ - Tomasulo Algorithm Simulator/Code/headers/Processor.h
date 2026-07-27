@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+namespace processor {
+
 // ─── ENUMS ────────────────────────────────────────────────────────
 enum class PROCESSOR_TYPE {
     IN_ORDER,
@@ -35,14 +37,14 @@ class Processor {
             MULTITHREADING_MODEL,
             const std::vector<std::string>&,
             const std::vector<int>& = {},
-            std::vector<int>        = {},
+            const std::vector<int>& = {},
             const std::vector<int>& = {}
         );
 
         // Métodos públicos:
-        std::vector<CYCLE_LINE>  GetCycleTable() const;
-        PROCESSOR_TYPE           GetType()       const;
-        bool                     ExecuteCycle();
+        std::vector<CYCLE_LINE> GetCycleTable() const;
+        PROCESSOR_TYPE          GetType()       const;
+        bool                    ExecuteCycle();
         // const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
         const Thread& GetThread(
             int
@@ -73,5 +75,6 @@ class Processor {
             const std::vector<int>& = {}
         );
 };
+} // namespace processor
 
 #endif

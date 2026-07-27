@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+namespace processor {
+
 // ─── ENUMS ────────────────────────────────────────────────────────
 enum class INSTRUCTION_TYPE {
     NONEXISTENT,
@@ -63,7 +65,7 @@ class Instruction {
         );
     private:
         // Atributos:
-        // (instruction_string DEVE vir antes de PC para que o initializer list a inicialize antes de SplitInstruction() ser chamado)
+        // - instruction_string DEVE vir antes de PC para que o initializer list a inicialize antes de SplitInstruction() ser chamado
         std::string      instruction_string;
         int              PC{};
         int              ex_latency;
@@ -83,4 +85,6 @@ class Instruction {
             std::vector<std::string>&
         );
 };
+} // namespace processor
+
 #endif

@@ -4,6 +4,8 @@
 #include "tb_helpers.h"
 #include <vector>
 
+using namespace processor;
+
 int main() {
     // ────────────────────────────────────────────────────────
     secao("Register() — construtor padrão");

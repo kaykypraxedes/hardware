@@ -5,6 +5,8 @@
 #include <vector>
 #include <cctype>
 
+namespace processor {
+
 // ─── ELEMENTO STATIC ──────────────────────────────────────────────
 static const int num_registers = 32;
 
@@ -81,5 +83,7 @@ struct FUNCTIONAL_UNITS {
     int             wr{1};
     int             commit{1};
 };
+
+} // namespace processor
 
 #endif

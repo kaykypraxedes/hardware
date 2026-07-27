@@ -1,6 +1,8 @@
 /* Components.cpp */
 #include "headers/Components.h"
 
+namespace processor {
+
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:
 char Register::GetType() const { return type; }
@@ -45,7 +47,8 @@ int Register::IdentifyId(
     const std::string& s
 ){
     if (s.size() < 2 || !std::isdigit(static_cast<unsigned char>(s[1]))) return -1;
-    return std::stoi(s.substr(1));
+    try { return std::stoi(s.substr(1)); }
+    catch (...) { return -1; }
 }
 
 // Público:
@@ -135,3 +138,5 @@ void Register::DeallocateRS(
     }
     busy = HasPendingProducer();
 }
+
+} // namespace processor

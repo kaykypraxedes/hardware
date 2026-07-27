@@ -49,11 +49,11 @@ Code/
 
 ## Módulos
 
-### `Instrucao`
+### `Instruction`
 
 Faz o parsing da instrução a partir do mnemônico, identifica o tipo (LOAD, STORE, INT_BASIC, INT_MUL, INT_DIV, FLOAT_BASIC, FLOAT_MUL, FLOAT_DIV, BRANCH) e extrai seus operandos (registradores destino, fonte e imediatos) com latências default por tipo.
 
-### `Componentes`
+### `Components`
 
 Define as três estruturas fundamentais do simulador: **Register** (rastreia busy e produtores pendentes via CDB), **Common Data Bus (CDB)** (centraliza o tracking de quem produz cada registrador) e **Functional Unit (FU)** (controla busy, alocação e contagem regressiva de latência).
 

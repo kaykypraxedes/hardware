@@ -5,6 +5,8 @@
 #include <vector>
 #include <utility>
 
+namespace processor {
+
 namespace sort_utils {
 
 template<typename T, typename KeyFunc>
@@ -35,5 +37,7 @@ void insertionSort(std::vector<T>& vec) {
 }
 
 } // namespace sort_utils
+
+} // namespace processor
 
 #endif

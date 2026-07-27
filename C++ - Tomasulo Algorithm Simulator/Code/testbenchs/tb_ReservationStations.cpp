@@ -8,8 +8,7 @@
 #include "tb_helpers.h"
 #include <vector>
 
-
-
+using namespace processor;
 static CDB makeCDB() {
     CDB c;
     for (int i = 0; i < 32; i++) {

@@ -1,6 +1,7 @@
 /* Processor.cpp */
 #include "headers/Processor.h"
-#include "headers/Thread.h"
+
+namespace processor {
 
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:
@@ -24,7 +25,7 @@ Processor::Processor(
     MULTITHREADING_MODEL            model,
     const std::vector<std::string>& Assembly,
     const std::vector<int>&         num_rs,
-    std::vector<int>                num_fus,
+    const std::vector<int>&         num_fus,
     const std::vector<int>&         switch_instructions
 ):
     dispatch_width(dispatch_width),
@@ -51,9 +52,9 @@ void Processor::InitializeThreads(
 ){
     for (int i = 0; i < num_threads; i++) {
         if (mt_model == MULTITHREADING_MODEL::COARSE_GRAINED)
-            threads.push_back(Thread(switch_instructions, Assembly, has_rob, num_rs, num_fus, dispatch_width));
+            threads.push_back(Thread(switch_instructions, Assembly, has_rob, num_rs, num_fus, dispatch_width, ROB_CAPACITY_DEFAULT, has_predictor));
         else
-            threads.push_back(Thread(Assembly, has_rob, num_rs, num_fus, dispatch_width));
+            threads.push_back(Thread(Assembly, has_rob, num_rs, num_fus, dispatch_width, ROB_CAPACITY_DEFAULT, has_predictor));
     }
 }
 
@@ -80,6 +81,10 @@ bool Processor::ExecuteExMemWr() {
 }
 
 // Privado:
+// Loop de dispatch até dispatch_width. A política de escalonamento varia conforme mt_model:
+// - FINE_GRAINED mantém thread até falhar;
+// - SMT rotaciona a cada despacho,
+// - BRANCH s/ previsor interrompe o ciclo.
 void Processor::ExecuteIssue() {
     int despachadas   = 0;
     int voltas        = 0;
@@ -112,3 +117,5 @@ void Processor::ExecuteIssue() {
 void Processor::AdvanceRoundRobinPointer() {
     thread_pointer = (thread_pointer + 1) % static_cast<int>(threads.size());
 }
+
+} // namespace processor

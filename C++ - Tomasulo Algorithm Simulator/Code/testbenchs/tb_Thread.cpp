@@ -7,6 +7,9 @@
 #include "../headers/Components.h"
 #include "tb_helpers.h"
 #include <vector>
+
+using namespace processor;
+
 static const std::vector<int> NUM_RS_PADRAO  = {5,5,5,4,3,2};
 static const std::vector<int> NUM_FUS_PADRAO = {1,1,1,1,1,2};
 static const int             LARG_DESP_PADRAO = 1;

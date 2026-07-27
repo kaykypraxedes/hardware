@@ -148,6 +148,8 @@ Thread(switch_instructions, assembly, has_rob, num_rs={}, num_fu={}, dispatch_wi
 - Demais: `ciclo_WR != 0 && ciclo_WR < ciclo`.
 - BRANCH s/ previsor trava commit no mesmo ciclo.
 
+> **Nota:** `ReleaseRSByRegister()`, `ReleaseRSByPC()`, `SortCandidatesByPC()` e `SortEventsByPC()` foram refatoradas de métodos privados da `Thread` para funções `static` em `Thread.cpp`, removendo-as da interface da classe. O comportamento descrito nesta seção permanece inalterado.
+
 ## `Processor` — Orquestração
 ### `ExecuteCycle()`
 ```cpp
