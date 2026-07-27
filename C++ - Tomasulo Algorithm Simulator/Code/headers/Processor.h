@@ -6,7 +6,7 @@
 #include "Instruction.h"
 #include "Thread.h"
 
-//enums:
+// ─── ENUMS ────────────────────────────────────────────────────────
 enum class PROCESSOR_TYPE {
     IN_ORDER,
     TOMASULO_WITHOUT_ROB,
@@ -23,10 +23,10 @@ struct CYCLE_LINE {
     Instruction instruction;
 };
 
-// classe:
+// ─── CLASSE ───────────────────────────────────────────────────────
 class Processor {
     public:
-        // Construtor
+        // Construtor:
         Processor(
             int,
             int,
@@ -35,24 +35,23 @@ class Processor {
             MULTITHREADING_MODEL,
             const std::vector<std::string>&,
             const std::vector<int>& = {},
-            std::vector<int> = {},
+            std::vector<int>        = {},
             const std::vector<int>& = {}
         );
 
-        // Métodos públicos
-        bool                     ExecuteCycle();
+        // Métodos públicos:
         std::vector<CYCLE_LINE>  GetCycleTable() const;
-        PROCESSOR_TYPE           GetType()         const;
-
+        PROCESSOR_TYPE           GetType()       const;
+        bool                     ExecuteCycle();
+        // const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
         const Thread& GetThread(
             int
-        ) const; // const & para evitar cópia
-
+        ) const;
         const std::vector<TABLE_ROW>& GetThreadTable(
             int
-        ) const; // const & para evitar cópia
+        ) const;
     private:
-        // Atributos
+        // Atributos:
         int                  dispatch_width{1};
         int                  current_cycle{1};
         int                  thread_pointer{};
@@ -61,11 +60,10 @@ class Processor {
         PROCESSOR_TYPE       type;
         MULTITHREADING_MODEL mt_model;
         std::vector<Thread>  threads;
-        // Métodos privados
+        // Métodos privados:
         bool ExecuteExMemWr();
         void ExecuteIssue();
         void AdvanceRoundRobinPointer();
-
         void InitializeThreads(
             const std::vector<std::string>&,
             bool,

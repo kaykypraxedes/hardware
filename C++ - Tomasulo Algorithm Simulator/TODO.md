@@ -56,26 +56,60 @@
 
 ## 🔧 Refatorações de Código (Alta Prioridade)
 
-### Rotular métodos com `// Público:` e `// Privado:`
+### Reorganizar métodos com rótulos `// Público:` / `// Privado:` e seções padronizadas
 
-Cada método nos arquivos `.cpp` receberá um comentário `// Público:` ou `// Privado:` na linha imediatamente anterior à sua assinatura. O objetivo é tornar explícita a visibilidade de cada método sem depender de agrupamentos por seção (que quebram a ordem lógica da pipeline).
+Reorganizar cada `.cpp` seguindo este padrão:
 
-Também será analisada uma nova ordem mais natural da definição dos métodos para tornar o caminho de dados, ordem de instruções e dependencias mais claras para o programador quando ele for revisar o código.
+**1. Cabeçalhos de seção** no formato `// ─── NOME ───` com traços até o limite:
+- `// ─── GETTERS ───` — todos os getters simples (cada um com seu rótulo individual)
+- `// ─── CONSTRUTORES ───` — construtores
+- `// ─── DEMAIS MÉTODOS ───` — demais métodos (ou seções específicas para Thread)
+
+**2. Rótulo individual** `// Público:` ou `// Privado:` na linha imediatamente anterior a **cada** definição de método, sem exceção (inclusive getters de uma linha).
+
+**3. Comentários descritivos existentes** preservados entre o rótulo e a assinatura.
+
+**4. Remover** `// Códigos pequenos:` e `// Códigos grandes:` (substituídos pelas seções acima).
+
+**5. Ordem dos métodos dentro de `// ─── DEMAIS MÉTODOS ───`** varia por módulo:
+
+| Módulo | Estrutura |
+|--------|-----------|
+| `Components.cpp` | Privados antes dos públicos (pois são chamados pelo construtor) |
+| `Instruction.cpp` | Privados antes dos públicos (pois são chamados pelo construtor) |
+| `Processor.cpp` | Público wrapper → privados helpers (ordem sequencial de execução) |
+| `ReservationStations.cpp` | Público wrapper → privados helpers (ordem sequencial: AddIssue → UpdateDependencies → UpdateCountdown → ResolveDependency → Release) |
+| `Thread.cpp` | Dividido em seções por estágio da pipeline: `// ─── ISSUE ───`, `// ─── EX/MEM ───`, `// ─── WR ───`, `// ─── COMMIT ───`. Dentro de cada estágio: público wrapper → privados helpers. |
+
+Nenhuma lógica, assinatura ou header é alterado — apenas comentários e ordem das definições.
 
 Ordem de implementação (do menos para o mais complexo):
-1. `Components.cpp` — 118 linhas, 6 métodos
+1. `Components.cpp` — 118 linhas, 6 métodos (✓ concluído)
 2. `Instruction.cpp` — 149 linhas, 10 métodos
 3. `Processor.cpp` — 104 linhas, 5 métodos
 4. `ReservationStations.cpp` — 289 linhas, 11 métodos
 5. `Thread.cpp` — 466 linhas, ~24 métodos
 
-Nenhuma lógica, assinatura ou header é alterado — apenas comentários são adicionados.
+- [x] `Components.cpp`
+- [x] `Instruction.cpp`
+- [x] `Processor.cpp`
+- [x] `ReservationStations.cpp`
+- [x] `Thread.cpp`
 
-- [ ] `Components.cpp` — adicionar `// Público:` e `// Privado:` em cada método
-- [ ] `Instruction.cpp` — idem
-- [ ] `Processor.cpp` — idem
-- [ ] `ReservationStations.cpp` — idem
-- [ ] `Thread.cpp` — idem
+### Quebrar métodos superlotados em funções menores
+
+Após a reorganização, dividir métodos que acumulam múltiplas responsabilidades em funções menores e mais coesas. Exemplos identificados:
+
+- `Thread::Wr()` — flush + write result + detecção de transições em um único método
+- `Thread::PerformWriteResult()` — STORE c/ ROB e WriteBackNormal no mesmo fluxo
+- `Thread::WriteBackNormal()` — broadcast CDB + liberação de RS (por registro ou PC) num switch de 8 branches
+- `Thread::BroadcastCDB()` — percorre 6 grupos chamando `FindWBInGroup`, que por sua vez varre cada RS e resolve dependências
+- `Thread::Commit()` — lógica de STORE c/ ROB, BRANCH e demais instruções misturadas
+- `ReservationStation::AddIssue()` — leitura Qj/Qk + auto-WAR + alocação CDB em ~80 linhas
+- `ReservationStation::UpdateDependencies()` — resolução de dependências + alocação de FU no mesmo método
+- `Processor::ExecuteIssue()` — política de escalonamento (fine-grained, SMT) misturada com a lógica de despacho
+
+Cada método listado deve ser analisado individualmente e, quando houver coesão temática, extraído em 2+ métodos menores com nomes descritivos.
 
 ### Demais itens
 

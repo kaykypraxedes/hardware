@@ -5,7 +5,7 @@
 #include <vector>
 #include "Components.h"
 
-//enums:
+// ─── ENUMS ────────────────────────────────────────────────────────
 enum class INSTRUCTION_TYPE {
     NONEXISTENT,
     LOAD,
@@ -26,14 +26,14 @@ enum class INSTRUCTION_PHASE {
     COMMIT
 };
 
-// classe:
+// ─── CLASSE ───────────────────────────────────────────────────────
 class Instruction {
     public:
-        // Elementos static
+        // Elementos static:
         static std::vector<int> base_ex_latencies;
         static std::vector<int> base_mem_latencies;
 
-        // Construtores
+        // Construtores:
         Instruction() :
             PC(-1),
             ex_latency(0),
@@ -44,34 +44,43 @@ class Instruction {
             std::string
         );
 
-        // Getters e setters
-        int               GetPC()               const;
-        int               GetExLatency()        const;
-        int               GetMemLatency()       const;
-        INSTRUCTION_TYPE  GetInstructionType()  const;
-        Register          GetDestRegister()     const;
-        Register          GetJ()                const;
-        Register          GetK()                const;
-        const std::string& GetInstructionString() const; // const & para evitar cópia
-
-        void SetMemLatency(int);
-        void SetExLatency(int);
+        // Getters:
+        int                GetPC()                const;
+        int                GetExLatency()         const;
+        int                GetMemLatency()        const;
+        INSTRUCTION_TYPE   GetInstructionType()   const;
+        Register           GetDestRegister()      const;
+        Register           GetJ()                 const;
+        Register           GetK()                 const;
+        // const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
+        const std::string& GetInstructionString() const;
+        // Métodos públicos:
+        void SetMemLatency(
+            int
+        );
+        void SetExLatency(
+            int
+        );
     private:
-        // Atributos (instruction_string DEVE vir antes de PC para que o
-        // initializer list a inicialize antes de SplitInstruction() ser chamado)
-        std::string   instruction_string;
-        int           PC{};
-        int           ex_latency;
-        int           mem_latency{};
+        // Atributos:
+        // (instruction_string DEVE vir antes de PC para que o initializer list a inicialize antes de SplitInstruction() ser chamado)
+        std::string      instruction_string;
+        int              PC{};
+        int              ex_latency;
+        int              mem_latency{};
         INSTRUCTION_TYPE type;
-        Register      dest_register;
-        Register      reg_j;
-        Register      reg_k;
-        // Métodos privados
+        Register         dest_register;
+        Register         reg_j;
+        Register         reg_k;
+        // Métodos privados:
         void                     ParseInstruction();
-        std::vector<std::string> SplitInstruction();
         void                     SetLatencies();
-        void IdentifyType(const std::string&);
-        void SetAttributes(std::vector<std::string>&);
+        std::vector<std::string> SplitInstruction();
+        void IdentifyType(
+            const std::string&
+        );
+        void SetAttributes(
+            std::vector<std::string>&
+        );
 };
 #endif

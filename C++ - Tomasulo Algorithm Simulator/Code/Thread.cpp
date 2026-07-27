@@ -6,15 +6,44 @@
 #include <string>
 #include <vector>
 
+// ─── ELEMENTOS STATIC ─────────────────────────────────────────────
+static int pcDeRS(ReservationStation* r) { return r->GetCurrentInstruction().GetPC(); }
+static int pcDeEvento(const EVENT& e)    { return e.pc; }
+
+// ─── GETTERS ──────────────────────────────────────────────────────
+// Público:
+int Thread::GetPC() const { return PC; }
+
+// Público:
+int Thread::GetNumStalls() const { return num_stalls; }
+
+// Público:
+THREAD_STATE Thread::GetThreadState() const { return state; }
+
+// Público:
+// const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
+const CDB& Thread::GetCDB() const { return cdb; }
+
+// Público:
+const RESERVATION_STATIONS& Thread::GetRS() const { return rs; }
+
+// Público:
+const FUNCTIONAL_UNITS& Thread::GetFU() const { return fu; }
+
+// Público:
+const std::vector<TABLE_ROW>& Thread::GetTable() const { return instruction_table; }
+
+// ─── CONSTRUTORES ─────────────────────────────────────────────────
+// Público:
 Thread::Thread(
     const std::vector<std::string>& assembly,
-    bool                           has_rob,
-    const std::vector<int>&        num_rs,
-    const std::vector<int>&        num_fus,
-    int                            dispatch_width,
-    int                            rob_capacity
+    bool                            has_rob,
+    const std::vector<int>&         num_rs,
+    const std::vector<int>&         num_fus,
+    int                             dispatch_width,
+    int                             rob_capacity
 ):
-    has_rob(has_rob),
+    has_rob     (has_rob),
     rob_capacity(has_rob ? rob_capacity : 1)
 {
     int i{};
@@ -23,6 +52,7 @@ Thread::Thread(
     InitializeComponents(num_rs, num_fus, dispatch_width);
 }
 
+// Público:
 Thread::Thread(
     const std::vector<int>&         switch_instructions,
     const std::vector<std::string>& assembly,
@@ -32,8 +62,8 @@ Thread::Thread(
     int                             dispatch_width,
     int                             rob_capacity
 ):
-    has_rob(has_rob),
-    rob_capacity(has_rob ? rob_capacity : 1),
+    has_rob            (has_rob),
+    rob_capacity       (has_rob ? rob_capacity : 1),
     switch_instructions(switch_instructions)
 {
     int i{};
@@ -42,21 +72,8 @@ Thread::Thread(
     InitializeComponents(num_rs, num_fus, dispatch_width);
 }
 
-// Códigos pequenos:
-int                             Thread::GetPC()           const { return PC; }
-int                             Thread::GetNumStalls()    const { return num_stalls; }
-THREAD_STATE                    Thread::GetThreadState()  const { return state; }
-const CDB&                      Thread::GetCDB()          const { return cdb; }      // const & para evitar cópia
-const RESERVATION_STATIONS&      Thread::GetRS()           const { return rs; }       // const & para evitar cópia
-const FUNCTIONAL_UNITS&         Thread::GetFU()           const { return fu; }       // const & para evitar cópia
-const std::vector<TABLE_ROW>& Thread::GetTable()       const { return instruction_table; } // const & para evitar cópia
-
-static int pcDeRS(ReservationStation* r) { return r->GetCurrentInstruction().GetPC(); }
-static int pcDeEvento(const EVENT& e) { return e.pc; }
-
-// Códigos grandes:
-
-// ─── INICIALIZAÇÃO ─────────────────────────────────────────────────
+// ─── INICIALIZAÇÃO ────────────────────────────────────────────────
+// Privado:
 void Thread::InitializeComponents(
     const std::vector<int>& num_rs,
     const std::vector<int>& num_fus,
@@ -86,6 +103,7 @@ void Thread::InitializeComponents(
     fu.commit = dispatch_width;
 }
 
+// Público:
 void Thread::SetCustomLatency(
     int position,
     int ex_latency,
@@ -97,8 +115,11 @@ void Thread::SetCustomLatency(
         instruction_table[position].instruction.SetMemLatency(mem_latency);
 }
 
-// ─── ESTÁGIO ISSUE ────────────────────────────────────────────────
-bool Thread::Issue(int cycle) {
+// ─── ISSUE ────────────────────────────────────────────────────────
+// Público:
+bool Thread::Issue(
+    int cycle
+){
     if (state == THREAD_STATE::BLOCKED) return false;
     if (PC >= static_cast<int>(instruction_table.size())) return false;
     if (rob.size() >= static_cast<size_t>(rob_capacity)) return false;
@@ -132,8 +153,20 @@ bool Thread::Issue(int cycle) {
     return false;
 }
 
-// ─── ESTÁGIO EX/MEM ───────────────────────────────────────────────
-bool Thread::ExMem(int cycle) {
+// Privado:
+void Thread::RegisterIssue(
+    int pc,
+    int cycle
+){
+    instruction_table[pc].issue_cycle = cycle;
+    instruction_table[pc].pc_position  = pc;
+}
+
+// ─── EX/MEM ───────────────────────────────────────────────────────
+// Público:
+bool Thread::ExMem(
+    int cycle
+){
     if(static_cast<size_t>(num_committed_instructions) == instruction_table.size() ||
        (!has_rob && static_cast<size_t>(num_finished_instructions) == instruction_table.size()))
        return true;
@@ -144,7 +177,10 @@ bool Thread::ExMem(int cycle) {
     return false;
 }
 
-void Thread::StartExOrMemPhase(int cycle) {
+// Privado:
+void Thread::StartExOrMemPhase(
+    int cycle
+){
     std::vector<ReservationStation*> candidates;
     CollectCandidatesToAdvance(candidates);
     SortCandidatesByPC(candidates);
@@ -155,7 +191,10 @@ void Thread::StartExOrMemPhase(int cycle) {
     }
 }
 
-void Thread::CollectCandidatesToAdvance(std::vector<ReservationStation*>& candidates) {
+// Privado:
+void Thread::CollectCandidatesToAdvance(
+    std::vector<ReservationStation*>& candidates
+){
     CollectCandidatesFromGroup(rs.load, candidates);
     CollectCandidatesFromGroup(rs.store, candidates);
     CollectCandidatesFromGroup(rs.int_basic, candidates);
@@ -164,7 +203,11 @@ void Thread::CollectCandidatesToAdvance(std::vector<ReservationStation*>& candid
     CollectCandidatesFromGroup(rs.float_mult_div, candidates);
 }
 
-void Thread::CollectCandidatesFromGroup(std::vector<ReservationStation>& group, std::vector<ReservationStation*>& candidates) {
+// Privado:
+void Thread::CollectCandidatesFromGroup(
+    std::vector<ReservationStation>& group,
+    std::vector<ReservationStation*>& candidates
+){
     for (ReservationStation& r : group) {
         if (!r.GetBusy()) continue;
         int inst_pc = r.GetCurrentInstruction().GetPC();
@@ -176,11 +219,18 @@ void Thread::CollectCandidatesFromGroup(std::vector<ReservationStation>& group, 
     }
 }
 
-void Thread::SortCandidatesByPC(std::vector<ReservationStation*>& candidates) const {
+// Privado:
+void Thread::SortCandidatesByPC(
+    std::vector<ReservationStation*>& candidates
+)const {
     sort_utils::insertionSort(candidates, pcDeRS);
 }
 
-void Thread::TryAdvanceRS(ReservationStation& r, int cycle) {
+// Privado:
+void Thread::TryAdvanceRS(
+    ReservationStation& r,
+    int cycle
+){
     if (r.UpdateDependencies(cdb, fu, cycle)) {
         int pc = r.GetCurrentInstruction().GetPC();
         if (r.GetInstructionPhase() == INSTRUCTION_PHASE::EX)
@@ -192,8 +242,27 @@ void Thread::TryAdvanceRS(ReservationStation& r, int cycle) {
     }
 }
 
-// ─── ESTÁGIO WR (WRITE RESULT) ──────────────────────────────────
-void Thread::Wr(int cycle) {
+// Privado: (também usado em WR/ProcessTransition)
+void Thread::AddExCycle(
+    int pc,
+    int cycle
+){
+    instruction_table[pc].ex_cycles.push_back(cycle);
+}
+
+// Privado: (também usado em WR/ProcessTransition)
+void Thread::AddMemCycle(
+    int pc,
+    int cycle
+){
+    instruction_table[pc].mem_cycles.push_back(cycle);
+}
+
+// ─── WR ───────────────────────────────────────────────────────────
+// Público:
+void Thread::Wr(
+    int cycle
+){
     FlushPendingWBBuffer();
     PerformWriteResult(cycle);
     DetectPhaseTransitions(cycle);
@@ -205,11 +274,17 @@ void Thread::Wr(int cycle) {
     }
 }
 
-void Thread::SortWBBuffer() {
-    sort_utils::insertionSort(wb_buffer);
+// Privado:
+void Thread::FlushPendingWBBuffer() {
+    for (int pc : pending_wb_buffer)
+        wb_buffer.push_back(pc);
+    pending_wb_buffer.clear();
 }
 
-void Thread::PerformWriteResult(int cycle) {
+// Privado:
+void Thread::PerformWriteResult(
+    int cycle
+){
     SortWBBuffer();
 
     int escritas{};
@@ -230,7 +305,33 @@ void Thread::PerformWriteResult(int cycle) {
     }
 }
 
-void Thread::WriteBackStoreWithROB(int pc, int cycle) {
+// Privado:
+void Thread::SortWBBuffer() {
+    sort_utils::insertionSort(wb_buffer);
+}
+
+// Privado:
+int Thread::NextWB() const {
+    return wb_buffer.front();
+}
+
+// Privado:
+void Thread::RemoveWB() {
+    wb_buffer.erase(wb_buffer.begin());
+}
+
+// Privado:
+void Thread::AddWB(
+    int pc
+){
+    wb_buffer.push_back(pc);
+}
+
+// Privado:
+void Thread::WriteBackStoreWithROB(
+    int pc,
+    int cycle
+){
     for (ReservationStation& r : rs.store)
         if (r.GetBusy() && r.GetCurrentInstruction().GetPC() == pc)
             r.Release(cycle);
@@ -238,7 +339,11 @@ void Thread::WriteBackStoreWithROB(int pc, int cycle) {
     num_finished_instructions++;
 }
 
-void Thread::WriteBackNormal(int pc, int cycle) {
+// Privado:
+void Thread::WriteBackNormal(
+    int pc,
+    int cycle
+){
     if(instruction_table[pc].instruction.GetInstructionType() != INSTRUCTION_TYPE::STORE &&
        instruction_table[pc].instruction.GetInstructionType() != INSTRUCTION_TYPE::BRANCH)
         SetWR(pc, cycle);
@@ -263,7 +368,20 @@ void Thread::WriteBackNormal(int pc, int cycle) {
         ReleaseRSByRegister(rs.int_basic, dest, cycle);
 }
 
-void Thread::BroadcastCDB(int pc, const Register& dest, int cycle) {
+// Privado: (usado em WriteBackNormal)
+void Thread::SetWR(
+    int pc,
+    int cycle
+){
+    instruction_table[pc].wr_cycle = cycle;
+}
+
+// Privado:
+void Thread::BroadcastCDB(
+    int pc,
+    const Register& dest,
+    int cycle
+){
     FindWBInGroup(rs.load, pc, dest, cycle);
     FindWBInGroup(rs.store, pc, dest, cycle);
     FindWBInGroup(rs.int_basic, pc, dest, cycle);
@@ -272,7 +390,13 @@ void Thread::BroadcastCDB(int pc, const Register& dest, int cycle) {
     FindWBInGroup(rs.float_mult_div, pc, dest, cycle);
 }
 
-void Thread::FindWBInGroup(std::vector<ReservationStation>& group, int pc, const Register& dest, int cycle) {
+// Privado:
+void Thread::FindWBInGroup(
+    std::vector<ReservationStation>& group,
+    int pc,
+    const Register& dest,
+    int cycle
+){
     for (ReservationStation& r : group) {
         if (!r.GetBusy() || r.GetInstructionPhase() != INSTRUCTION_PHASE::WB) continue;
         if (r.GetCurrentInstruction().GetPC() != pc) continue;
@@ -294,12 +418,20 @@ void Thread::FindWBInGroup(std::vector<ReservationStation>& group, int pc, const
     }
 }
 
-void Thread::ResolveDependencyInGroup(std::vector<ReservationStation>& group, const std::string& rs_id, const Register& dest) {
+// Privado:
+void Thread::ResolveDependencyInGroup(
+    std::vector<ReservationStation>& group,
+    const std::string& rs_id,
+    const Register& dest
+){
     for (ReservationStation& dep : group)
         if (dep.GetBusy()) dep.ResolveDependency(rs_id, dest);
 }
 
-void Thread::DetectPhaseTransitions(int cycle) {
+// Privado:
+void Thread::DetectPhaseTransitions(
+    int cycle
+){
     std::vector<EVENT> events;
     CollectTransitionEvents(events, cycle);
 
@@ -309,11 +441,11 @@ void Thread::DetectPhaseTransitions(int cycle) {
         ProcessTransition(e, cycle);
 }
 
-void Thread::SortEventsByPC(std::vector<EVENT>& events) const {
-    sort_utils::insertionSort(events, pcDeEvento);
-}
-
-void Thread::CollectTransitionEvents(std::vector<EVENT>& events, int cycle) {
+// Privado:
+void Thread::CollectTransitionEvents(
+    std::vector<EVENT>& events,
+    int cycle
+){
     CollectEventsFromGroup(rs.load, events, cycle);
     CollectEventsFromGroup(rs.store, events, cycle);
     CollectEventsFromGroup(rs.int_basic, events, cycle);
@@ -322,6 +454,14 @@ void Thread::CollectTransitionEvents(std::vector<EVENT>& events, int cycle) {
     CollectEventsFromGroup(rs.float_mult_div, events, cycle);
 }
 
+// Privado:
+void Thread::SortEventsByPC(
+    std::vector<EVENT>& events
+) const {
+    sort_utils::insertionSort(events, pcDeEvento);
+}
+
+// Privado:
 void Thread::CollectEventsFromGroup(std::vector<ReservationStation>& group, std::vector<EVENT>& events, int cycle) {
     for (ReservationStation& r : group) {
         if (!r.GetBusy()) continue;
@@ -337,9 +477,13 @@ void Thread::CollectEventsFromGroup(std::vector<ReservationStation>& group, std:
     }
 }
 
-void Thread::ProcessTransition(const EVENT& e, int cycle) {
-    int pc             = e.pc;
-    bool has_mem       = (e.type == INSTRUCTION_TYPE::LOAD || e.type == INSTRUCTION_TYPE::STORE);
+// Privado:
+void Thread::ProcessTransition(
+    const EVENT& e,
+    int cycle
+){
+    int pc              = e.pc;
+    bool has_mem        = (e.type == INSTRUCTION_TYPE::LOAD || e.type == INSTRUCTION_TYPE::STORE);
     bool store_with_rob = (e.type == INSTRUCTION_TYPE::STORE && has_rob);
 
     if (e.phase_before == INSTRUCTION_PHASE::EX && e.phase_after == INSTRUCTION_PHASE::MEM) {
@@ -355,8 +499,18 @@ void Thread::ProcessTransition(const EVENT& e, int cycle) {
     }
 }
 
-// ─── ESTÁGIO COMMIT ──────────────────────────────────────────────
-void Thread::Commit(int cycle) {
+// Privado: (usado em ProcessTransition)
+void Thread::AddPendingWB(
+    int pc
+){
+    pending_wb_buffer.push_back(pc);
+}
+
+// ─── COMMIT ───────────────────────────────────────────────────────
+// Público:
+void Thread::Commit(
+    int cycle
+){
     if (!has_rob) return;
 
     int escritas{};
@@ -395,8 +549,7 @@ void Thread::Commit(int cycle) {
     }
 }
 
-// ─── UTILITÁRIOS ─────────────────────────────────────────────────
-
+// Privado: (usado em WR/WriteBackNormal)
 void Thread::ReleaseRSByRegister(
     std::vector<ReservationStation>& rs,
     Register      reg_destino,
@@ -412,6 +565,7 @@ void Thread::ReleaseRSByRegister(
     }
 }
 
+// Privado: (usado em WR/WriteBackNormal)
 void Thread::ReleaseRSByPC(
     std::vector<ReservationStation>& group,
     int              pc,
@@ -422,45 +576,4 @@ void Thread::ReleaseRSByPC(
             && r.GetCurrentInstruction().GetPC() == pc)
             r.Release(cycle);
     }
-}
-
-// ─── ENCAPSULAMENTO ──────────────────────────────────────────────
-
-void Thread::RegisterIssue(int pc, int cycle) {
-    instruction_table[pc].issue_cycle = cycle;
-    instruction_table[pc].pc_position  = pc;
-}
-
-void Thread::AddExCycle(int pc, int cycle) {
-    instruction_table[pc].ex_cycles.push_back(cycle);
-}
-
-void Thread::AddMemCycle(int pc, int cycle) {
-    instruction_table[pc].mem_cycles.push_back(cycle);
-}
-
-void Thread::SetWR(int pc, int cycle) {
-    instruction_table[pc].wr_cycle = cycle;
-}
-
-int Thread::NextWB() const {
-    return wb_buffer.front();
-}
-
-void Thread::RemoveWB() {
-    wb_buffer.erase(wb_buffer.begin());
-}
-
-void Thread::AddWB(int pc) {
-    wb_buffer.push_back(pc);
-}
-
-void Thread::AddPendingWB(int pc) {
-    pending_wb_buffer.push_back(pc);
-}
-
-void Thread::FlushPendingWBBuffer() {
-    for (int pc : pending_wb_buffer)
-        wb_buffer.push_back(pc);
-    pending_wb_buffer.clear();
 }

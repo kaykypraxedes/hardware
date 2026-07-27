@@ -3,12 +3,39 @@
 #include "headers/Components.h"
 #include <string>
 
-// Elementos static
+
+// ─── ELEMENTOS STATIC ─────────────────────────────────────────────
 std::vector<int> Instruction::base_ex_latencies  = {0,1,1,1,1,4,10,9,14,40};
 std::vector<int> Instruction::base_mem_latencies = {1,1};
 
-// Métodos públicos
-// Construtor:
+// ─── GETTERS ──────────────────────────────────────────────────────
+// Público:
+int Instruction::GetPC()                const { return PC;            }
+
+// Público:
+int Instruction::GetExLatency()         const { return ex_latency;    }
+
+// Público:
+int Instruction::GetMemLatency()        const { return mem_latency;   }
+
+// Público:
+Register Instruction::GetDestRegister() const { return dest_register; }
+
+// Público:
+Register Instruction::GetJ()            const { return reg_j;         }
+
+// Público:
+Register Instruction::GetK()            const { return reg_k;         }
+
+// Público:
+INSTRUCTION_TYPE Instruction::GetInstructionType()     const { return type;               }
+
+// Público:
+// const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
+const std::string& Instruction::GetInstructionString() const { return instruction_string; }
+
+// ─── CONSTRUTOR ───────────────────────────────────────────────────
+// Público:
 Instruction::Instruction(
     int PC, std::string instruction_string
 ):
@@ -18,31 +45,8 @@ Instruction::Instruction(
     ParseInstruction();
 }
 
-// Códigos pequenos:
-int Instruction::GetPC()                        const { return PC; }
-int Instruction::GetExLatency()                 const { return ex_latency; }
-int Instruction::GetMemLatency()                const { return mem_latency; }
-INSTRUCTION_TYPE Instruction::GetInstructionType() const { return type; }
-Register Instruction::GetDestRegister()         const { return dest_register; }
-Register Instruction::GetJ()                    const { return reg_j; }
-Register Instruction::GetK()                    const { return reg_k; }
-const std::string& Instruction::GetInstructionString()  const { return instruction_string; } // const & para evitar cópia
-
-// Códigos grandes:
-void Instruction::SetMemLatency(
-    int latency
-){
-    mem_latency = latency;
-}
-
-void Instruction::SetExLatency(
-    int latency
-){
-    ex_latency = latency;
-}
-
-// Métodos privados
-// Códigos grandes:
+// ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
+// Privado:
 void Instruction::ParseInstruction(){
     std::vector<std::string> tokens{SplitInstruction()};
     IdentifyType(tokens[0]);
@@ -50,6 +54,7 @@ void Instruction::ParseInstruction(){
     SetAttributes(tokens);
 }
 
+// Privado:
 std::vector<std::string> Instruction::SplitInstruction(){
     // ADD   R1 R2 R3 => tokens[0] = ADD,   tokens[1] = R1, tokens[2] = R2,   tokens[3] = R3
     // LOAD  R1 n(R2) => tokens[0] = LOAD,  tokens[1] = R1, tokens[2] = n,    tokens[3] = R2
@@ -71,6 +76,7 @@ std::vector<std::string> Instruction::SplitInstruction(){
     return tokens;
 }
 
+// Privado:
 void Instruction::IdentifyType(
     const std::string& op
 ){
@@ -111,6 +117,7 @@ void Instruction::IdentifyType(
     else type = INSTRUCTION_TYPE::NONEXISTENT;
 }
 
+// Privado:
 void Instruction::SetLatencies(){
     if(type == INSTRUCTION_TYPE::LOAD){
         mem_latency = base_mem_latencies[0];
@@ -120,6 +127,7 @@ void Instruction::SetLatencies(){
     ex_latency = base_ex_latencies[static_cast<int>(type)]; // Enums podem ser convertidos em int ()
 }
 
+// Privado:
 void Instruction::SetAttributes(
     std::vector<std::string>& tokens
 ){
@@ -146,4 +154,18 @@ void Instruction::SetAttributes(
         reg_j         = Register(tokens[2]);
         reg_k         = Register(tokens[3]);
     }
+}
+
+// Público:
+void Instruction::SetMemLatency(
+    int latency
+){
+    mem_latency = latency;
+}
+
+// Público:
+void Instruction::SetExLatency(
+    int latency
+){
+    ex_latency = latency;
 }
