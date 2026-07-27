@@ -31,12 +31,15 @@ O Algoritmo de Tomasulo é uma técnica de hardware para escalonamento dinâmico
 
 ```
 Code/
+├── Makefile
 ├── Main.cpp                     # Leitura da config + simulação + impressão
-├── Processor.cpp/.h           # Orquestração multiciclo
-├── Thread.cpp/.h                # Pipeline por thread (Issue, EX, MEM, WB, Commit)
-├── ReservationStations.cpp/.h   # Estação de reserva individual
-├── Components.cpp/.h           # Register, CDB, FU
-├── Instruction.cpp/.h             # Parsing e tipos de instrução
+├── Processor.cpp                # Orquestração multiciclo
+├── Thread.cpp                   # Pipeline por thread (Issue, EX, MEM, WB, Commit)
+├── ReservationStations.cpp      # Estação de reserva individual
+├── Components.cpp               # Register, CDB, FU
+├── Instruction.cpp              # Instruction (parsing e tipos)
+├── headers/                     # Arquivos .h de cabeçalho
+├── testbenchs/                  # Testbenchs individuais para cada .cpp
 └── test-cases/
     ├── inputs/                  # Arquivos de config .txt
     └── expected/                # Saídas de referência .expected

@@ -24,12 +24,14 @@ programa     instrucoes... END_PROG
 
 ```
 Code/
-├── Main.cpp                     (leitura + impressão)
-├── Processor.cpp/.h           (Processor, orquestração multiciclo)
-├── Thread.cpp/.h                (Issue, ExMem, Wr, Commit)
-├── ReservationStations.cpp/.h   (AddIssue, dep tracking, contagem)
-├── Components.cpp/.h           (Register, CDB, FU)
-├── Instruction.cpp/.h             (Instruction, parsing, tipo, latências)
+├── Makefile
+├── Main.cpp                     (leitura + simulação + impressão)
+├── Processor.cpp                (Processor, orquestração multiciclo)
+├── Thread.cpp                   (Issue, ExMem, Wr, Commit)
+├── ReservationStations.cpp      (AddIssue, dep tracking, contagem)
+├── Components.cpp               (Register, CDB, FU)
+├── Instruction.cpp              (Instruction, parsing, tipo, latências)
+├── headers/                     (arquivos .h de cabeçalho)
 └── testbenchs/                  (testes unitários)
 ```
 
@@ -188,12 +190,20 @@ Para cada thread: `ExMem()` → `Wr()` → `Commit()` (Commit unificado: s/ ROB 
 ## Estrutura de Arquivos
 ```
 ├── Code/
+│   ├── Makefile
 │   ├── Main.cpp                     # Leitura config + simulação + impressão
-│   ├── Processor.cpp/.h           # Processor (orquestração multiciclo)
-│   ├── Thread.cpp/.h                # Pipeline por thread
-│   ├── ReservationStations.cpp/.h   # ReservationStation individual
-│   ├── Components.cpp/.h           # Register, CDB, FU
-│   ├── Instruction.cpp/.h             # Instruction (parsing e tipos)
+│   ├── Processor.cpp                # Processor (orquestração multiciclo)
+│   ├── Thread.cpp                   # Pipeline por thread
+│   ├── ReservationStations.cpp      # ReservationStation individual
+│   ├── Components.cpp               # Register, CDB, FU
+│   ├── Instruction.cpp              # Instruction (parsing, tipo, latências)
+│   ├── headers/                     # Arquivos .h de cabeçalho
+│   │   ├── Components.h
+│   │   ├── Instruction.h
+│   │   ├── Processor.h
+│   │   ├── ReservationStations.h
+│   │   ├── SortUtils.h
+│   │   └── Thread.h
 │   ├── testbenchs/                  # Testes unitários (fontes)
 │   │   ├── tb_Components.cpp
 │   │   ├── tb_Instruction.cpp
@@ -203,9 +213,7 @@ Para cada thread: `ExMem()` → `Wr()` → `Commit()` (Commit unificado: s/ ROB 
 │   ├── test-cases/
 │   │   ├── inputs/                  # Arquivos de configuração .txt
 │   │   └── expected/                # Saídas de referência .expected
-│   ├── build/                       # Objetos .o e binários dos testbenchs
-│   ├── executable                   # Binário principal
-│   └── Makefile
+│   └── build/                       # Build: .o, .d, executável, testbenchs
 ├── README.md
 ├── README-portuguese.md
 ├── FULL_DOCUMENTATION-portuguese.md

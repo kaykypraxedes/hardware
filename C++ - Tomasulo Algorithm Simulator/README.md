@@ -31,12 +31,15 @@ The Tomasulo Algorithm is a hardware technique for dynamic instruction schedulin
 
 ```
 Code/
+├── Makefile
 ├── Main.cpp                     # Config reading + simulation + output
-├── Processor.cpp/.h           # Multi-cycle orchestration
-├── Thread.cpp/.h                # Per-thread pipeline (Issue, EX, MEM, WB, Commit)
-├── ReservationStations.cpp/.h   # Individual reservation station
-├── Components.cpp/.h           # Register, CDB, Functional Unit
-├── Instruction.cpp/.h             # Instruction parsing and types
+├── Processor.cpp                # Multi-cycle orchestration
+├── Thread.cpp                   # Per-thread pipeline (Issue, EX, MEM, WB, Commit)
+├── ReservationStations.cpp      # Individual reservation station
+├── Components.cpp               # Register, CDB, Functional Unit
+├── Instruction.cpp              # Instruction parsing and types
+├── headers/                     # .h header files
+├── testbenchs/                  # Individual testbenchs for every .cpp
 └── test-cases/
     ├── inputs/                  # .txt config files
     └── expected/                # Reference .expected outputs
