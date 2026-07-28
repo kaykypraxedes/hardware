@@ -30,7 +30,6 @@ Register Instruction::GetK()            const { return reg_k;         }
 INSTRUCTION_TYPE Instruction::GetInstructionType()     const { return type;               }
 
 // Público:
-// const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
 const std::string& Instruction::GetInstructionString() const { return instruction_string; }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
@@ -137,6 +136,7 @@ void Instruction::SetAttributes(
     // JR    R1          => dest_register = -,  J = R1,  K = -
     // J     label       => dest_register = -,  J = -,   K = -
     // ADD   R1 R2 R3    => dest_register = R1, J = R2,  K = R3
+    // ADDI  R1 R2 n     => dest_register = R1, J = R2,  K = -
     if (type == INSTRUCTION_TYPE::LOAD){
         dest_register = Register(tokens[1]);
         reg_k         = Register(tokens[3]);
@@ -144,16 +144,21 @@ void Instruction::SetAttributes(
         reg_j         = Register(tokens[1]);
         reg_k         = Register(tokens[3]);
     } else if (type == INSTRUCTION_TYPE::BRANCH){
-        if(std::toupper(tokens[1][0]) == 'F' || std::toupper(tokens[1][0]) == 'R')
+        if (toupper(tokens[1][0]) == 'F' || 'R') // Falso → Jump
             reg_j   = Register(tokens[1]);
-        if(tokens.size() > 3) if(std::toupper(tokens[2][0]) == 'F' || std::toupper(tokens[2][0]) == 'R')
-            reg_k   = Register(tokens[2]);
+        if(tokens.size() > 3) reg_k = Register(tokens[2]); // K nem sempre
     } else {
         dest_register = Register(tokens[1]);
-        reg_j         = Register(tokens[2]);
-        reg_k         = Register(tokens[3]);
+        // Verificação de validade:
+        if(tokens.size() > 2 && (std::toupper(tokens[2][0]) == 'F' || std::toupper(tokens[2][0]) == 'R'))
+            reg_j = Register(tokens[2]);
+        if(tokens.size() > 3 && (std::toupper(tokens[3][0]) == 'F' || std::toupper(tokens[3][0]) == 'R'))
+            reg_k = Register(tokens[3]);
     }
 }
+
+// Funções para definir manualmente algumas latências diferentes e deixar a simulação mais realista
+// - Simular "cache miss", onde a instrução que demorava 15 cíclos no MEM agora demora 100
 
 // Público:
 void Instruction::SetMemLatency(

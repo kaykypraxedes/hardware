@@ -1,5 +1,7 @@
-// ────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────
 //  tb_Components.cpp  —  Testbench isolado de Components.cpp
+//  Compile: g++ -o tb_Components tb_Components.cpp ../Components.cpp
+// ──────────────────────────────────────────────────────────────────────────
 #include "../headers/Components.h"
 #include "tb_helpers.h"
 #include <vector>
@@ -7,9 +9,7 @@
 using namespace processor;
 
 int main() {
-    // ────────────────────────────────────────────────────────
     secao("Register() — construtor padrão");
-    // ────────────────────────────────────────────────────────
     {
         Register r;
         check("GetType() == 'Z'",  r.GetType() == 'Z');
@@ -33,9 +33,10 @@ int main() {
         Register r0("R0");
         check("R0: GetId() == 0", r0.GetId() == 0);
 
+        /*
+        // Testado que o processador não aceita mais essa declaração.
         Register inv("XYZ");
-        check("XYZ: GetType() == 'Z'", inv.GetType() == 'Z');
-        check("XYZ: GetId()   == -1",  inv.GetId()   == -1);
+        */
 
         Register vazio("");
         check("'': GetType() == 'Z'", vazio.GetType() == 'Z');

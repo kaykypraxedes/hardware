@@ -78,7 +78,6 @@ int Thread::GetNumStalls()            const { return num_stalls; }
 THREAD_STATE Thread::GetThreadState() const { return state;      }
 
 // Público:
-// const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
 const CDB& Thread::GetCDB() const { return cdb; }
 
 // Público:

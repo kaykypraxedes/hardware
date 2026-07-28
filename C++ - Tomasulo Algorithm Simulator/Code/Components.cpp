@@ -1,5 +1,6 @@
 /* Components.cpp */
 #include "headers/Components.h"
+#include <cstdlib>
 
 namespace processor {
 
@@ -14,41 +15,51 @@ int  Register::GetId()   const { return id;   }
 bool Register::GetBusy() const { return busy; }
 
 // Público:
-// const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
 const std::vector<std::string>& Register::GetAllocatedRS() const { return allocated_rs; }
 
-// ─── CONSTRUTORES ─────────────────────────────────────────────────
-// Público:
-Register::Register(){}
-
+// ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
 Register::Register(
     std::string register_string
 )
 {
-    type = IdentifyType(register_string);
-    id   = IdentifyId(register_string);
+    if (!ParseType(register_string) || !ParseId(register_string)){
+        std::cerr << "[ERRO] Register string inválida: " << register_string << "\n";
+        std::abort();
+    }
 }
 
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Privado:
-char Register::IdentifyType(
+bool Register::ParseType(
     const std::string& s
 ){
-    if (s.empty()) return 'Z';
+    // Casos válidos:
+    // 1. Input vazio
+    if (s.empty()) { type = 'Z'; return true; }
+    // 2. Input[0] == 'F' || Input[0] == 'R'
     char c = static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
-    if (c == 'F') return 'F';
-    if (c == 'R') return 'R';
-    return 'Z';
+    if (c == 'F' || c == 'R') { type = c; return true; }
+    // Casos inválidos:
+    // - Input[0] = "1", "A", "#", etc.
+    return false;
 }
 
 // Privado:
-int Register::IdentifyId(
+bool Register::ParseId(
     const std::string& s
 ){
-    if (s.size() < 2 || !std::isdigit(static_cast<unsigned char>(s[1]))) return -1;
-    try { return std::stoi(s.substr(1)); }
-    catch (...) { return -1; }
+    // Casos válidos:
+    // 1. Input vazio
+    if (s.empty()) { id = -1; return true; }
+    try{
+        // 2. Input[2-n] está no intervalo dos registradores
+        int id_aux{std::stoi(s.substr(1))};
+        if(id_aux >= 0 && id_aux < num_registers) { id = id_aux; return true; }
+    } catch (...) { return false; } // Casos não suportados pelo std::stoi ou pelo std::string::substr
+    // Casos inválidos:
+    // - Input[2-n] = "-1", "1236", "#", etc.
+    return false;
 }
 
 // Público:
@@ -59,15 +70,15 @@ void Register::ToggleBusy() { busy = !busy; }
 // Retorna o produtor pendente mais recente (último allocated_rs com end_times == -1).
 // É este que novas instruções devem aguardar em caso de WAW.
 std::string Register::GetCurrentRS() const {
-    for (int i = (int)allocated_rs.size() - 1; i >= 0; i--) {
+    for (int i = static_cast<int>(allocated_rs.size() - 1); i >= 0; i--) {
         if (end_times[i] == -1) return allocated_rs[i];
     }
     return "";
 }
 
-// Público:
+// Privado:
 bool Register::HasPendingProducer() const {
-    for (int i = 0; i < (int)end_times.size(); i++)
+    for (size_t i = 0; i < end_times.size(); i++)
         if (end_times[i] == -1) return true;
     return false;
 }
@@ -78,7 +89,7 @@ bool Register::HasPendingProducer() const {
 int Register::GetRSCycleStart(
     const std::string& rs_id
 ) const {
-    for (int i = (int)allocated_rs.size() - 1; i >= 0; i--) {
+    for (int i = static_cast<int>(allocated_rs.size()) - 1; i >= 0; i--) {
         if (allocated_rs[i] == rs_id && end_times[i] == -1)
             return start_times[i];
     }
@@ -86,12 +97,12 @@ int Register::GetRSCycleStart(
 }
 
 // Público:
-// Para evitar ambiguidade quando o mesmo RS foi reutilizado múltiplas vezes.
+// Para evitar ambiguidade quando o mesmo RS reutiliza múltiplas vezes o mesmo registrador.
 bool Register::IsDependencyResolved(
     const std::string& rs_id,
     int start_cycle
 ) const {
-    for (int i = 0; i < (int)allocated_rs.size(); i++) {
+    for (size_t i = 0; i < allocated_rs.size(); i++) {
         if (allocated_rs[i] == rs_id && start_times[i] == start_cycle) {
             return end_times[i] != -1;
         }
@@ -111,7 +122,8 @@ std::vector<int> Register::GetAllocationTimes() const {
 }
 
 // Público:
-// Registra o novo produtor. end_times começa em -1 (pendente).
+// Registra o novo produtor.
+// - end_times começa em -1 (para que start_time e end_time tenham o mesmo len, evitando IndexOutOfBounds).
 // Múltiplos produtores pendentes (WAW) ficam na sequência de allocated_rs.
 void Register::AllocateRS(
     const std::string& rs,
@@ -130,7 +142,7 @@ void Register::DeallocateRS(
     int start_cycle,
     int end_cycle
 ){
-    for (int i = 0; i < (int)allocated_rs.size(); i++) {
+    for (size_t i = 0; i < allocated_rs.size(); i++) {
         if (allocated_rs[i] == rs_id && start_times[i] == start_cycle) {
             end_times[i] = end_cycle;
             break;

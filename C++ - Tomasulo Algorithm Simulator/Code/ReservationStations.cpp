@@ -21,7 +21,6 @@ int ReservationStation::GetFUPosition() const { return fu_position;          }
 INSTRUCTION_PHASE ReservationStation::GetInstructionPhase() const { return phase; }
 
 // Público:
-// const & para evitar cópia (não usado em types pequenos por ganho marginal pequeno)
 const std::string& ReservationStation::GetId() const { return id;       }
 
 // Público:
@@ -71,6 +70,7 @@ bool ReservationStation::AddIssue(
 }
 
 // Privado:
+// Apenas faz a limpeza e redefinição dos dados importantes para o novo issue (e marca a nova alocação nos vetores)
 void ReservationStation::SetupNewIssue(
     const Instruction& instruction,
     int                cycle
@@ -88,6 +88,7 @@ void ReservationStation::SetupNewIssue(
 }
 
 // Privado:
+// Faz a leitura efetiva dos registradores e verifica se a alocação é em Vn (dado pronto) ou em Qn (dependente.)
 void ReservationStation::ReadSourceOperand(
     const Register&              src,
     CDB&                         cdb,
@@ -98,16 +99,16 @@ void ReservationStation::ReadSourceOperand(
 ){
     if (src.GetType() == 'Z' || src.GetId() < 0 || src.GetId() >= num_registers)
         return;
+
     Register& regCDB = (src.GetType() == 'F')
-        ? cdb.F[src.GetId()] : cdb.R[src.GetId()];
+        ? cdb.F[src.GetId()]
+        : cdb.R[src.GetId()];
+
     std::string tag = regCDB.GetCurrentRS();
-    if (tag.empty()) {
-        V = src;
-    } else if (dest_is_valid && SameRegister(src, dest) && tag == id) {
-        V = src;
-    } else {
-        Q = {tag, regCDB.GetRSCycleStart(tag)};
-    }
+
+    if (tag.empty()) V = src;
+    else if (dest_is_valid && SameRegister(src, dest) && tag == id) V = src;
+    else Q = {tag, regCDB.GetRSCycleStart(tag)};
 }
 
 // Privado:
@@ -118,6 +119,7 @@ void ReservationStation::AllocateDestInCDB(
 ){
     if (dest.GetType() == 'Z' || dest.GetId() < 0 || dest.GetId() >= num_registers)
         return;
+
     if (dest.GetType() == 'F') cdb.F[dest.GetId()].AllocateRS(id, cycle);
     else                       cdb.R[dest.GetId()].AllocateRS(id, cycle);
 }
@@ -139,6 +141,14 @@ bool ReservationStation::UpdateDependencies(
 }
 
 // Privado:
+void ReservationStation::ResolveBothDependencies(
+    CDB& cdb
+){
+    ResolveSingleDependency(cdb, current_instruction.GetJ(), Vj, Qj);
+    ResolveSingleDependency(cdb, current_instruction.GetK(), Vk, Qk);
+}
+
+// Privado:
 void ReservationStation::ResolveSingleDependency(
     CDB&                         cdb,
     const Register&              reg,
@@ -146,21 +156,16 @@ void ReservationStation::ResolveSingleDependency(
     std::pair<std::string, int>& Q
 ){
     if (V.GetType() != 'Z' || Q.first.empty()) return;
+
     if (reg.GetId() < 0 || reg.GetId() >= num_registers) return;
+
     Register& regCDB = (reg.GetType() == 'F')
         ? cdb.F[reg.GetId()] : cdb.R[reg.GetId()];
+
     if (regCDB.IsDependencyResolved(Q.first, Q.second)) {
         V = reg;
         Q = {"", -1};
     }
-}
-
-// Privado:
-void ReservationStation::ResolveBothDependencies(
-    CDB& cdb
-){
-    ResolveSingleDependency(cdb, current_instruction.GetJ(), Vj, Qj);
-    ResolveSingleDependency(cdb, current_instruction.GetK(), Vk, Qk);
 }
 
 // Privado:
@@ -171,16 +176,19 @@ bool ReservationStation::TryAllocateLoadStore(
 ){
     if (phase == INSTRUCTION_PHASE::ISSUE && Qk.first.empty()) {
         fu_position = FindFreeFU(fu, cycle, INSTRUCTION_PHASE::EX);
+
         if (fu_position == -1) return false;
+
         allocation_countdown = current_instruction.GetExLatency();
         phase = INSTRUCTION_PHASE::EX;
         return true;
     }
     INSTRUCTION_TYPE type = current_instruction.GetInstructionType();
-    if (phase == INSTRUCTION_PHASE::MEM && allocation_countdown == -1
-        && ((type == INSTRUCTION_TYPE::STORE && Qj.first.empty()) || type == INSTRUCTION_TYPE::LOAD)) {
+    if (phase == INSTRUCTION_PHASE::MEM && allocation_countdown == -1 && ((type == INSTRUCTION_TYPE::STORE && Qj.first.empty()) || type == INSTRUCTION_TYPE::LOAD)) {
         fu_position = FindFreeFU(fu, cycle, INSTRUCTION_PHASE::MEM);
+
         if (fu_position == -1) return false;
+
         allocation_countdown = current_instruction.GetMemLatency();
         return true;
     }
@@ -194,10 +202,14 @@ bool ReservationStation::TryAllocateNormal(
     int               cycle
 ){
     if (!Qj.first.empty() || !Qk.first.empty()) return false;
+
     fu_position = FindFreeFU(fu, cycle, INSTRUCTION_PHASE::EX);
+
     if (fu_position == -1) return false;
+
     allocation_countdown = current_instruction.GetExLatency();
     phase = INSTRUCTION_PHASE::EX;
+
     if (dest_pending_on_cdb) {
         AllocateDestInCDB(current_instruction.GetDestRegister(), cdb, cycle);
         dest_pending_on_cdb = false;

@@ -54,7 +54,7 @@ class Instruction {
         Register           GetDestRegister()      const;
         Register           GetJ()                 const;
         Register           GetK()                 const;
-        // const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
+        // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
         const std::string& GetInstructionString() const;
         // Métodos públicos:
         void SetMemLatency(

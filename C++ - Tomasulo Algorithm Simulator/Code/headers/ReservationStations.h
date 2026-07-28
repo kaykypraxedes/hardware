@@ -22,7 +22,7 @@ class ReservationStation {
         int               GetCountdown()        const;
         int               GetFUPosition()       const;
         INSTRUCTION_PHASE GetInstructionPhase() const;
-        // const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
+        // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
         const Instruction&              GetCurrentInstruction() const;
         const std::string&              GetId()                 const;
         const std::string&              GetQj()                 const;

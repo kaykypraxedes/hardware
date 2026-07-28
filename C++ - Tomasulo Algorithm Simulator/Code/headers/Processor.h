@@ -45,7 +45,7 @@ class Processor {
         std::vector<CYCLE_LINE> GetCycleTable() const;
         PROCESSOR_TYPE          GetType()       const;
         bool                    ExecuteCycle();
-        // const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
+        // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
         const Thread& GetThread(
             int
         ) const;

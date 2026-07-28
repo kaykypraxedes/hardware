@@ -8,11 +8,9 @@ namespace processor {
 PROCESSOR_TYPE Processor::GetType() const { return type; }
 
 // Público:
-// const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
 const Thread& Processor::GetThread(int i) const { return threads[i]; }
 
 // Público:
-// const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
 const std::vector<TABLE_ROW>& Processor::GetThreadTable(int i) const { return threads[i].GetTable(); }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────

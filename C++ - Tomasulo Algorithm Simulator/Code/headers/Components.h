@@ -3,7 +3,10 @@
 #define COMPONENTS_H
 #include <string>
 #include <vector>
-#include <cctype>
+#include <cctype>     // para std::isdigit
+#include <cstdlib>    // para std::abort
+#include <iostream>   // para std::cerr
+
 
 namespace processor {
 
@@ -13,23 +16,22 @@ static const int num_registers = 32;
 // ─── CLASSE ───────────────────────────────────────────────────────
 class Register {
     public:
-        // Construtores:
-        Register();
+        // Construtor:
         Register(
-            std::string
+            std::string = ""
         );
 
         // Getters:
-        char                            GetType()            const;
-        int                             GetId()              const;
-        bool                            GetBusy()            const;
-        std::vector<int>                GetAllocationTimes() const;
-        std::string                     GetCurrentRS()       const; // retorna o produtor mais recente (último de allocated_rs com end_times == -1)
-        bool                            HasPendingProducer() const;
-        // const & para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
-        const std::vector<std::string>& GetAllocatedRS()     const;
+        char             GetType()            const;
+        int              GetId()              const;
+        bool             GetBusy()            const;
+        // Não são "const &" pois podem enviar dados de variáveis locais (apagados ao final da função)
+        std::vector<int> GetAllocationTimes() const;
+        std::string      GetCurrentRS()       const; // retorna o produtor mais recente (último de allocated_rs com end_times == -1)
+        // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
+        const std::vector<std::string>& GetAllocatedRS() const;
         // Métodos públicos:
-        void  ToggleBusy();
+        void ToggleBusy();
         bool IsDependencyResolved(
             const std::string& rs_id,
             int start_cycle
@@ -55,12 +57,13 @@ class Register {
         std::vector<int>         end_times;    // Pares (inicio[n] - fim[n]); fim == -1 enquanto pendente
         std::vector<std::string> allocated_rs;
         // Métodos privados:
-        char IdentifyType(
+        bool ParseType(
             const std::string&
         );
-        int IdentifyId(
+        bool ParseId(
             const std::string&
         );
+        bool HasPendingProducer() const;
 };
 
 // ─── STRUCTS ──────────────────────────────────────────────────────
