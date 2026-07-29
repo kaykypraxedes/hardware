@@ -21,12 +21,16 @@
 - [x] Tem este comentário no **.h**: *// - instruction_string DEVE vir antes de PC para que o initializer list a inicialize antes de SplitInstruction() ser chamado*. Eu queria saber se esse comentário faz sentido real ou se não tem diferença.
 
 ## ReservationStations.cpp/.h
-- [ ] O construtor poderia ser definido integralmente apenas no **.h** (já que não tem métodos, apenas uma definição de atributos).
-- [ ] A variável `dest_valido` dentro de `AddIssue()` está em português (fora da normalização feita). Deve virar `valid_dest`.
-- [ ] Verificar se os registradores do `CDB` vão de 1-32 ou de 0-31 para ver qual o range correto de validação da variável `valid_dest`.
-- [ ] `ReadSourceOperand()` é um método ineficiente, pois passa o registrador e atributos do registrador (poderia resumir o parâmetro). Verifique se é isso mesmo.
-- [ ] A variável `valid_dest` além de não fazer a verificação completa de validade (deveria ser `dest.GetType() != 'Z' && dest.GetId() >= 0 && dest.getId() < num_registers`, que é feita de maneira redundante no método `ReadSourceOperand()`). Poderia ser feito em `AddIssue()`: `if(!valid_dest) return false; ...` (resume muito a lógica de verificação e retira esse elemento que polui os outros métodos).
-- [ ] O `if-else` do método `ReadSourceOperand()` está muito mal explicado (não dá para saber sem uma análise pesada o que cada caso faz e por que).
-- [ ] O método `ResolveBothDependencies()` não deixa claro sua real função sem um contexto. Poderia mudar para `ResolveCDBDependencies()` ou outro nome a sua sugestão. 
-
-**PAREI DE ANALISAR EM `ResolveSingleDependency()`**
+- [x] O construtor poderia ser definido integralmente apenas no **.h** (já que não tem métodos, apenas uma definição de atributos). Poderia, mas foi optado por não.
+> Reformulação quase completa dos métodos `ReadSourceOperand()` e `UpdateDependencies()`, que tornaram as observações obsoletas.
+- [-] A variável `dest_valido` dentro de `AddIssue()` está em português (fora da normalização feita). Deve virar `valid_dest`.
+- [-] Verificar se os registradores do `CDB` vão de 1-32 ou de 0-31 para ver qual o range correto de validação da variável `valid_dest`.
+- [-] `ReadSourceOperand()` é um método ineficiente, pois passa o registrador e atributos do registrador (poderia resumir o parâmetro). Verifique se é isso mesmo.
+- [-] A variável `valid_dest` além de não fazer a verificação completa de validade (deveria ser `dest.GetType() != 'Z' && dest.GetId() >= 0 && dest.getId() < num_registers`, que é feita de maneira redundante no método `ReadSourceOperand()`). Poderia ser feito em `AddIssue()`: `if(!valid_dest) return false; ...` (resume muito a lógica de verificação e retira esse elemento que polui os outros métodos).
+- [-] O `if-else` do método `ReadSourceOperand()` está muito mal explicado (não dá para saber sem uma análise pesada o que cada caso faz e por que).
+- [-] O método `ResolveBothDependencies()` não deixa claro sua real função sem um contexto. Poderia mudar para `ResolveCDBDependencies()` ou outro nome a sua sugestão. 
+- [x] O método `TryAllocateNormal()` poderia virar `TryAllocateFU()`. 
+- [x] O `TryAllocateLoadStore()` poderia virar `TryAllocateMEM()` e ele apenas tenta fazer a alocação do estado MEM (o geral ainda ficaria no `TryAllocateOnCDB()`, que executaria se o `TryAllocateMEM()` retornasse falso).
+- [x] Criar uma função auxiliar para evitar cópia de código no `TryAllocate*()` (mesmo código se repete basicamente 3x).
+- [x] Transformar `DeallocateFUFromGroup()` em um método `static` com retorno bool (verificar se a desalocação aconteceu da maneira esperada) da mesma forma como foi feito com `AllocateFreeFu()` (métodos básicamente iguais).
+- [x] Estude se os métodos `ReleaseFU()` e `FindFreeFU()` não podem ser resumidos de alguma maneira (visto que é basicamente o mesmo código, mas jogando em uma função diferente). O mesmo para `AllocateFreeFu()` e `DeallocateFUFromGroup()`.

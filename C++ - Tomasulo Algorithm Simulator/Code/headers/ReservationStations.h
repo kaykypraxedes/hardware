@@ -5,7 +5,8 @@
 #include "Instruction.h"
 #include <string>
 #include <vector>
-#include <utility>
+#include <cstdlib>    // para std::abort
+#include <iostream>   // para std::cerr
 
 namespace processor {
 
@@ -32,18 +33,18 @@ class ReservationStation {
 
         // Métodos públicos:
         bool AddIssue(
-            Instruction&,
+            const Instruction&,
             CDB&,
-            int
+            const int
         );
         bool UpdateDependencies(
             CDB&,
             FUNCTIONAL_UNITS&,
-            int
+            const int
         );
         bool UpdateCountdown(
             FUNCTIONAL_UNITS&,
-            int
+            const int
         );
         void Release(
             int
@@ -55,73 +56,59 @@ class ReservationStation {
     private:
         // Atributos:
         bool                        busy{false};
-        bool                        dest_pending_on_cdb{false};
         int                         allocation_countdown{-1};
         int                         fu_position{-1};
         std::string                 id;                     // Nome do RS ("load1", "addInt3", etc.)
         Instruction                 current_instruction;
-        INSTRUCTION_PHASE           phase;
-        Register                    Vj;                     // Valor do operand J (se Qj vazio)
-        Register                    Vk;                     // Valor do operand K (se Qk vazio)
+        INSTRUCTION_PHASE           phase{INSTRUCTION_PHASE::ISSUE};
+        Register                    Vj;                     // Valor do operando J (se Qj vazio)
+        Register                    Vk;                     // Valor do operando K (se Qk vazio)
         std::pair<std::string, int> Qj{"", -1};             // Qj/Qk: {rs_id, start_cycle} — produtor pendente
         std::pair<std::string, int> Qk{"", -1};             // par vazio {"", -1} = operando disponível
         std::vector<int>            allocation_times;       // De 2 em 2, início da alocação e fim da alocação
         std::vector<std::string>    allocated_instructions; // De 1 em 1, instruções alocadas na RS
 
         // Métodos privados:
-        int FindFreeFU(
-            FUNCTIONAL_UNITS&,
-            int,
-            INSTRUCTION_PHASE
-        ) const;
-        int AllocateFreeFU(
-            std::vector<FU>&,
-            int
-        ) const;
-        void ReleaseFU(
-            FUNCTIONAL_UNITS&,
-            int,
-            INSTRUCTION_PHASE
-        );
-        void DeallocateFUFromGroup(
-            std::vector<FU>&,
-            int
-        );
+        // - AddIssue()
         void SetupNewIssue(
             const Instruction&,
-            int
+            const int
         );
         void ReadSourceOperand(
+            const char,
             const Register&,
-            CDB&,
-            Register&,
-            std::pair<std::string, int>&,
-            const Register&,
-            bool
+            const CDB&
         );
         void AllocateDestInCDB(
             const Register&,
             CDB&,
-            int
+            const int
         );
-        void ResolveSingleDependency(
-            CDB&,
-            const Register&,
-            Register&,
-            std::pair<std::string, int>&
-        );
-        void ResolveBothDependencies(
+        // - UpdateDependencies()
+        void CheckDependency(
+            const char,
             CDB&
         );
-        bool TryAllocateLoadStore(
-            CDB&,
+        bool AdvancePhaseAllocation(
             FUNCTIONAL_UNITS&,
-            int
+            const int
         );
-        bool TryAllocateNormal(
-            CDB&,
+        bool TryAllocateFU(
             FUNCTIONAL_UNITS&,
-            int
+            const INSTRUCTION_PHASE,
+            const int,
+            const int
+        );
+        int FindFreeFU(
+            FUNCTIONAL_UNITS&,
+            const INSTRUCTION_PHASE,
+            const int
+        ) const;
+        // - UpdateCountdown()
+        void ReleaseFU(
+            FUNCTIONAL_UNITS&,
+            const INSTRUCTION_PHASE,
+            const int
         );
     };
 

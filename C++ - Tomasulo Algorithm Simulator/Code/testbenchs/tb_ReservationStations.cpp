@@ -267,6 +267,216 @@ int main() {
         check("LOAD: RS pode ser reusada após Release",  reuso);
     }
 
+    secao("AdvancePhaseAllocation() — STORE com endereço pronto (Qk) mas dado pendente (Qj) entra em EX");
+    {
+        ReservationStation rs("store1");
+        CDB cdb = makeCDB();
+        FUNCTIONAL_UNITS fu = makeFU();
+        cdb.F[8].AllocateRS("fmul2", 1); // dado (F8) pendente; endereço (R1) livre
+
+        Instruction instr(0, "S.D F8, 0(R1)");
+        rs.AddIssue(instr, cdb, 2);
+        check("Qk vazio (endereço livre)",        rs.GetQk().empty());
+        check("Qj == 'fmul2' (dado pendente)",    rs.GetQj() == "fmul2");
+
+        bool entrou_ex = rs.UpdateDependencies(cdb, fu, 3);
+        check("STORE entra em EX mesmo com dado pendente", entrou_ex);
+
+        rs.UpdateCountdown(fu, 3);
+        check("fase == MEM aguardando dado",      rs.GetInstructionPhase() == INSTRUCTION_PHASE::MEM);
+
+        bool bloqueado = rs.UpdateDependencies(cdb, fu, 4);
+        check("MEM bloqueado enquanto Qj não resolve", !bloqueado);
+
+        cdb.F[8].DeallocateRS("fmul2", 1, 5);
+        bool mem_ok = rs.UpdateDependencies(cdb, fu, 5);
+        check("MEM inicia após dado resolvido",   mem_ok);
+    }
+
+    secao("AdvancePhaseAllocation() — STORE com endereço pendente (Qk) NÃO entra em EX");
+    {
+        ReservationStation rs("store2");
+        CDB cdb = makeCDB();
+        FUNCTIONAL_UNITS fu = makeFU();
+        cdb.R[9].AllocateRS("int5", 1); // endereço pendente
+
+        Instruction instr(0, "S.D F0, 0(R9)");
+        rs.AddIssue(instr, cdb, 2);
+        check("Qk == 'int5' (endereço pendente)", rs.GetQk() == "int5");
+
+        bool bloqueado = rs.UpdateDependencies(cdb, fu, 3);
+        check("STORE não entra em EX com endereço pendente", !bloqueado);
+        check("fase permanece ISSUE",             rs.GetInstructionPhase() == INSTRUCTION_PHASE::ISSUE);
+    }
+
+    secao("ResolveDependency() — captura direta de Vj via broadcast simulado (método sem cobertura hoje)");
+    {
+        ReservationStation rs("fmul3");
+        CDB cdb = makeCDB();
+        cdb.F[2].AllocateRS("load2", 1);
+
+        Instruction instr(0, "MUL.D F4, F2, F0");
+        rs.AddIssue(instr, cdb, 2);
+        check("Qj == 'load2' antes do broadcast", rs.GetQj() == "load2");
+
+        rs.ResolveDependency("load2", cdb.F[2]);
+        check("Qj limpo após ResolveDependency",  rs.GetQj().empty());
+
+        // rs_id que não bate não deve afetar nada
+        ReservationStation rs2("fmul4");
+        cdb.F[10].AllocateRS("load3", 1);
+        Instruction instr2(1, "MUL.D F12, F10, F0");
+        rs2.AddIssue(instr2, cdb, 2);
+        rs2.ResolveDependency("outro_produtor_qualquer", cdb.F[10]);
+        check("ResolveDependency com rs_id que não bate não altera Qj", rs2.GetQj() == "load3");
+    }
+
+    secao("Reuso de RS — sem autodependência espúria (regressão do resíduo 'tag == id')");
+    {
+        ReservationStation rs("int7");
+        CDB cdb = makeCDB();
+        FUNCTIONAL_UNITS fu = makeFU();
+
+        Instruction i1(0, "ADD R7, R1, R2");
+        rs.AddIssue(i1, cdb, 1);
+        rs.UpdateDependencies(cdb, fu, 2);
+        rs.UpdateCountdown(fu, 2);          // WB
+        cdb.R[7].DeallocateRS("int7", 1, 3); // simula fim do broadcast
+        rs.Release(3);
+
+        Instruction i2(1, "ADD R7, R7, R1"); // lê e escreve R7 de novo, mesma RS
+        rs.AddIssue(i2, cdb, 4);
+        check("Sem autodependência espúria ao reler R7 já resolvido", rs.GetQj().empty());
+    }
+
+    secao("Grupos de FU são independentes — EX (int_basic_alu) vs MEM (memory_access)");
+    {
+        FUNCTIONAL_UNITS fu = makeFU(1); // 1 FU por grupo, mais fácil de saturar
+        CDB cdb = makeCDB();
+
+        ReservationStation rsA("load2"), rsB("load3");
+        Instruction ldA(0, "L.D F2, 0(R1)");
+        Instruction ldB(1, "L.D F4, 0(R2)");
+        rsA.AddIssue(ldA, cdb, 1);
+        rsB.AddIssue(ldB, cdb, 1);
+
+        rsA.UpdateDependencies(cdb, fu, 2); // ocupa int_basic_alu
+        rsA.UpdateCountdown(fu, 2);         // libera int_basic_alu, vai para MEM (sem FU ainda)
+
+        bool rsB_ex = rsB.UpdateDependencies(cdb, fu, 2); // int_basic_alu livre de novo
+        check("rsB usa int_basic_alu livre após rsA liberar", rsB_ex && rsB.GetInstructionPhase() == INSTRUCTION_PHASE::EX);
+
+        bool memA = rsA.UpdateDependencies(cdb, fu, 3); // memory_access livre
+        check("rsA inicia MEM (memory_access livre)", memA);
+
+        rsB.UpdateCountdown(fu, 3);         // libera int_basic_alu, tenta ir para MEM
+        bool memB = rsB.UpdateDependencies(cdb, fu, 3);
+        check("rsB bloqueado no MEM: memory_access já ocupado por rsA", !memB);
+    }
+    secao("Roteamento de FU — INT_MUL/INT_DIV usam int_mult_div_alu; int_basic_alu não é afetado");
+    {
+        FUNCTIONAL_UNITS fu = makeFU(1); // 1 FU por grupo, fácil de saturar
+        CDB cdb = makeCDB();
+
+        ReservationStation rsMul("intmul0"), rsDiv("intdiv0"), rsAdd("intbasic0");
+        Instruction iMul(0, "MULT R3, R1, R2");
+        Instruction iDiv(1, "DIV R5, R1, R2");
+        Instruction iAdd(2, "ADD R6, R1, R2");
+        rsMul.AddIssue(iMul, cdb, 1);
+        rsDiv.AddIssue(iDiv, cdb, 1);
+        rsAdd.AddIssue(iAdd, cdb, 1);
+
+        bool mulEx = rsMul.UpdateDependencies(cdb, fu, 2);
+        check("INT_MUL entra em EX e ocupa int_mult_div_alu", mulEx);
+        check("INT_MUL: countdown == exLat == 4", rsMul.GetCountdown() == 4);
+
+        bool divEx = rsDiv.UpdateDependencies(cdb, fu, 2);
+        check("INT_DIV bloqueado: int_mult_div_alu saturado pelo MULT", !divEx);
+
+        bool addEx = rsAdd.UpdateDependencies(cdb, fu, 2);
+        check("INT_BASIC não é afetado pela saturação de int_mult_div_alu", addEx);
+        check("INT_BASIC: countdown == exLat == 1", rsAdd.GetCountdown() == 1);
+    }
+
+    secao("Roteamento de FU — FLOAT_BASIC usa float_basic_alu (independente de float_mult_div_alu)");
+    {
+        FUNCTIONAL_UNITS fu = makeFU(1);
+        CDB cdb = makeCDB();
+
+        ReservationStation rsFadd("fbasic0"), rsFadd2("fbasic1"), rsFmul("fmul5");
+        Instruction iFadd (0, "ADD.D F2, F0, F4");
+        Instruction iFadd2(1, "SUB.D F8, F0, F4");
+        Instruction iFmul (2, "MUL.D F6, F0, F4");
+        rsFadd.AddIssue(iFadd, cdb, 1);
+        rsFadd2.AddIssue(iFadd2, cdb, 1);
+        rsFmul.AddIssue(iFmul, cdb, 1);
+
+        bool faddEx = rsFadd.UpdateDependencies(cdb, fu, 2);
+        check("FLOAT_BASIC (ADD.D) entra em EX e ocupa float_basic_alu", faddEx);
+        check("FLOAT_BASIC: countdown == exLat == 9", rsFadd.GetCountdown() == 9);
+
+        bool fadd2Ex = rsFadd2.UpdateDependencies(cdb, fu, 2);
+        check("Segundo FLOAT_BASIC (SUB.D) bloqueado: float_basic_alu saturado", !fadd2Ex);
+
+        bool fmulEx = rsFmul.UpdateDependencies(cdb, fu, 2);
+        check("FLOAT_MUL não é afetado pela saturação de float_basic_alu", fmulEx);
+        check("FLOAT_MUL: countdown == exLat == 14", rsFmul.GetCountdown() == 14);
+    }
+
+    secao("Roteamento de FU — FLOAT_MUL/FLOAT_DIV compartilham float_mult_div_alu");
+    {
+        FUNCTIONAL_UNITS fu = makeFU(1);
+        CDB cdb = makeCDB();
+
+        ReservationStation rsFmul("fmul6"), rsFdiv("fdiv0"), rsFadd("fbasic2");
+        Instruction iFmul(0, "MUL.D F6, F0, F4");
+        Instruction iFdiv(1, "DIV.D F10, F0, F4");
+        Instruction iFadd(2, "ADD.D F12, F0, F4");
+        rsFmul.AddIssue(iFmul, cdb, 1);
+        rsFdiv.AddIssue(iFdiv, cdb, 1);
+        rsFadd.AddIssue(iFadd, cdb, 1);
+
+        bool fmulEx = rsFmul.UpdateDependencies(cdb, fu, 2);
+        check("FLOAT_MUL entra em EX e ocupa float_mult_div_alu", fmulEx);
+        check("FLOAT_MUL: countdown == exLat == 14", rsFmul.GetCountdown() == 14);
+
+        bool fdivEx = rsFdiv.UpdateDependencies(cdb, fu, 2);
+        check("FLOAT_DIV bloqueado: float_mult_div_alu saturado pelo FLOAT_MUL", !fdivEx);
+
+        bool faddEx = rsFadd.UpdateDependencies(cdb, fu, 2);
+        check("FLOAT_BASIC não é afetado pela saturação de float_mult_div_alu", faddEx);
+        check("FLOAT_DIV: exLat esperado == 40 (checado isoladamente)", Instruction(0, "DIV.D F0, F2, F4").GetExLatency() == 40);
+    }
+    /*
+
+    Flags de segurança do programa (abortam a execução).
+
+    secao("TryAllocateFU com ex_latency == 0 (via SetExLatency)");
+    {
+        ReservationStation rs("int_abort0");
+        CDB cdb = makeCDB();
+        FUNCTIONAL_UNITS fu = makeFU();
+        Instruction instr(0, "ADD R3, R1, R2");
+        instr.SetExLatency(0);
+        rs.AddIssue(instr, cdb, 1);
+        rs.UpdateDependencies(cdb, fu, 2); // deve abortar dentro de TryAllocateFU (EX)
+    }
+
+
+    secao("TryAllocateFU com mem_latency == 0 (LOAD, via SetMemLatency)");
+    {
+        ReservationStation rs("load_abort0");
+        CDB cdb = makeCDB();
+        FUNCTIONAL_UNITS fu = makeFU();
+        Instruction instr(0, "L.D F2, 0(R1)");
+        instr.SetMemLatency(0);
+        rs.AddIssue(instr, cdb, 1);
+        rs.UpdateDependencies(cdb, fu, 2); // EX normal (exLat de LOAD == 1)
+        rs.UpdateCountdown(fu, 2);         // fase avança para MEM
+        rs.UpdateDependencies(cdb, fu, 3); // deve abortar dentro de TryAllocateFU (MEM, latency 0)
+    }
+    */
+
     std::cout << "\n-----------------------------\n";
     std::cout << "Resultado: " << passou << " OK, " << falhou << " FALHOU\n";
     return falhou ? 1 : 0;

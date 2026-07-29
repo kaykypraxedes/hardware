@@ -1,6 +1,5 @@
 /* Components.cpp */
 #include "headers/Components.h"
-#include <cstdlib>
 
 namespace processor {
 
@@ -20,7 +19,7 @@ const std::vector<std::string>& Register::GetAllocatedRS() const { return alloca
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
 Register::Register(
-    std::string register_string
+    const std::string& register_string
 )
 {
     if (!ParseType(register_string) || !ParseId(register_string)){
@@ -54,14 +53,14 @@ bool Register::ParseId(
     if (s.empty()) { id = -1; return true; }
     try{
         size_t pos{};
-        // 2. Input[2-n] está no intervalo dos registradores
+        // 2. Input[1-n] está no intervalo dos registradores
         int id_aux{std::stoi(s.substr(1), &pos)}; // pode lançar invalid_argument / out_of_range
         // pega lixo à direita que seria ignorado pelo std::string::stoi ("55A" -> "55")
         if(pos != s.size() - 1) return false;
         if(id_aux >= 0 && id_aux < num_registers) { id = id_aux; return true; }
     } catch (...) { return false; } // Casos não suportados pelo std::stoi ou pelo std::string::substr/stoi
     // Casos inválidos:
-    // - Input[2-n] = "-1", "1236", "#", etc.
+    // - Input[1-n] = "-1", "1236", "#", etc.
     return false;
 }
 
@@ -103,7 +102,7 @@ int Register::GetRSCycleStart(
 // Para evitar ambiguidade quando o mesmo RS reutiliza múltiplas vezes o mesmo registrador.
 bool Register::IsDependencyResolved(
     const std::string& rs_id,
-    int start_cycle
+    const int          start_cycle
 ) const {
     for (size_t i = 0; i < allocated_rs.size(); i++) {
         if (allocated_rs[i] == rs_id && start_times[i] == start_cycle) {
@@ -130,7 +129,7 @@ std::vector<int> Register::GetAllocationTimes() const {
 // Múltiplos produtores pendentes (WAW) ficam na sequência de allocated_rs.
 void Register::AllocateRS( // Retorno "void" pois sempre funciona
     const std::string& rs,
-    int start
+    const int          start
 ){
     busy = true;
     allocated_rs.push_back(rs);
@@ -142,8 +141,8 @@ void Register::AllocateRS( // Retorno "void" pois sempre funciona
 // Usa o par (rs_id, start_cycle) para identificar a entrada exata, evitando ambiguidade quando o mesmo RS foi reutilizado múltiplas vezes (WAW).
 bool Register::DeallocateRS( // Retorno "bool" pois o for pode não achar correspondente
     const std::string& rs_id,
-    int start_cycle,
-    int end_cycle
+    const int          start_cycle,
+    const int          end_cycle
 ){
     for (size_t i = 0; i < allocated_rs.size(); i++) {
         if (allocated_rs[i] == rs_id && start_times[i] == start_cycle) {

@@ -76,7 +76,7 @@ class Instruction {
         );
         std::vector<std::string> SplitInstruction(
             const std::string&
-        );
+        ) const;
         bool IdentifyType(
             const std::string&
         );

@@ -18,7 +18,7 @@ class Register {
     public:
         // Construtor:
         Register(
-            std::string = ""
+            const std::string& = ""
         );
 
         // Getters:
@@ -33,20 +33,20 @@ class Register {
         // Métodos públicos:
         void ToggleBusy();
         bool IsDependencyResolved(
-            const std::string& rs_id,
-            int start_cycle
+            const std::string&,
+            const int
         ) const;
         int GetRSCycleStart(
-            const std::string& rs_id
+            const std::string&
         ) const; // start_cycle do produtor pendente mais recente com esse nome
         void AllocateRS(
             const std::string&,
-            int
+            const int
         );
         bool DeallocateRS(
             const std::string&,
-            int,
-            int
+            const int,
+            const int
         );
     private:
         // Atributos:

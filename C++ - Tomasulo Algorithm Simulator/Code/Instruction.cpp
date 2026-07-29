@@ -1,6 +1,5 @@
 /* Instruction.cpp */
 #include "headers/Instruction.h"
-#include <string>
 
 namespace processor {
 
@@ -8,7 +7,9 @@ namespace processor {
 std::vector<int> Instruction::base_ex_latencies  = {0,1,1,1,1,4,10,9,14,40};
 std::vector<int> Instruction::base_mem_latencies = {1,1};
 
-static bool IsRegister(const std::string& token){
+static bool IsRegister(
+    const std::string& token
+){
     // R0 - R32 (pelo menos 2 caracteres).
     if (token.size() < 2) return false;
     // Se não começa com 'R' ou com 'F' não é registrador
@@ -62,7 +63,9 @@ Instruction::Instruction(
 
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Privado:
-void Instruction::ParseInstruction(const std::string& instruction_string){
+void Instruction::ParseInstruction(
+    const std::string& instruction_string
+) {
     std::vector<std::string> tokens{SplitInstruction(instruction_string)};
     // Tenta identificar o tipo da instrução
     if(!IdentifyType(tokens[0])){
@@ -75,7 +78,9 @@ void Instruction::ParseInstruction(const std::string& instruction_string){
 }
 
 // Privado:
-std::vector<std::string> Instruction::SplitInstruction(const std::string& instruction_string){
+std::vector<std::string> Instruction::SplitInstruction(
+    const std::string& instruction_string
+) const {
     // ADD   R1 R2 R3 => tokens[0] = ADD,   tokens[1] = R1, tokens[2] = R2,   tokens[3] = R3
     // LOAD  R1 n(R2) => tokens[0] = LOAD,  tokens[1] = R1, tokens[2] = n,    tokens[3] = R2
     // STORE R1 n(R2) => tokens[0] = STORE, tokens[1] = R1, tokens[2] = n,    tokens[3] = R2
@@ -203,10 +208,10 @@ void Instruction::SetAttributes(
         reg_j         = Register(tokens[1]);
         reg_k         = Register(tokens[3]);
     } else if (type == INSTRUCTION_TYPE::BRANCH){
-        if (IsRegister(tokens[1]))       // Falso -> Jump (J    label)
-            reg_j = Register(tokens[1]); //               (BEQZ R1, label)
+        if (IsRegister(tokens[1]))                      // (J    label)
+            reg_j = Register(tokens[1]);                // (BEQZ R1, label)
         if(tokens.size() > 3 && IsRegister(tokens[2]))  // K nem sempre existe
-            reg_k = Register(tokens[2]); //               (BEQ R1, R2, label)
+            reg_k = Register(tokens[2]);                // (BEQ  R1, R2, label)
     } else {
         dest_register = Register(tokens[1]);
         // Verificação de validade:
