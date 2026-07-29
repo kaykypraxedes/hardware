@@ -190,6 +190,8 @@ bool ReservationStation::UpdateDependencies(
 ){
     // Se o RS estiver vazio ou com sua execução travada por dependencias.
     if (!busy || allocation_countdown != -1) return false;
+    // Se já estiver na fase WB (-1, mas não atualiza mais)
+    if (phase == INSTRUCTION_PHASE::WB) return false;
 
     // Verifica se os Qj e/ou Qk já desapareceram (se sim, marca o Vj/Vk).
     CheckDependency('J', cdb);
@@ -295,44 +297,31 @@ int ReservationStation::FindFreeFU(
 
 // Público:
 // Decrementa o contador de ciclos da fase atual.
-// Retorna true quando a fase termina (countdown chegou a 0), já tendo liberado a FU e avançado 'phase' para o próximo estado (EX->MEM ou EX/MEM->WB).
-// O caller compara o phase anterior com o atual para identificar a transição.
 bool ReservationStation::UpdateCountdown(
     FUNCTIONAL_UNITS& fu,
     const int         cycle
 ){
-    // RS vazio.
-    if (!busy) return false;
-    // Dependências impedindo a execução.
-    if (allocation_countdown <= 0) return false;
+    // RS vazio ou dependências impedindo a execução.
+    if (!busy || allocation_countdown == -1) return false;
     allocation_countdown--;
-    // Execução incompleta
+    // Execução incompleta (faltam ciclos para acabar).
     if (allocation_countdown > 0) return false;
 
-    // Instrução acabou de chegar no 0 da sua execução.
+    // Instrução acabou de chegar no 0 da sua execução:
     INSTRUCTION_TYPE type = current_instruction.GetInstructionType();
-
-    if (type == INSTRUCTION_TYPE::LOAD && phase == INSTRUCTION_PHASE::EX) {
-        ReleaseFU(fu, INSTRUCTION_PHASE::EX, cycle);
-        allocation_countdown = -1;
-        phase = INSTRUCTION_PHASE::MEM;
-        return true;
-    }
-
-    if (type == INSTRUCTION_TYPE::STORE && phase == INSTRUCTION_PHASE::EX) {
-        ReleaseFU(fu, INSTRUCTION_PHASE::EX, cycle);
-        allocation_countdown = -1;
-        phase = INSTRUCTION_PHASE::MEM;
-        return true;
-    }
-
-    if (phase == INSTRUCTION_PHASE::MEM) {
-        ReleaseFU(fu, INSTRUCTION_PHASE::MEM, cycle);
+    // Libera a unidade funcional que estava sendo usada.
+    ReleaseFU(fu, phase, cycle);
+    // Verifica o próximo estágio:
+    if (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE) {
+        // EX  -> MEM
+        if (phase == INSTRUCTION_PHASE::EX) phase = INSTRUCTION_PHASE::MEM;
+        // MEM -> WR
+        else                                phase = INSTRUCTION_PHASE::WB;
+    }   // EX  -> WR
+    else {
         phase = INSTRUCTION_PHASE::WB;
-        return true;
     }
-    ReleaseFU(fu, INSTRUCTION_PHASE::EX, cycle);
-    phase = INSTRUCTION_PHASE::WB;
+    allocation_countdown = -1;
     return true;
 }
 
@@ -358,7 +347,7 @@ void ReservationStation::ReleaseFU(
 
 // Público:
 // Resolve dependência de Qj/Qk: se esta RS estiver esperando pelo produtor 'rs_id', captura o valor e limpa a pendência.
-// Nota: apenas o rs_id é verificado (não o start_cycle) porque uma RS ocupada sempre tem suas dependências resolvidas antes de ser liberada, não havendo Qj/Qk stale de alocações anteriores.
+// - Escolha de implementação: apenas o rs_id é verificado (não o start_cycle) porque uma RS ocupada sempre tem suas dependências resolvidas antes de ser liberada, não havendo Qj/Qk stale de alocações anteriores.
 void ReservationStation::ResolveDependency(
     const std::string& rs_id,
     const Register&    value
