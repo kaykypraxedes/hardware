@@ -1,11 +1,26 @@
 /* Instruction.cpp */
 #include "headers/Instruction.h"
+#include <string>
 
 namespace processor {
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
 std::vector<int> Instruction::base_ex_latencies  = {0,1,1,1,1,4,10,9,14,40};
 std::vector<int> Instruction::base_mem_latencies = {1,1};
+
+static bool IsRegister(const std::string& token){
+    // R0 - R32 (pelo menos 2 caracteres).
+    if (token.size() < 2) return false;
+    // Se não começa com 'R' ou com 'F' não é registrador
+    char first = static_cast<char>(std::toupper(static_cast<unsigned char>(token[0])));
+    if (first != 'R' && first != 'F') return false;
+    // Se não começa com 'R' ou 'F' mas não for apenas números no final, não é token (R44A).
+    std::string number;
+    for (size_t i = 1; i < token.size(); ++i)
+        if (!std::isdigit(static_cast<unsigned char>(token[i]))) return false;
+    // Não precisa verificar se os números estão no RANGE pois isso é dever do construtor de registradores
+    return true;
+}
 
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:
@@ -18,16 +33,16 @@ int Instruction::GetExLatency()         const { return ex_latency;    }
 int Instruction::GetMemLatency()        const { return mem_latency;   }
 
 // Público:
-Register Instruction::GetDestRegister() const { return dest_register; }
-
-// Público:
-Register Instruction::GetJ()            const { return reg_j;         }
-
-// Público:
-Register Instruction::GetK()            const { return reg_k;         }
-
-// Público:
 INSTRUCTION_TYPE Instruction::GetInstructionType()     const { return type;               }
+
+// Público:
+const Register& Instruction::GetDestRegister()         const { return dest_register;      }
+
+// Público:
+const Register& Instruction::GetJ()                    const { return reg_j;              }
+
+// Público:
+const Register& Instruction::GetK()                    const { return reg_k;              }
 
 // Público:
 const std::string& Instruction::GetInstructionString() const { return instruction_string; }
@@ -35,33 +50,40 @@ const std::string& Instruction::GetInstructionString() const { return instructio
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
 Instruction::Instruction(
-    int PC, std::string instruction_string
+    int PC,
+    std::string instruction_string
 ):
-    instruction_string(instruction_string),
     PC(PC)
 {
-    ParseInstruction();
+    // Só define a instrução se ela for válida (foi passado com PC)
+    if(PC != -1 && !instruction_string.empty()) ParseInstruction(instruction_string);
+    else this->PC = -1;
 }
 
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Privado:
-void Instruction::ParseInstruction(){
-    std::vector<std::string> tokens{SplitInstruction()};
-    IdentifyType(tokens[0]);
-    SetLatencies();
+void Instruction::ParseInstruction(const std::string& instruction_string){
+    std::vector<std::string> tokens{SplitInstruction(instruction_string)};
+    // Tenta identificar o tipo da instrução
+    if(!IdentifyType(tokens[0])){
+        std::cerr << "[ERRO] Instrução não suportada: " << tokens[0] << "\n";
+        std::abort();
+    }
+    NormalizeInstruction(tokens);
     SetAttributes(tokens);
+    SetLatencies();
 }
 
 // Privado:
-std::vector<std::string> Instruction::SplitInstruction(){
+std::vector<std::string> Instruction::SplitInstruction(const std::string& instruction_string){
     // ADD   R1 R2 R3 => tokens[0] = ADD,   tokens[1] = R1, tokens[2] = R2,   tokens[3] = R3
     // LOAD  R1 n(R2) => tokens[0] = LOAD,  tokens[1] = R1, tokens[2] = n,    tokens[3] = R2
     // STORE R1 n(R2) => tokens[0] = STORE, tokens[1] = R1, tokens[2] = n,    tokens[3] = R2
     // BNEZ  R1 label => tokens[0] = BNEZ,  tokens[1] = R1, tokens[2] = label
     // JR    R1       => tokens[0] = JR,    tokens[1] = R1
     // JUMP  label    => tokens[0] = JUMP,  tokens[1] = label
-    std::vector<std::string> tokens{};
-    std::string current_token{};
+    std::vector<std::string> tokens;
+    std::string current_token;
     for (char c : instruction_string) {
         if (c == ',' || c == ' ' || c == '(' || c == ')' || c == '\t') {
             if (!current_token.empty()) {
@@ -75,9 +97,12 @@ std::vector<std::string> Instruction::SplitInstruction(){
 }
 
 // Privado:
-void Instruction::IdentifyType(
-    const std::string& op
+bool Instruction::IdentifyType(
+    const std::string& prev_op
 ){
+    // Normaliza a string da operação antes de fazer a comparação.
+    std::string op;
+    for(char c : prev_op) op.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
     // LOAD
     if (op=="LOAD"||op=="LW"||op=="LB"||op=="LH"||op=="LBU"||op=="LHU"||op=="L.D"||op=="L.S"||op=="LD"||op=="LWU"||op=="LL")
         type = INSTRUCTION_TYPE::LOAD;
@@ -112,7 +137,41 @@ void Instruction::IdentifyType(
     else if (op=="DIV.D"||op=="DIV.S")
         type = INSTRUCTION_TYPE::FLOAT_DIV;
     // Instrução não suportada
-    else type = INSTRUCTION_TYPE::NONEXISTENT;
+    else return false;
+    return true;
+}
+
+// Privado:
+void Instruction::NormalizeInstruction(
+    std::vector<std::string>& tokens
+){
+    // Uppercase em todos os tokens (opcode, registradores, offsets/labels).
+    for (std::string& token : tokens)
+        for (char& c : token) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+    std::string normalized{tokens[0]};
+    // Load e Store:
+    if (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE) {
+        // tokens: [OP, REG, OFFSET, BASE_REG] -> "OP REG, OFFSET(BASE_REG)"
+        normalized += " " + tokens[1] + ", " + tokens[2] + "(" + tokens[3] + ")";
+    } // Salto (pode possuir label, que deve permanecer minúsculo por convenção):
+    else if (type == INSTRUCTION_TYPE::BRANCH) {
+        // BEQZ R1, LABEL -> BEQZ R1, label
+        // BEQ R1, R2, LABEL -> BEQ R1, R2, label
+        // J LABEL -> J label
+        // JR F4 -> JR R4 (sem alterações)
+        for (size_t i = 1; i < tokens.size(); ++i) {
+            std::string token{tokens[i]};
+            if (!IsRegister(token))
+                for (char& c : token) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            normalized += (i == 1 ? " " : ", ") + token;
+        }
+    }  // Resto
+    else {
+        for (size_t i = 1; i < tokens.size(); ++i)
+            normalized += (i == 1 ? " " : ", ") + tokens[i];
+    }
+    instruction_string = normalized;
 }
 
 // Privado:
@@ -144,9 +203,10 @@ void Instruction::SetAttributes(
         reg_j         = Register(tokens[1]);
         reg_k         = Register(tokens[3]);
     } else if (type == INSTRUCTION_TYPE::BRANCH){
-        if (toupper(tokens[1][0]) == 'F' || 'R') // Falso → Jump
-            reg_j   = Register(tokens[1]);
-        if(tokens.size() > 3) reg_k = Register(tokens[2]); // K nem sempre
+        if (IsRegister(tokens[1]))       // Falso -> Jump (J    label)
+            reg_j = Register(tokens[1]); //               (BEQZ R1, label)
+        if(tokens.size() > 3 && IsRegister(tokens[2]))  // K nem sempre existe
+            reg_k = Register(tokens[2]); //               (BEQ R1, R2, label)
     } else {
         dest_register = Register(tokens[1]);
         // Verificação de validade:

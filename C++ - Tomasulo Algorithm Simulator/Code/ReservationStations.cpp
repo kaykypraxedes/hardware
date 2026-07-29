@@ -219,8 +219,8 @@ bool ReservationStation::TryAllocateNormal(
 
 // Privado:
 // Recebe a fase em que a instrução VAI ENTRAR para escolher a UF correta:
-// - LOAD/STORE em EX  → cálculo de endereço → int_basic_alu
-// - LOAD/STORE em MEM → acesso à memória    → memory_access
+// - LOAD/STORE em EX  -> cálculo de endereço -> int_basic_alu
+// - LOAD/STORE em MEM -> acesso à memória    -> memory_access
 int ReservationStation::FindFreeFU(
     FUNCTIONAL_UNITS& fu,
     int               cycle,
@@ -299,8 +299,8 @@ bool ReservationStation::UpdateCountdown(
 
 // Privado:
 // Recebe a fase que ACABOU para saber de qual grupo liberar:
-// - LOAD/STORE saindo de EX  → liberou int_basic_alu
-// - LOAD/STORE saindo de MEM → liberou memory_access
+// - LOAD/STORE saindo de EX  -> liberou int_basic_alu
+// - LOAD/STORE saindo de MEM -> liberou memory_access
 void ReservationStation::ReleaseFU(
     FUNCTIONAL_UNITS& fu,
     int               cycle,

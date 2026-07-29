@@ -4,6 +4,8 @@
 #include "Components.h"
 #include <string>
 #include <vector>
+#include <cstdlib>    // para std::abort
+#include <iostream>   // para std::cerr
 
 namespace processor {
 
@@ -35,15 +37,10 @@ class Instruction {
         static std::vector<int> base_ex_latencies;
         static std::vector<int> base_mem_latencies;
 
-        // Construtores:
-        Instruction() :
-            PC(-1),
-            ex_latency(0),
-            mem_latency(0),
-            type(INSTRUCTION_TYPE::NONEXISTENT) {}
+        // Construtor:
         Instruction(
-            int,
-            std::string
+            int = -1,
+            std::string = {}
         );
 
         // Getters:
@@ -51,10 +48,10 @@ class Instruction {
         int                GetExLatency()         const;
         int                GetMemLatency()        const;
         INSTRUCTION_TYPE   GetInstructionType()   const;
-        Register           GetDestRegister()      const;
-        Register           GetJ()                 const;
-        Register           GetK()                 const;
         // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
+        const Register&    GetDestRegister()      const;
+        const Register&    GetJ()                 const;
+        const Register&    GetK()                 const;
         const std::string& GetInstructionString() const;
         // Métodos públicos:
         void SetMemLatency(
@@ -65,25 +62,31 @@ class Instruction {
         );
     private:
         // Atributos:
-        // - instruction_string DEVE vir antes de PC para que o initializer list a inicialize antes de SplitInstruction() ser chamado
+        int              PC{-1};
         std::string      instruction_string;
-        int              PC{};
-        int              ex_latency;
+        int              ex_latency{};
         int              mem_latency{};
-        INSTRUCTION_TYPE type;
+        INSTRUCTION_TYPE type{INSTRUCTION_TYPE::NONEXISTENT};
         Register         dest_register;
         Register         reg_j;
         Register         reg_k;
         // Métodos privados:
-        void                     ParseInstruction();
-        void                     SetLatencies();
-        std::vector<std::string> SplitInstruction();
-        void IdentifyType(
+        void ParseInstruction(
             const std::string&
+        );
+        std::vector<std::string> SplitInstruction(
+            const std::string&
+        );
+        bool IdentifyType(
+            const std::string&
+        );
+        void NormalizeInstruction(
+            std::vector<std::string>&
         );
         void SetAttributes(
             std::vector<std::string>&
         );
+        void SetLatencies();
 };
 } // namespace processor
 

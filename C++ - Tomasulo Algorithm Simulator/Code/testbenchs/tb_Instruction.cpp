@@ -87,6 +87,18 @@ int main() {
         check("BEQ: K id=2",     beq.GetK().GetId()   == 2);
     }
 
+    secao("BRANCH — outros opcodes");
+    {
+        Instruction jr(0, "JR R1");
+        check("JR: J tipo='R'", jr.GetJ().GetType() == 'R');
+
+        Instruction j(1, "J loop");
+        check("J: J tipo='Z' (sem registrador)", j.GetJ().GetType() == 'Z');
+
+        Instruction bgtz(2, "BGTZ R4, done");
+        check("BGTZ: J id=4", bgtz.GetJ().GetId() == 4);
+    }
+
     secao("Identificação de tipo e latências — INT_MUL");
     {
         Instruction i(5, "MUL R3, R1, R2");
@@ -134,12 +146,17 @@ int main() {
         check("DIV.D: exLatency == 40",      i.GetExLatency() == 40);
     }
 
-    secao("Instrução desconhecida -> NONEXISTENT");
+    /*
+
+    Fica evidenciado que o programa aborta quando tenta colocar uma instrução inválida
+
+    secao("Instrução desconhecida");
     {
         Instruction i(10, "XPTO R1, R2, R3");
         check("XPTO: tipo == NONEXISTENT",  i.GetInstructionType() == INSTRUCTION_TYPE::NONEXISTENT);
         check("XPTO: exLatency == 0",        i.GetExLatency() == 0);
     }
+     */
 
     secao("SetExLatency / SetMemLatency");
     {
@@ -164,6 +181,44 @@ int main() {
         check("latMEM[LOAD]=1",          Instruction::base_mem_latencies[0] == 1);
         check("latMEM[STORE]=1",         Instruction::base_mem_latencies[1] == 1);
     }
+
+    secao("NormalizeInstruction — casos variados");
+    {
+        Instruction i1(0, "add r1, r2, r3");
+        check("lowercase -> uppercase", i1.GetInstructionString() == "ADD R1, R2, R3");
+
+        Instruction i2(1, "   l.d     f2 ,    0(r1)   ");
+        check("espacos extras + tabs", i2.GetInstructionString() == "L.D F2, 0(R1)");
+
+        Instruction i3(2, "ADD R1 R2 R3"); // sem vírgulas
+        check("apenas espaços -> vírgulas", i3.GetInstructionString() == "ADD R1, R2, R3");
+
+        Instruction i4(3, "SW R1 4(R2)");
+        check("STORE sem vírgula", i4.GetInstructionString() == "SW R1, 4(R2)");
+    }
+
+    secao("BRANCH — normalização de labels");
+    {
+        Instruction i1(0, "BNEZ r3, LOOP");
+        check("label vira minúsculo", i1.GetInstructionString() == "BNEZ R3, loop");
+
+        Instruction i2(1, "J END");
+        check("J label vira minúsculo", i2.GetInstructionString() == "J end");
+
+        // Este é o caso que expõe o bug do SetAttributes:
+        Instruction i3(2, "BEQZ R2, retry");
+        check("label 'retry' (começa com R) não vira Register", i3.GetJ().GetType() == 'R');
+        check("label 'retry' não afetou K",                     i3.GetK().GetType() == 'Z');
+    }
+
+    secao("Construtor — PC válido, string vazia");
+    {
+        Instruction i(5, "");
+        check("PC vira -1 se string vazia", i.GetPC() == -1);
+    }
+
+    Instruction i(0, "mul.d f4, f2, f0");
+    check("opcode minúsculo é reconhecido", i.GetInstructionType() == INSTRUCTION_TYPE::FLOAT_MUL);
 
     std::cout << "\n-----------------------------\n";
     std::cout << "Resultado: " << passou << " OK, " << falhou << " FALHOU\n";

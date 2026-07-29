@@ -34,12 +34,30 @@ int main() {
         check("R0: GetId() == 0", r0.GetId() == 0);
 
         /*
-        // Testado que o processador não aceita mais essa declaração.
+        Testado que esse registrador não é aceito (aborta).
         Register inv("XYZ");
         */
 
         Register vazio("");
         check("'': GetType() == 'Z'", vazio.GetType() == 'Z');
+    }
+
+    secao("Register(string) — limites de id");
+    {
+        Register ok("R31");
+        check("R31: válido (limite superior)", ok.GetId() == 31);
+        /*
+        Testado que esse registrador não é aceito (aborta).
+        Register invalido("R32");
+        */
+    }
+
+    secao("Register(string) — tipo sem id");
+    {
+        /*
+        Testado que esse registrador não é aceito (aborta).
+        Register r("R");
+        */
     }
 
     secao("ToggleBusy()");
@@ -109,6 +127,85 @@ int main() {
         auto t = f.GetAllocationTimes();
         check("tempos: [2,4,10,12]",
               t.size() == 4 && t[0]==2 && t[1]==4 && t[2]==10 && t[3]==12);
+    }
+
+    secao("GetRSCycleStart(rs_id)");
+    {
+        Register r("R3");
+        r.AllocateRS("load0", 5);
+        check("start_cycle correto para RS pendente", r.GetRSCycleStart("load0") == 5);
+        check("RS inexistente retorna -1",            r.GetRSCycleStart("nope") == -1);
+
+        r.DeallocateRS("load0", 5, 9);
+        check("RS já desalocada retorna -1 (não é mais pendente)",
+              r.GetRSCycleStart("load0") == -1);
+    }
+
+    secao("IsDependencyResolved(rs_id, start_cycle)");
+    {
+        Register r("F2");
+        r.AllocateRS("mul0", 3);
+        check("pendente: não resolvido",  !r.IsDependencyResolved("mul0", 3));
+
+        r.DeallocateRS("mul0", 3, 10);
+        check("desalocado: resolvido",     r.IsDependencyResolved("mul0", 3));
+
+        check("start_cycle errado: não encontrado", !r.IsDependencyResolved("mul0", 99));
+        check("rs_id errado: não encontrado",        !r.IsDependencyResolved("outro", 3));
+    }
+
+    secao("WAW — múltiplos produtores pendentes");
+    {
+        Register r("R4");
+        r.AllocateRS("add0", 1);
+        r.AllocateRS("add1", 6); // segundo produtor pendente (WAW) para o mesmo registrador
+
+        check("GetCurrentRS() retorna o mais recente pendente (add1)",
+              r.GetCurrentRS() == "add1");
+        check("busy continua true com 2 pendentes", r.GetBusy() == true);
+
+        // Desaloca o mais antigo primeiro — busy deve continuar true (add1 ainda pendente)
+        r.DeallocateRS("add0", 1, 4);
+        check("busy == true (add1 ainda pendente)", r.GetBusy() == true);
+        check("GetCurrentRS() ainda retorna add1",   r.GetCurrentRS() == "add1");
+
+        // Desaloca o último — agora sim busy deve cair
+        r.DeallocateRS("add1", 6, 9);
+        check("busy == false (nenhum pendente)", r.GetBusy() == false);
+        check("GetCurrentRS() vazio",             r.GetCurrentRS().empty());
+    }
+
+    secao("Mesmo rs_id reutilizado em ciclos diferentes");
+    {
+        Register r("R7");
+        r.AllocateRS("loop_rs", 2);
+        r.DeallocateRS("loop_rs", 2, 5);
+        r.AllocateRS("loop_rs", 10); // mesmo nome de RS, reutilizado depois
+
+        check("GetRSCycleStart acha a alocação pendente correta (10, não 2)",
+              r.GetRSCycleStart("loop_rs") == 10);
+        check("IsDependencyResolved(2) == true (já resolvida)",
+              r.IsDependencyResolved("loop_rs", 2));
+        check("IsDependencyResolved(10) == false (ainda pendente)",
+              !r.IsDependencyResolved("loop_rs", 10));
+    }
+
+    secao("DeallocateRS — RS inexistente");
+    {
+        Register r("R9");
+        r.AllocateRS("x", 1);
+        bool result = r.DeallocateRS("nao_existe", 1, 5);
+        check("DeallocateRS retorna false p/ rs_id inexistente", result == false);
+        check("estado não foi alterado (ainda busy)", r.GetBusy() == true);
+
+        bool result2 = r.DeallocateRS("x", 999, 5); // start_cycle errado
+        check("DeallocateRS retorna false p/ start_cycle errado", result2 == false);
+    }
+
+    secao("Normalização do registrador");
+    {
+        Register r("r5");
+        check("tipo minúsculo é normalizado", r.GetType() == 'R');
     }
 
     std::cout << "\n-----------------------------\n";

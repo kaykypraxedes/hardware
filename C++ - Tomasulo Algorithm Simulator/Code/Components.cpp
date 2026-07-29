@@ -53,10 +53,13 @@ bool Register::ParseId(
     // 1. Input vazio
     if (s.empty()) { id = -1; return true; }
     try{
+        size_t pos{};
         // 2. Input[2-n] está no intervalo dos registradores
-        int id_aux{std::stoi(s.substr(1))};
+        int id_aux{std::stoi(s.substr(1), &pos)}; // pode lançar invalid_argument / out_of_range
+        // pega lixo à direita que seria ignorado pelo std::string::stoi ("55A" -> "55")
+        if(pos != s.size() - 1) return false;
         if(id_aux >= 0 && id_aux < num_registers) { id = id_aux; return true; }
-    } catch (...) { return false; } // Casos não suportados pelo std::stoi ou pelo std::string::substr
+    } catch (...) { return false; } // Casos não suportados pelo std::stoi ou pelo std::string::substr/stoi
     // Casos inválidos:
     // - Input[2-n] = "-1", "1236", "#", etc.
     return false;
@@ -125,7 +128,7 @@ std::vector<int> Register::GetAllocationTimes() const {
 // Registra o novo produtor.
 // - end_times começa em -1 (para que start_time e end_time tenham o mesmo len, evitando IndexOutOfBounds).
 // Múltiplos produtores pendentes (WAW) ficam na sequência de allocated_rs.
-void Register::AllocateRS(
+void Register::AllocateRS( // Retorno "void" pois sempre funciona
     const std::string& rs,
     int start
 ){
@@ -137,7 +140,7 @@ void Register::AllocateRS(
 
 // Público:
 // Usa o par (rs_id, start_cycle) para identificar a entrada exata, evitando ambiguidade quando o mesmo RS foi reutilizado múltiplas vezes (WAW).
-void Register::DeallocateRS(
+bool Register::DeallocateRS( // Retorno "bool" pois o for pode não achar correspondente
     const std::string& rs_id,
     int start_cycle,
     int end_cycle
@@ -145,10 +148,11 @@ void Register::DeallocateRS(
     for (size_t i = 0; i < allocated_rs.size(); i++) {
         if (allocated_rs[i] == rs_id && start_times[i] == start_cycle) {
             end_times[i] = end_cycle;
-            break;
+            busy = HasPendingProducer();
+            return true;
         }
     }
-    busy = HasPendingProducer();
+    return false;
 }
 
 } // namespace processor

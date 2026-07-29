@@ -395,7 +395,7 @@ void Thread::WriteBackStoreWithROB(
 
 // Privado:
 // 3 etapas: (1) marca WR para instruções c/ destino; (2) broadcast CDB p/ liberar
-// dependências; (3) switch por type p/ grupo RS correto (LOAD → rs.load, etc.)
+// dependências; (3) switch por type p/ grupo RS correto (LOAD -> rs.load, etc.)
 void Thread::WriteBackNormal(
     int pc,
     int cycle
@@ -456,16 +456,24 @@ void Thread::FindWBInGroup(
     int cycle
 ){
     for (ReservationStation& r : group) {
+
         if (!r.GetBusy() || r.GetInstructionPhase() != INSTRUCTION_PHASE::WB) continue;
+
         if (r.GetCurrentInstruction().GetPC() != pc) continue;
+
         if (dest.GetType() == 'Z' || dest.GetId() < 0 || dest.GetId() >= num_registers) continue;
+
+        // Cria uma referência do vetor de registradores a ser operado no CDB
+        std::vector<Register>& regs = (dest.GetType() == 'F') ? cdb.F : cdb.R;
         std::string rs_id = r.GetId();
-        if (dest.GetType() == 'F') {
-            int start_cycle = cdb.F[dest.GetId()].GetRSCycleStart(rs_id);
-            cdb.F[dest.GetId()].DeallocateRS(rs_id, start_cycle, cycle);
-        } else if (dest.GetType() == 'R') {
-            int start_cycle = cdb.R[dest.GetId()].GetRSCycleStart(rs_id);
-            cdb.R[dest.GetId()].DeallocateRS(rs_id, start_cycle, cycle);
+        int start_cycle = regs[dest.GetId()].GetRSCycleStart(rs_id);
+        // Tenta desalocar
+        if(!regs[dest.GetId()].DeallocateRS(rs_id, start_cycle, cycle)){
+            std::cerr << "[ERRO] Falha na desalocação do RS:" <<
+            " rs_id( " << rs_id
+            << " ), start_cycle( " << start_cycle
+            << " ), end_cycle( " << cycle << " )\n";
+            std::abort();
         }
         ResolveDependencyInGroup(rs.load, rs_id, dest);
         ResolveDependencyInGroup(rs.store, rs_id, dest);

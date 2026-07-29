@@ -3,7 +3,7 @@
 
 # De cada módulo:
 ## Components.cpp/.h
-- [ ] AllocateRS e DeallocateRS tem retorno void ao invés de bool (não dá para saber se a alocação ou desalocação foi bem sucedida).
+- [x] AllocateRS e DeallocateRS tem retorno void ao invés de bool (não dá para saber se a alocação ou desalocação foi bem sucedida).
 - [x] `ParseType()` e `ParseId()` em vez de `IdentifyType()`/`IdentifyId()` — agora retornam `bool`
 - [x] `HasPendingProducer()` movido para `private`
 - [x] `GetAllocationTimes()` e `GetCurrentRS()` — **analisado: não podem ser `const &`** (constroem/derivam resultados, não retornam membro direto)
@@ -15,10 +15,10 @@
 
 ## Instruction.cpp/.h
 - [x] `SetAttributes()`: ELSE J, ELSE K e BRANCH J com verificação F/R (imediato não passa ao construtor)
-- [ ] O construtor vazio dessa classe é necessário ou se isso é uma margem para falha de implementação.
-- [ ] Verificar se `GetDestRegister()` `GetJ()` e `GetK()` não poderiam ser `const &`, já que `Register` é uma classe consideravelmente grande.
-- [ ] Pensar se passar a `string` diretamente para a `instruction_string` é uma boa ideia, ou se não valia apena implementar uma função de normalização (padroniza tudo em maiúsculo, espaçamento uniforme, etc.). Esse tipo já faria a verificação de validade da instrução (seria bool) e a partir dele as demais funções trabalhariam (como ela está normalizada é mais fácil)
-- [ ] Tem este comentário no **.h**: *// - instruction_string DEVE vir antes de PC para que o initializer list a inicialize antes de SplitInstruction() ser chamado*. Eu queria saber se esse comentário faz sentido real ou se não tem diferença.
+- [x] O construtor vazio dessa classe é necessário ou se isso é uma margem para falha de implementação.
+- [x] Verificar se `GetDestRegister()` `GetJ()` e `GetK()` não poderiam ser `const &`, já que `Register` é uma classe consideravelmente grande.
+- [x] Pensar se passar a `string` diretamente para a `instruction_string` é uma boa ideia, ou se não valia apena implementar uma função de normalização (padroniza tudo em maiúsculo, espaçamento uniforme, etc.). Esse tipo já faria a verificação de validade da instrução (seria bool) e a partir dele as demais funções trabalhariam (como ela está normalizada é mais fácil)
+- [x] Tem este comentário no **.h**: *// - instruction_string DEVE vir antes de PC para que o initializer list a inicialize antes de SplitInstruction() ser chamado*. Eu queria saber se esse comentário faz sentido real ou se não tem diferença.
 
 ## ReservationStations.cpp/.h
 - [ ] O construtor poderia ser definido integralmente apenas no **.h** (já que não tem métodos, apenas uma definição de atributos).

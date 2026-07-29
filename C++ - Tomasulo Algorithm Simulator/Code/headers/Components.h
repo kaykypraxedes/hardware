@@ -43,7 +43,7 @@ class Register {
             const std::string&,
             int
         );
-        void DeallocateRS(
+        bool DeallocateRS(
             const std::string&,
             int,
             int
