@@ -34,3 +34,11 @@
 - [x] Criar uma função auxiliar para evitar cópia de código no `TryAllocate*()` (mesmo código se repete basicamente 3x).
 - [x] Transformar `DeallocateFUFromGroup()` em um método `static` com retorno bool (verificar se a desalocação aconteceu da maneira esperada) da mesma forma como foi feito com `AllocateFreeFu()` (métodos básicamente iguais).
 - [x] Estude se os métodos `ReleaseFU()` e `FindFreeFU()` não podem ser resumidos de alguma maneira (visto que é basicamente o mesmo código, mas jogando em uma função diferente). O mesmo para `AllocateFreeFu()` e `DeallocateFUFromGroup()`.
+
+## Thread.cpp/.h
+
+
+## Processor.cpp/.h
+
+
+## Main.cpp/.h
