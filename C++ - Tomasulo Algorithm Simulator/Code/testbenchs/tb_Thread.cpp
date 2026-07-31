@@ -21,12 +21,12 @@ int main() {
         std::vector<std::string> prog = {"ADD R1, R2, R3", "SUB R4, R1, R5"};
         Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
 
-        check("GetPC() == 0",                              t.GetPC() == 0);
+        check("GetCurrentInstructionPosition() == 0",      t.GetCurrentInstructionPosition() == 0);
         check("GetNumStalls() == 0",                       t.GetNumStalls() == 0);
         check("GetThreadState() == FREE",                  t.GetThreadState() == THREAD_STATE::ACTIVE);
         check("GetTable().size() == 2",                    t.GetTable().size() == 2);
-        check("tabela[0].instruction.GetPC() == 0",        t.GetTable()[0].instruction.GetPC() == 0);
-        check("tabela[1].instruction.GetPC() == 1",        t.GetTable()[1].instruction.GetPC() == 1);
+        check("tabela[0].instruction.GetPosition() == 0",  t.GetTable()[0].instruction.GetPosition() == 0);
+        check("tabela[1].instruction.GetPosition() == 1",  t.GetTable()[1].instruction.GetPosition() == 1);
         check("tabela[0].issue_cycle == -1 (não emitido)", t.GetTable()[0].issue_cycle == -1);
 
         check("GetCDB().R.size() == 32",                   t.GetCDB().R.size() == 32);
@@ -49,8 +49,10 @@ int main() {
         std::vector<std::string> prog = {"ADD R1, R2, R3"};
         std::vector<int> troca = {0};
         Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO, troca);
-        check("construtor grossa: GetPC() == 0",       t.GetPC() == 0);
-        check("construtor grossa: tabela.size() == 1", t.GetTable().size() == 1);
+        check("construtor grossa: GetGetCurrentInstructionPosition() == 0",
+            t.GetCurrentInstructionPosition() == 0);
+        check("construtor grossa: tabela.size() == 1",
+            t.GetTable().size() == 1);
     }
 
     secao("new_latency no construtor");
@@ -76,14 +78,14 @@ int main() {
         Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
 
         bool ok1 = t.Issue(1);
-        check("ciclo 1: Issue retorna true",      ok1);
-        check("ciclo 1: PC avança para 1",                t.GetPC() == 1);
+        check("ciclo 1: Issue retorna true",              ok1);
+        check("ciclo 1: Posição avança para 1",           t.GetCurrentInstructionPosition() == 1);
         check("ciclo 1: tabela[0].issue_cycle == 1",      t.GetTable()[0].issue_cycle == 1);
         check("ciclo 1: estado ainda FREE",               t.GetThreadState() == THREAD_STATE::ACTIVE);
 
         bool ok2 = t.Issue(2);
-        check("ciclo 2: Issue retorna true",      ok2);
-        check("ciclo 2: PC avança para 2",                t.GetPC() == 2);
+        check("ciclo 2: Issue retorna true",              ok2);
+        check("ciclo 2: Posição avança para 2",           t.GetCurrentInstructionPosition() == 2);
         check("ciclo 2: tabela[1].issue_cycle == 2",      t.GetTable()[1].issue_cycle == 2);
 
         bool ok3 = t.Issue(3);
@@ -98,8 +100,8 @@ int main() {
         t.Issue(1);
         check("estado ainda FREE após BNEZ (controle de dispatch é do Processor)",
               t.GetThreadState() == THREAD_STATE::ACTIVE);
-        check("PC avança para 1 após issue do BNEZ",
-            t.GetPC() == 1);
+        check("Posição avança para 1 após issue do BNEZ",
+            t.GetCurrentInstructionPosition() == 1);
     }
 
     secao("Issue() — RS cheia bloqueia emissão");
@@ -109,11 +111,11 @@ int main() {
             "L.D F3, 0(R3)", "L.D F4, 0(R4)", "L.D F5, 0(R5)"
         };
         Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
-        for (int c = 1; c <= 5; c++)  t.Issue(c);
-        check("PC == 5 após 5 LOADs", t.GetPC() == 5);
-        bool cheio =                  t.Issue(6);
+        for (int c = 1; c <= 5; c++)       t.Issue(c);
+        check("Posição == 5 após 5 LOADs", t.GetCurrentInstructionPosition() == 5);
+        bool cheio =                       t.Issue(6);
         check("6o LOAD retorna false (RS cheia)", !cheio);
-        check("PC não avança",        t.GetPC() == 5);
+        check("Posição não avança",        t.GetCurrentInstructionPosition() == 5);
     }
 
     secao("ExMem() — retorna true quando tudo finalizado");

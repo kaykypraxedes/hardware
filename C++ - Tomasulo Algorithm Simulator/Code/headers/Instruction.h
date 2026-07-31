@@ -44,7 +44,7 @@ class Instruction {
         );
 
         // Getters:
-        int                GetPC()                const;
+        int                GetPosition()          const;
         int                GetExLatency()         const;
         int                GetMemLatency()        const;
         INSTRUCTION_TYPE   GetInstructionType()   const;
@@ -62,7 +62,7 @@ class Instruction {
         );
     private:
         // Atributos:
-        int              PC{-1}; // Funciona como um ID para diferenciar instruções iguais.
+        int              position{-1}; // Funciona como um ID para diferenciar instruções iguais.
         std::string      instruction_string;
         int              ex_latency{};
         int              mem_latency{};

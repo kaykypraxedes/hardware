@@ -13,18 +13,17 @@ int main() {
     secao("Instruction() — construtor padrão");
     {
         Instruction i;
-        check("GetPC() == -1",                         i.GetPC() == -1);
+        check("GetPosition() == -1",                   i.GetPosition() == -1);
         check("GetInstructionType() == NONEXISTENT",   i.GetInstructionType() == INSTRUCTION_TYPE::NONEXISTENT);
         check("GetExLatency() == 0",                   i.GetExLatency() == 0);
         check("GetMemLatency() == 0",                  i.GetMemLatency() == 0);
     }
 
-    secao("GetPC() e GetInstructionString()");
+    secao("GetPosition() e GetInstructionString()");
     {
         Instruction i(7, "ADD R1, R2, R3");
-        check("GetPC() == 7",                          i.GetPC() == 7);
-        check("GetInstructionString() == 'ADD R1, R2, R3'",
-              i.GetInstructionString() == "ADD R1, R2, R3");
+        check("GetPosition() == 7",                         i.GetPosition() == 7);
+        check("GetInstructionString() == 'ADD R1, R2, R3'", i.GetInstructionString() == "ADD R1, R2, R3");
     }
 
     secao("Identificação de tipo e latências — LOAD");
@@ -211,10 +210,10 @@ int main() {
         check("label 'retry' não afetou K",                     i3.GetK().GetType() == 'Z');
     }
 
-    secao("Construtor — PC válido, string vazia");
+    secao("Construtor — Posição válido, string vazia");
     {
         Instruction i(5, "");
-        check("PC vira -1 se string vazia", i.GetPC() == -1);
+        check("position vira -1 se string vazia", i.GetPosition() == -1);
     }
 
     Instruction i(0, "mul.d f4, f2, f0");

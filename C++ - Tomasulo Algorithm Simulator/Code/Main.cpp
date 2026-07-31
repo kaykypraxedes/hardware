@@ -13,13 +13,13 @@
 
 namespace processor {
 
-static const int W_PC     = 6;
-static const int W_INST   = 30;
-static const int W_ISSUE  = 10;
-static const int W_EX     = 16;
-static const int W_MEM    = 16;
-static const int W_WR     = 10;
-static const int W_COMMIT = 10;
+static const int W_POSITION = 12;
+static const int W_INST     = 30;
+static const int W_ISSUE    = 12;
+static const int W_EX       = 16;
+static const int W_MEM      = 16;
+static const int W_WR       = 12;
+static const int W_COMMIT   = 12;
 
 std::string CycleStr(
     int c
@@ -49,7 +49,7 @@ int SeparatorWidth(
     bool rob
 ){
     int total =
-        W_PC +
+        W_POSITION +
         W_INST +
         W_ISSUE +
         W_EX +
@@ -180,12 +180,12 @@ void PrintTable(
     std::cout << "=====================\n\n";
 
     std::cout << std::left
-              << std::setw(W_PC)     << "PC"
-              << std::setw(W_INST)   << "Instrucao"
-              << std::setw(W_ISSUE)  << "Issue"
-              << std::setw(W_EX)     << "EX"
-              << std::setw(W_MEM)    << "MEM"
-              << std::setw(W_WR)     << "WR";
+              << std::setw(W_POSITION) << "Posição"
+              << std::setw(W_INST)     << "Instrução"
+              << std::setw(W_ISSUE)    << "Issue"
+              << std::setw(W_EX)       << "EX"
+              << std::setw(W_MEM)      << "MEM"
+              << std::setw(W_WR)       << "WR";
 
     if (rob)
         std::cout << std::setw(W_COMMIT) << "Commit";
@@ -196,10 +196,10 @@ void PrintTable(
 
     for (const auto& l : table) {
         std::cout << std::left
-                  << std::setw(W_PC)
-                  << l.instruction.GetPC()
+                  << std::setw(W_POSITION - 2)
+                  << l.instruction.GetPosition()
 
-                  << std::setw(W_INST)
+                  << std::setw(W_INST - 2)
                   << l.instruction.GetInstructionString()
 
                   << std::setw(W_ISSUE)

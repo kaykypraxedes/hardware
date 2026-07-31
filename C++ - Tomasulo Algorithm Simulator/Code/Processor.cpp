@@ -86,7 +86,7 @@ void Processor::ExecuteIssue() {
         bool ok = threads[thread_pointer].Issue(current_cycle);
         if (ok) {
             despachadas++;
-            if(threads[thread_pointer].GetTable()[threads[thread_pointer].GetPC() - 1].instruction.GetInstructionType() ==
+            if(threads[thread_pointer].GetTable()[threads[thread_pointer].GetCurrentInstructionPosition() - 1].instruction.GetInstructionType() ==
                 INSTRUCTION_TYPE::BRANCH && mt_model != MULTITHREADING_MODEL::SMT
                 && !has_predictor) // Instrução é um branch
                 break;

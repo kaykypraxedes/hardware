@@ -60,9 +60,9 @@ class Thread {
         );
 
         // Getters:
-        int          GetPC()          const;
-        int          GetNumStalls()   const;
-        THREAD_STATE GetThreadState() const;
+        int          GetCurrentInstructionPosition() const;
+        int          GetNumStalls()                  const;
+        THREAD_STATE GetThreadState()                const;
         // "const &" para evitar cópia (para tipos básicos e enums o ganho é marginal)
         const CDB&                    GetCDB()   const;
         const RESERVATION_STATIONS&   GetRS()    const;
@@ -96,7 +96,7 @@ class Thread {
         // - Elementos funcionais da Thread.
         bool                     has_rob{false};
         int                      rob_capacity{1};
-        int                      PC{};
+        int                      current_instruction_position{};
         bool                     has_predictor{false};
         CDB                      cdb;
         RESERVATION_STATIONS     rs;

@@ -10,7 +10,7 @@ static const int NUM_FU_GROUPS = 6;
 static int PCOfRS(
     ReservationStation* r
 ){
-    return r->GetCurrentInstruction().GetPC();
+    return r->GetCurrentInstruction().GetPosition();
 }
 
 static int PCOfEvent(
@@ -57,28 +57,28 @@ static void ReleaseRSByRegister(
 
 static void ReleaseRSByPC(
     std::vector<ReservationStation>& group,
-    int              pc,
+    int              position,
     int              cycle
 ){
     for (ReservationStation& r : group) {
         if (r.GetBusy() && r.GetInstructionPhase() == INSTRUCTION_PHASE::WB
-            && r.GetCurrentInstruction().GetPC() == pc)
+            && r.GetCurrentInstruction().GetPosition() == position)
             r.Release(cycle);
     }
 }
 
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:
-int Thread::GetPC()                   const { return PC;         }
+int Thread::GetCurrentInstructionPosition() const { return current_instruction_position; }
 
 // Público:
-int Thread::GetNumStalls()            const { return num_stalls; }
+int Thread::GetNumStalls()                  const { return num_stalls;                   }
 
 // Público:
-THREAD_STATE Thread::GetThreadState() const {return state;       }
+THREAD_STATE Thread::GetThreadState()       const {return state;                         }
 
 // Público:
-const CDB& Thread::GetCDB() const { return cdb; }
+const CDB& Thread::GetCDB()                      const { return cdb;               }
 
 // Público:
 const RESERVATION_STATIONS& Thread::GetRS()      const { return rs;                }
@@ -176,7 +176,7 @@ void Thread::InitializeComponents(
 // Público:
 bool Thread::IsSwitchCycle() {
     if (switch_cycles.empty()) return false;
-    if (PC != switch_cycles.front()) return false;
+    if (current_instruction_position != switch_cycles.front()) return false;
     // Apaga o valor atual, já que o ciclo já passou.
     switch_cycles.erase(switch_cycles.begin());
     return true;
@@ -187,12 +187,17 @@ bool Thread::IsSwitchCycle() {
 bool Thread::Issue(
     const int cycle
 ){
-    if (PC >= static_cast<int>(instruction_table.size())) return false;
+    if (current_instruction_position >= static_cast<int>(instruction_table.size())) return false;
     if (rob.size() >= static_cast<size_t>(rob_capacity)) return false;
 
-    Instruction& instruction = instruction_table[PC].instruction;
+    Instruction& instruction = instruction_table[current_instruction_position].instruction;
     INSTRUCTION_TYPE type    = instruction.GetInstructionType();
-    if (type == INSTRUCTION_TYPE::NONEXISTENT) { PC++; return false; }
+    if (type == INSTRUCTION_TYPE::NONEXISTENT) {
+        std::cerr << "[ERRO] Tentativa de adicionar instrução inválida no issue: \n" <<
+        "- Instrução = " << instruction_table[current_instruction_position].instruction.GetInstructionString()
+        << "\n" << "- Position = " << current_instruction_position << "\n";
+        std::abort();
+    }
 
     std::vector<ReservationStation>* group = nullptr;
     switch (type) {
@@ -210,9 +215,9 @@ bool Thread::Issue(
         if (r.AddIssue(instruction, cdb, cycle)) {
             RegisterIssue(cycle);
             if(has_rob) rob.push_back(instruction);
-            PC++;
+            current_instruction_position++;
             if (type == INSTRUCTION_TYPE::BRANCH && !has_rob)
-                unresolved_branch_pc = PC - 1;
+                unresolved_branch_pc = current_instruction_position - 1;
             return true;
         }
     }
@@ -223,7 +228,7 @@ bool Thread::Issue(
 void Thread::RegisterIssue(
     int cycle
 ){
-    instruction_table[PC].issue_cycle = cycle;
+    instruction_table[current_instruction_position].issue_cycle = cycle;
 }
 
 // ─── EX/MEM ───────────────────────────────────────────────────────
@@ -274,7 +279,7 @@ void Thread::CollectCandidatesFromGroup(
 ){
     for (ReservationStation& r : group) {
         if (!r.GetBusy()) continue;
-        int inst_pc = r.GetCurrentInstruction().GetPC();
+        int inst_pc = r.GetCurrentInstruction().GetPosition();
         if (unresolved_branch_pc >= 0 && inst_pc > unresolved_branch_pc) continue;
         INSTRUCTION_TYPE type = r.GetCurrentInstruction().GetInstructionType();
         if (type == INSTRUCTION_TYPE::STORE && has_rob && r.GetInstructionPhase() == INSTRUCTION_PHASE::MEM)
@@ -289,7 +294,7 @@ void Thread::TryAdvanceRS(
     int cycle
 ){
     if (r.UpdateDependencies(cdb, fu, cycle)) {
-        int pc = r.GetCurrentInstruction().GetPC();
+        int pc = r.GetCurrentInstruction().GetPosition();
         if (r.GetInstructionPhase() == INSTRUCTION_PHASE::EX)
             AddExCycle(pc, cycle);
         else if (r.GetInstructionPhase() == INSTRUCTION_PHASE::MEM)
@@ -390,7 +395,7 @@ void Thread::WriteBackStoreWithROB(
     int cycle
 ){
     for (ReservationStation& r : rs.store)
-        if (r.GetBusy() && r.GetCurrentInstruction().GetPC() == pc)
+        if (r.GetBusy() && r.GetCurrentInstruction().GetPosition() == pc)
             r.Release(cycle);
     RemoveWB();
     num_finished_instructions++;
@@ -462,7 +467,7 @@ void Thread::FindWBInGroup(
 
         if (!r.GetBusy() || r.GetInstructionPhase() != INSTRUCTION_PHASE::WB) continue;
 
-        if (r.GetCurrentInstruction().GetPC() != pc) continue;
+        if (r.GetCurrentInstruction().GetPosition() != pc) continue;
 
         if (dest.GetType() == 'Z' || dest.GetId() < 0 || dest.GetId() >= num_registers) continue;
 
@@ -521,7 +526,7 @@ void Thread::CollectEventsFromGroup(std::vector<ReservationStation>& group, std:
         INSTRUCTION_PHASE phase_before = r.GetInstructionPhase();
         if (r.UpdateCountdown(fu, cycle)) {
             events.push_back({
-                r.GetCurrentInstruction().GetPC(),
+                r.GetCurrentInstruction().GetPosition(),
                 phase_before,
                 r.GetInstructionPhase(),
                 r.GetCurrentInstruction().GetInstructionType()

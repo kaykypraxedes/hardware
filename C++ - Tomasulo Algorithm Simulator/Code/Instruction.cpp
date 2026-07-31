@@ -25,7 +25,7 @@ static bool IsRegister(
 
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:
-int Instruction::GetPC()                const { return PC;            }
+int Instruction::GetPosition()          const { return position;            }
 
 // Público:
 int Instruction::GetExLatency()         const { return ex_latency;    }
@@ -51,14 +51,18 @@ const std::string& Instruction::GetInstructionString() const { return instructio
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
 Instruction::Instruction(
-    const int PC,
+    const int position,
     const std::string& instruction_string
-):
-    PC(PC)
-{
+) {
+    // Verifica se é uma posição válida (>= 0).
+    if(position < -1){ // -1 é o valor de instrução não iniciada
+        std::cerr << "[ERRO] Valor inválido de posição passado: " << position << "\n";
+        std::abort();
+    }
+    this->position = position;
     // Só define a instrução se ela for válida (foi passado com PC)
-    if(PC != -1 && !instruction_string.empty()) ParseInstruction(instruction_string);
-    else this->PC = -1;
+    if(position != -1 && !instruction_string.empty()) ParseInstruction(instruction_string);
+    else this->position = -1;
 }
 
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
