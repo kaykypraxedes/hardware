@@ -31,29 +31,21 @@ Processor::Processor(
     type          (type),
     mt_model      (model)
 {
-    bool has_rob{type == PROCESSOR_TYPE::TOMASULO_WITH_ROB};
-    if (switch_instructions.empty())
-        InitializeThreads(Assembly, has_rob, num_threads, num_rs, num_fus);
-    else
-        InitializeThreads(Assembly, has_rob, num_threads, num_rs, num_fus, switch_instructions);
+    InitializeThreads(Assembly, num_threads, num_rs, num_fus, switch_instructions);
 }
 
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Privado:
 void Processor::InitializeThreads(
     const std::vector<std::string>& Assembly,
-    bool                            has_rob,
     int                             num_threads,
     const std::vector<int>&         num_rs,
     const std::vector<int>&         num_fus,
-    const std::vector<int>&         switch_instructions
+    const std::vector<int>&         switch_cycles
 ){
-    for (int i = 0; i < num_threads; i++) {
-        if (mt_model == MULTITHREADING_MODEL::COARSE_GRAINED)
-            threads.push_back(Thread(switch_instructions, Assembly, has_rob, num_rs, num_fus, dispatch_width, ROB_CAPACITY_DEFAULT, has_predictor));
-        else
-            threads.push_back(Thread(Assembly, has_rob, num_rs, num_fus, dispatch_width, ROB_CAPACITY_DEFAULT, has_predictor));
-    }
+    int rob_capacity = (type == PROCESSOR_TYPE::TOMASULO_WITH_ROB) ? ROB_CAPACITY_DEFAULT : 0;
+    for (int i = 0; i < num_threads; i++)
+        threads.push_back(Thread(Assembly, {}, num_rs, num_fus, switch_cycles, dispatch_width, rob_capacity, has_predictor));
 }
 
 // Público:

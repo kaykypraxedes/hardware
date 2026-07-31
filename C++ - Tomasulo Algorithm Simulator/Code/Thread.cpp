@@ -75,7 +75,7 @@ int Thread::GetPC()                   const { return PC;         }
 int Thread::GetNumStalls()            const { return num_stalls; }
 
 // Público:
-THREAD_STATE Thread::GetThreadState() const { return state;      }
+THREAD_STATE Thread::GetThreadState() const {return state;       }
 
 // Público:
 const CDB& Thread::GetCDB() const { return cdb; }
@@ -89,103 +89,109 @@ const FUNCTIONAL_UNITS& Thread::GetFU()          const { return fu;             
 // Público:
 const std::vector<TABLE_ROW>& Thread::GetTable() const { return instruction_table; }
 
-// ─── CONSTRUTORES ─────────────────────────────────────────────────
+// ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
 Thread::Thread(
-    const std::vector<std::string>& assembly,
-    bool                            has_rob,
-    const std::vector<int>&         num_rs,
-    const std::vector<int>&         num_fus,
-    int                             dispatch_width,
-    int                             rob_capacity,
-    bool                            has_predictor
+    const std::vector<std::string>&             assembly,
+    const std::vector<std::tuple<int,int,int>>& new_latency,
+    const std::vector<int>&                     num_rs,
+    const std::vector<int>&                     num_fus,
+    const std::vector<int>&                     switch_cycles,
+    const int                                   dispatch_width,
+    const int                                   rob_capacity,
+    const bool                                  has_predictor
 ):
-    has_rob      (has_rob),
-    rob_capacity (has_rob ? rob_capacity : 1),
-    has_predictor(has_predictor)
+    has_rob        (rob_capacity > 0),
+    rob_capacity   (rob_capacity > 0 ? rob_capacity : 1),
+    has_predictor  (has_predictor),
+    switch_cycles  (switch_cycles)
 {
+    // Verifica inconsistência de input
+    if (has_predictor && !has_rob) {
+        std::cerr << "[ERRO] Para ter previsor de desvios é obrigatório ter ROB\n";
+        std::abort();
+    }
+    // Passa as instruções para a tabela.
     int i{};
     for (const std::string& instr : assembly)
-        instruction_table.push_back({Instruction(i++, instr), 0, 0, {}, {}, 0, 0});
+        // Ignora propositalmente os outros valores para que eles recebam o default.
+        #pragma GCC diagnostic push
+        #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+        instruction_table.push_back({Instruction(i++, instr)}); // Warning ignorado.
+        #pragma GCC diagnostic pop
+    // Inicializa os RSs e as FUs.
     InitializeComponents(num_rs, num_fus, dispatch_width);
+    // Passa as novas latências às instruções.
+    for (const auto& [pc, ex, mem] : new_latency) {
+        if (static_cast<size_t>(pc) < instruction_table.size()) {
+            instruction_table[pc].instruction.SetExLatency(ex);
+            if (mem > 0) instruction_table[pc].instruction.SetMemLatency(mem);
+        }
+    }
 }
-
-// Público:
-Thread::Thread(
-    const std::vector<int>&         switch_instructions,
-    const std::vector<std::string>& assembly,
-    bool                            has_rob,
-    const std::vector<int>&         num_rs,
-    const std::vector<int>&         num_fus,
-    int                             dispatch_width,
-    int                             rob_capacity,
-    bool                            has_predictor
-):
-    has_rob            (has_rob),
-    rob_capacity       (has_rob ? rob_capacity : 1),
-    has_predictor      (has_predictor),
-    switch_instructions(switch_instructions)
-{
-    int i{}; // Usado dentro do for para obter o PC de cada instrução
-    for (const std::string& instr : assembly)
-        instruction_table.push_back({Instruction(i++, instr), 0, 0, {}, {}, 0, 0});
-    InitializeComponents(num_rs, num_fus, dispatch_width);
-}
-
-// ─── INICIALIZAÇÃO ────────────────────────────────────────────────
+// ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Privado:
 void Thread::InitializeComponents(
     const std::vector<int>& num_rs,
     const std::vector<int>& num_fus,
     int                     dispatch_width
 ){
+    // Declara os registradores do banco:
     for(int i{}; i < num_registers; i++){
-        cdb.R.push_back(Register("R" + std::to_string(i)));
-        cdb.F.push_back(Register("F" + std::to_string(i)));
+        cdb.R.push_back(Register("R" + std::to_string(i))); // R: R0, R1, ..., R31
+        cdb.F.push_back(Register("F" + std::to_string(i))); // F: F0, F1, ..., F31
     }
     std::vector<int> aux;
-    if(num_rs.size() >= NUM_RS_GROUPS) aux = num_rs;
-    else aux = {5,5,5,4,3,2};
+    // Declara os componententes do RS:
+    // Verifica se a quantidade de valores para RSs passados é válido:
+    if(num_rs.empty()) aux = {5,5,5,4,3,2}; // Valores arbitrários de default.
+    // Verifica se o valor passado é válido:
+    else if(num_rs.size() != NUM_RS_GROUPS){
+        std::cerr << "[ERRO] Quantidade inválida de valores para RSs: " << num_rs.size() << "\n";
+        std::abort();
+    }
+    else aux = num_rs;
     for(int i{}; i < aux[0]; i++) rs.load.push_back(ReservationStation("load" + std::to_string(i)));
     for(int i{}; i < aux[1]; i++) rs.store.push_back(ReservationStation("store" + std::to_string(i)));
     for(int i{}; i < aux[2]; i++) rs.int_basic.push_back(ReservationStation("int_basic" + std::to_string(i)));
     for(int i{}; i < aux[3]; i++) rs.int_mult_div.push_back(ReservationStation("int_mult_div" + std::to_string(i)));
     for(int i{}; i < aux[4]; i++) rs.float_basic.push_back(ReservationStation("float_basic" + std::to_string(i)));
     for(int i{}; i < aux[5]; i++) rs.float_mult_div.push_back(ReservationStation("float_mult_div" + std::to_string(i)));
-    if(num_fus.size() >= NUM_FU_GROUPS) aux = num_fus;
-    else aux = {1,1,1,1,1,2};
+    // Verifica se o número de valores para FUs passados é válido:
+    if(num_fus.empty()) aux = {1,1,1,1,1,2}; // Valores arbitrários de default.
+    // Verifica se o valor passado é válido:
+    else if(num_fus.size() != NUM_FU_GROUPS){
+        std::cerr << "[ERRO] Quantidade inválida de valores para FUs: " << num_fus.size() << "\n";
+        std::abort();
+    } else aux = num_fus;
     for(int i{}; i < aux[0]; i++) fu.memory_access.push_back(FU{});
     for(int i{}; i < aux[1]; i++) fu.int_basic_alu.push_back(FU{});
     for(int i{}; i < aux[2]; i++) fu.int_mult_div_alu.push_back(FU{});
     for(int i{}; i < aux[3]; i++) fu.float_basic_alu.push_back(FU{});
     for(int i{}; i < aux[4]; i++) fu.float_mult_div_alu.push_back(FU{});
     fu.wr     = aux[5];
-    fu.commit = dispatch_width;
+    if(has_rob) fu.commit = dispatch_width; // Só inicializa commit se tem ROB
 }
 
 // Público:
-void Thread::SetCustomLatency(
-    int position,
-    int ex_latency,
-    int mem_latency
-){
-    if (position < 0 || static_cast<size_t>(position) >= instruction_table.size()) return;
-    instruction_table[position].instruction.SetExLatency(ex_latency);
-    if (mem_latency > 0)
-        instruction_table[position].instruction.SetMemLatency(mem_latency);
+bool Thread::IsSwitchCycle() {
+    if (switch_cycles.empty()) return false;
+    if (PC != switch_cycles.front()) return false;
+    // Apaga o valor atual, já que o ciclo já passou.
+    switch_cycles.erase(switch_cycles.begin());
+    return true;
 }
 
 // ─── ISSUE ────────────────────────────────────────────────────────
 // Público:
 bool Thread::Issue(
-    int cycle
+    const int cycle
 ){
-    if (state == THREAD_STATE::BLOCKED) return false;
     if (PC >= static_cast<int>(instruction_table.size())) return false;
     if (rob.size() >= static_cast<size_t>(rob_capacity)) return false;
 
     Instruction& instruction = instruction_table[PC].instruction;
-    INSTRUCTION_TYPE type   = instruction.GetInstructionType();
+    INSTRUCTION_TYPE type    = instruction.GetInstructionType();
     if (type == INSTRUCTION_TYPE::NONEXISTENT) { PC++; return false; }
 
     std::vector<ReservationStation>* group = nullptr;
@@ -202,7 +208,7 @@ bool Thread::Issue(
 
     for (ReservationStation& r : *group) {
         if (r.AddIssue(instruction, cdb, cycle)) {
-            RegisterIssue(PC, cycle);
+            RegisterIssue(cycle);
             if(has_rob) rob.push_back(instruction);
             PC++;
             if (type == INSTRUCTION_TYPE::BRANCH && !has_rob)
@@ -215,23 +221,21 @@ bool Thread::Issue(
 
 // Privado:
 void Thread::RegisterIssue(
-    int pc,
     int cycle
 ){
-    instruction_table[pc].issue_cycle = cycle;
-    instruction_table[pc].pc_position  = pc;
+    instruction_table[PC].issue_cycle = cycle;
 }
 
 // ─── EX/MEM ───────────────────────────────────────────────────────
 // Público:
 bool Thread::ExMem(
-    int cycle
+    const int cycle
 ){
     if(static_cast<size_t>(num_committed_instructions) == instruction_table.size() ||
        (!has_rob && static_cast<size_t>(num_finished_instructions) == instruction_table.size()))
        return true;
-    if (state == THREAD_STATE::WAITING)
-        state = THREAD_STATE::FREE;
+    if (state == THREAD_STATE::BRANCH_RESOLVING)
+        state = THREAD_STATE::ACTIVE;
     if(static_cast<size_t>(num_finished_instructions) != instruction_table.size())
         StartExOrMemPhase(cycle);
     return false;
@@ -280,7 +284,6 @@ void Thread::CollectCandidatesFromGroup(
 }
 
 // Privado:
-// Privado:
 void Thread::TryAdvanceRS(
     ReservationStation& r,
     int cycle
@@ -315,7 +318,7 @@ void Thread::AddMemCycle(
 // ─── WR ───────────────────────────────────────────────────────────
 // Público:
 void Thread::Wr(
-    int cycle
+    const int cycle
 ){
     FlushPendingWBBuffer();
     PerformWriteResult(cycle);
@@ -323,7 +326,7 @@ void Thread::Wr(
     if (!has_rob) {
         for (int i : pending_wb_buffer) {
             if (instruction_table[i].instruction.GetInstructionType() == INSTRUCTION_TYPE::BRANCH)
-                state = THREAD_STATE::WAITING;
+                state = THREAD_STATE::BRANCH_RESOLVING;
         }
     }
 }
@@ -485,7 +488,6 @@ void Thread::FindWBInGroup(
 }
 
 // Privado:
-// Privado:
 void Thread::DetectPhaseTransitions(
     int cycle
 ){
@@ -563,7 +565,7 @@ void Thread::AddPendingWB(
 // varia por type: STORE simula latência MEM, BRANCH espera 2 ciclos EX,
 // demais aguardam WR < ciclo atual. BRANCH s/ previsor trava no ciclo.
 void Thread::Commit(
-    int cycle
+    const int cycle
 ){
     if (!has_rob) return;
 
@@ -575,7 +577,7 @@ void Thread::Commit(
         bool pronto = false;
 
         if (store_with_rob) {
-            if (row.store_commit_state == STORE_COMMIT_STATE::IDLE) {
+            if (row.store_commit_state == STORE_COMMIT_STATE::PENDING) {
                 row.store_commit_state = STORE_COMMIT_STATE::WAITING_MEM;
                 row.mem_cycles.push_back(cycle);
             }
@@ -590,7 +592,7 @@ void Thread::Commit(
         } else if (type == INSTRUCTION_TYPE::BRANCH) {
             pronto = (row.ex_cycles.size() == 2);
         } else {
-            pronto = (row.wr_cycle != 0 && row.wr_cycle < cycle);
+            pronto = (row.wr_cycle > 0 && row.wr_cycle < cycle);
         }
 
         if (pronto) {

@@ -97,7 +97,7 @@ const std::vector<std::string>& ReservationStation::GetInstructions() const { re
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
 ReservationStation::ReservationStation(
-    std::string id
+    const std::string& id
 ) :
     id(id){}
 
@@ -267,6 +267,7 @@ bool ReservationStation::TryAllocateFU(
     const int               cycle,
     const int               latency
 ){
+    // Evita latências inválidas de instrução
     if (latency <= 0) {
         std::cerr <<
         "[ERRO] TryAllocateFU: latência inválida (" << latency <<
@@ -334,9 +335,10 @@ void ReservationStation::ReleaseFU(
 ){
     if (fu_position == -1) return;
     std::vector<FU>& fu_group{GetFUGroup(fu, current_instruction.GetInstructionType(),finished_phase)};
+
     if (!DeallocateFU(fu_group, fu_position, cycle)) {
         std::cerr <<
-        "[ERRO] ReleaseFU: fu_position (" << fu_position <<
+        "[ERRO] posição inválida de fu (" << fu_position <<
         ") fora dos limites do grupo (tamanho " << fu_group.size() <<
         ") ao liberar RS " << id
         << " na fase " << static_cast<int>(finished_phase) << "\n";

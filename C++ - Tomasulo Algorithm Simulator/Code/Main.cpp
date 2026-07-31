@@ -24,7 +24,7 @@ static const int W_COMMIT = 10;
 std::string CycleStr(
     int c
 ){
-    return (c == 0 ? "--" : std::to_string(c));
+    return (c <= 0 ? "--" : std::to_string(c));
 }
 
 std::string FormatCycles(

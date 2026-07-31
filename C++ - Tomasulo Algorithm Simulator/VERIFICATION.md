@@ -37,8 +37,44 @@
 
 ## Thread.cpp/.h
 
+- [x] Nome pouco explicativo dos `Enums` e dos seus elementos internos (buscar uma definição mais clara).
+- [x] Estado `THREAD_STATE::BLOCKED` nunca é setado (pelo menos não encontrei). Acho que era um recurso que eu estava fazendo para lidar com Branchs sem previsor de desvio ou com multithread (último ainda não implementado).
+- [x] Acredito que o vetor `switch_instructions` era para indicar o quais instruções teriam uma latência de EX e/ou MEM diferentes. Além de não ser utilizado para nada, o nome está pouco sugestivo da sua utilidade e não pode ser um vetor simples, mas sim um `touple<int, int, int>` (o primeiro sendo a posição do PC e o segundo e terceiro quais os valores de EX e MEM a serem considerados). É preciso também implementar uma função ou um trecho de código para que as instruções específicas recebam essa nova latência no segundo construtor.
+- [x] O `bool has_rob` dentro do construtor é desnecessário (pode ser inferido). Se no final ele passar um `int rob_capacity` e um `bool has_predictor` necessariamente ele tem ROB, se não, ele não tem (os 2 pois só pode ter previsor se tem ROB). Acho que vai ter que substituir o construtor atual por um assim:
+
+```C++
+Thread(
+    const std::vector<std::string>&             assembly,
+    const std::vector<std::tuple<int,int,int>>& new_latency = {},
+    const std::vector<int>&                     num_rs = {},
+    const std::vector<int>&                     num_fus = {},
+    const std::vector<int>&                     switch_cycles = {},
+    int                                         dispatch_width = 1,
+    int                                         rob_capacity = 0,
+    bool                                        has_predictor = false
+);
+```
+
+Já resume em apenas um construtor (faz uma verificação se o `mod_latency_instructions` está vazio para fazer as modificações nas instruções).
+
+- [x] Esta passagem no Construtor: `instruction_table.push_back({Instruction(i++, instr), 0, 0, {}, {}, 0, 0});` está certa? Me parece que ele está passando o `PC = 0` em todos (o PC é sequencial e imutavel nesse processador). Isso poderia resolver problemas de consistência que fazem `Instruction` ter que ter um atributo `PC` (desvio de função e falha de encapsulamento).
+- [x] Verificação atual para englobar RSs e FUs: `if(num_rs.size() >= NUM_RS_GROUPS) aux = num_rs; else aux = {5,5,5,4,3,2};`. Isso permite um número maior de valores que é simplesmente ignorado. É para passar o valor correto e, se não for passado, ser lançado um erro com abort semelhante ao já implementado em módulos passados:
+
+```C++
+// Verifica se ele está vazio:
+if(num_rs.empty()) aux = {5,5,5,4,3,2}; // Valor arbitrário default.
+// Verifica se o valor passado é válido:
+else if(num_rs.size() != NUM_RS_GROUPS){
+    std::cerr << "[ERRO] Quantidade inválida de valores para RSs: " << num_rs.size() << "\n";
+    std::abort();
+}
+```
+
+O mesmo para FUs. O fu.commit só é iniciado se ele tiver ROB.
+- [x] `SetCustomLatency()` fica obsoleto já que dentro do construtor é definido as latências específicas.
+
+** ANALISADO ATÉ `IsSwitchCycle()`**
 
 ## Processor.cpp/.h
-
 
 ## Main.cpp/.h

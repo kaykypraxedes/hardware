@@ -15,7 +15,7 @@ class ReservationStation {
     public:
         // Construtor:
         ReservationStation(
-            std::string
+            const std::string&
         );
 
         // Getters:

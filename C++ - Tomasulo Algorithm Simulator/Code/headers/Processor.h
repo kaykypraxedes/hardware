@@ -68,7 +68,6 @@ class Processor {
         void AdvanceRoundRobinPointer();
         void InitializeThreads(
             const std::vector<std::string>&,
-            bool,
             int,
             const std::vector<int>&,
             const std::vector<int>&,

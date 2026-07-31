@@ -39,8 +39,8 @@ class Instruction {
 
         // Construtor:
         Instruction(
-            int = -1,
-            std::string = {}
+            const int = -1,
+            const std::string& = {}
         );
 
         // Getters:
@@ -62,7 +62,7 @@ class Instruction {
         );
     private:
         // Atributos:
-        int              PC{-1};
+        int              PC{-1}; // Funciona como um ID para diferenciar instruções iguais.
         std::string      instruction_string;
         int              ex_latency{};
         int              mem_latency{};

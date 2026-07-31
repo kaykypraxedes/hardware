@@ -7,37 +7,35 @@
 #include "SortUtils.h"
 #include <string>
 #include <vector>
+#include <tuple>      // para passar e receber as instruções de troca de thread na Granulação Grossa
 #include <cstdlib>    // para std::abort
 #include <iostream>   // para std::cerr
 
 namespace processor {
 
 // ─── ELEMENTO STATIC ──────────────────────────────────────────────
-static const int ROB_CAPACITY_DEFAULT = 30;
+static const int ROB_CAPACITY_DEFAULT = 30; // Valor arbitrário
 
 // ─── ENUMS ────────────────────────────────────────────────────────
 enum class THREAD_STATE {
-    FREE,
-    WAITING,
-    BLOCKED
+    ACTIVE,           // Executando.
+    BRANCH_RESOLVING  // Após branch sem ROB, aguardando a finalização do ciclo.
 };
-
-// ─── STRUCTS ──────────────────────────────────────────────────────
 enum class STORE_COMMIT_STATE {
-    IDLE,
+    PENDING,
     WAITING_MEM,
     READY
 };
 
+// ─── STRUCTS ──────────────────────────────────────────────────────
 struct TABLE_ROW {
     Instruction       instruction;
-    int               pc_position{-1};
     int               issue_cycle{-1};
     std::vector<int>  ex_cycles;
     std::vector<int>  mem_cycles;
     int               wr_cycle{-1};
     int               commit_cycle{-1};
-    STORE_COMMIT_STATE store_commit_state{STORE_COMMIT_STATE::IDLE};
+    STORE_COMMIT_STATE store_commit_state{STORE_COMMIT_STATE::PENDING};
 };
 struct EVENT {
     int               pc;
@@ -49,25 +47,16 @@ struct EVENT {
 // ─── CLASSE ───────────────────────────────────────────────────────
 class Thread {
     public:
-        // Construtores:
+        // Construtor:
         Thread(
             const std::vector<std::string>&,
-            bool,
-            const std::vector<int>& = {},
-            const std::vector<int>& = {},
-            int = 1,
-            int = ROB_CAPACITY_DEFAULT,
-            bool = false
-        );
-        Thread(
-            const std::vector<int>&,
-            const std::vector<std::string>&,
-            bool,
-            const std::vector<int>& = {},
-            const std::vector<int>& = {},
-            int = 1,
-            int = ROB_CAPACITY_DEFAULT,
-            bool = false
+            const std::vector<std::tuple<int,int,int>>& = {},
+            const std::vector<int>&                     = {},
+            const std::vector<int>&                     = {},
+            const std::vector<int>&                     = {},
+            const int                                   = 1,
+            const int                                   = 0,
+            const bool                                  = false
         );
 
         // Getters:
@@ -81,34 +70,30 @@ class Thread {
         const std::vector<TABLE_ROW>& GetTable() const;
 
         // Métodos públicos:
-        void SetCustomLatency(
-            int,
-            int,
-            int=0
-        );
-        // - Estágios da pipeline
+        bool IsSwitchCycle();
+        // - Estágios da pipeline.
         bool Issue(
-            int
+            const int
         );
         bool ExMem(
-            int
+            const int
         );
         void Wr(
-            int
+            const int
         );
         void Commit(
-            int
+            const int
         );
     private:
         // Atributos:
-        // - Elementos auxiliares dentro da Thread
+        // - Elementos auxiliares dentro da Thread.
         int                      num_finished_instructions{};
         int                      num_committed_instructions{};
         int                      num_stalls{};
         int                      commit_pointer{};
         int                      unresolved_branch_pc{-1};
-        THREAD_STATE             state{THREAD_STATE::FREE};
-        // - Elementos funcionais da Thread
+        THREAD_STATE             state{THREAD_STATE::ACTIVE};
+        // - Elementos funcionais da Thread.
         bool                     has_rob{false};
         int                      rob_capacity{1};
         int                      PC{};
@@ -118,7 +103,7 @@ class Thread {
         FUNCTIONAL_UNITS         fu;
         std::vector<int>         wb_buffer;
         std::vector<int>         pending_wb_buffer;
-        std::vector<int>         switch_instructions;
+        std::vector<int>         switch_cycles;
         std::vector<Instruction> rob;
         std::vector<TABLE_ROW>   instruction_table;
 
@@ -128,11 +113,10 @@ class Thread {
             const std::vector<int>&,
             int
         );
-        // - Organizados por estágio
+        // - Organizados por estágio.
 
         // ISSUE
         void RegisterIssue(
-            int,
             int
         );
 

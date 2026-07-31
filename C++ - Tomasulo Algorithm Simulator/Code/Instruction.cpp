@@ -51,8 +51,8 @@ const std::string& Instruction::GetInstructionString() const { return instructio
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
 Instruction::Instruction(
-    int PC,
-    std::string instruction_string
+    const int PC,
+    const std::string& instruction_string
 ):
     PC(PC)
 {
@@ -67,7 +67,7 @@ void Instruction::ParseInstruction(
     const std::string& instruction_string
 ) {
     std::vector<std::string> tokens{SplitInstruction(instruction_string)};
-    // Tenta identificar o tipo da instrução
+    // Tenta identificar o tipo da instrução:
     if(!IdentifyType(tokens[0])){
         std::cerr << "[ERRO] Instrução não suportada: " << tokens[0] << "\n";
         std::abort();
