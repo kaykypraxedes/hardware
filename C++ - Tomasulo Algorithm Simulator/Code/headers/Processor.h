@@ -1,5 +1,5 @@
 /* headers/Processor.h */
-#ifndef PROCESSOR_H // Include guard
+#ifndef PROCESSOR_H   // Include guard
 #define PROCESSOR_H
 #include "Instruction.h"
 #include "Thread.h"
