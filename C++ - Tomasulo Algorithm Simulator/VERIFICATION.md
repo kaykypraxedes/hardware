@@ -204,4 +204,6 @@ DetectPhaseTransitions()
 
 ## Processor.cpp/.h
 
+- [x] Adição da funcionalidade de `COARSE_GRAINED` pendente (atualmente só suporta `NONE`, `SMT` e `FINE_GRAINED`).
+
 ## Main.cpp/.h

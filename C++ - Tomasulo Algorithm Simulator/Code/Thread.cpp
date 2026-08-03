@@ -87,9 +87,6 @@ static void ResolveDependencyInGroup(
 int Thread::GetCurrentInstructionPosition()      const { return current_instruction_position; }
 
 // Público:
-int Thread::GetNumStalls()                       const { return num_stalls; }
-
-// Público:
 const CDB& Thread::GetCDB()                      const { return cdb; }
 
 // Público:
@@ -118,7 +115,7 @@ Thread::Thread(
     has_predictor  (has_predictor),
     switch_cycles  (switch_cycles)
 {
-    // Verifica inconsistência de input
+    // Verifica inconsistência de parâmetros.
     if (has_predictor && !has_rob) {
         std::cerr << "[ERRO] ROB obrigatório para previsor de desvios!\n";
         std::abort();
@@ -233,9 +230,9 @@ bool Thread::IsSwitchCycle() {
 bool Thread::Issue(
     const int cycle
 ){
-    // Testa se faltam instruções a ser adicionadas.
+    // Verifica se faltam instruções a ser adicionadas.
     if (current_instruction_position >= static_cast<int>(instruction_table.size())) return false;
-    // Testa se tem espaço no ROB para adicionar mais instruções.
+    // Verifica se tem espaço no ROB para adicionar mais instruções.
     if (rob.size() >= static_cast<size_t>(rob_capacity)) return false;
 
     // Verifica se a instrução é válida.
@@ -334,10 +331,6 @@ void Thread::StartExOrMemPhase(
                 instruction_table[position].ex_cycles.push_back(cycle);
             else if (r->GetInstructionPhase() == INSTRUCTION_PHASE::MEM)
                 instruction_table[position].mem_cycles.push_back(cycle);
-
-            // Se o branch foi resolvido, a flag é desmarcada.
-            if (position == unresolved_branch_position && r->GetInstructionPhase() == INSTRUCTION_PHASE::EX)
-                unresolved_branch_position = -1; // Valor default.
         }
     }
 }
@@ -383,7 +376,7 @@ void Thread::PerformWriteResult(
             continue; // Não conta como um WR (não há resultado sendo escrito de fato).
         }
 
-        // Escreve o resultado, propaga no CDB e libera a célula da RS.
+        // Escreve o resultado, e propaga a informação nos componentes.
         WriteResultOnComponents(position, cycle);
         wr_buffer.erase(wr_buffer.begin());
         num_finished_instructions++;
@@ -394,7 +387,7 @@ void Thread::PerformWriteResult(
 }
 
 // Privado:
-// Realiza as modificações no CDB e no RS.
+// Realiza as atualizações no CDB e no RS.
 void Thread::WriteResultOnComponents(
     const int position,
     const int cycle
@@ -405,7 +398,8 @@ void Thread::WriteResultOnComponents(
     if (type != INSTRUCTION_TYPE::STORE && type != INSTRUCTION_TYPE::BRANCH)
         instruction_table[position].wr_cycle = cycle;
 
-    // Propaga o resultado no CDB e libera o registrador e resolve as dependências (Qj/Qk) de quem estava esperando.
+    // 1. Propaga o resultado no CDB e libera o registrador.
+    // 2. Resolve as dependências nos RSs que estavam esperando.
     Register dest = instruction_table[position].instruction.GetDestRegister();
     BroadcastOnRSAndCDB(dest, position, cycle);
 
@@ -487,16 +481,21 @@ void Thread::DetectPhaseTransitions(
                 // O ciclo MEM do STORE é representado apenas quando ele não possui ROB.
                 // - Pula direto pro WR.
                 if (store_with_rob) pending_wr_buffer.push_back(position);
-
+            }
             // Caso 2: * -> WR
             // - Não precisa verificar o phase_before por que mudou de fase para o final.
-            } else if (phase_after == INSTRUCTION_PHASE::WR) {
+            else if (phase_after == INSTRUCTION_PHASE::WR) {
                 // Se tem MEM e não é o caso especial de STORE+ROB (que já marcou o próprio ciclo de EX acima).
                 if (has_mem && !store_with_rob)
                     instruction_table[position].mem_cycles.push_back(cycle);
                 // Fim da execução das demais.
                 else if (!has_mem)
                     instruction_table[position].ex_cycles.push_back(cycle);
+
+                // Se o Branch foi resolvido, a flag é desmarcada.
+                if (position == unresolved_branch_position &&
+                    r.GetInstructionPhase() == INSTRUCTION_PHASE::WR)
+                    unresolved_branch_position = -1; // Valor default.
 
                 // Coloca a instrução na fila de WR
                 pending_wr_buffer.push_back(position);

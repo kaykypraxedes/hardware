@@ -2,9 +2,9 @@
 CONFIGURAÇÕES:
 ==============
 
-- Tipo: TOMASULO_SEM_ROB
+- Tipo: TOMASULO_CLASSIC
 - Numero de Threads: 1
-- Modelo Multi-Threading: GRANULACAO_FINA
+- Modelo Multi-Threading: NONE
 - Previsor: false
 - Despacho: 1
 - Número de RSs: 5 5 5 5 5 3 

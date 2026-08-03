@@ -10,7 +10,11 @@ using namespace processor;
 
 int main() {
 
-    secao("Instruction() — construtor padrão");
+    // ════════════════════════════════════════════════════════════════════
+    // 1. CONSTRUÇÃO E ESTADO BÁSICO
+    // ════════════════════════════════════════════════════════════════════
+
+    secao("1.1 Instruction() — construtor padrão");
     {
         Instruction i;
         check("GetPosition() == -1",                   i.GetPosition() == -1);
@@ -19,14 +23,34 @@ int main() {
         check("GetMemLatency() == 0",                  i.GetMemLatency() == 0);
     }
 
-    secao("GetPosition() e GetInstructionString()");
+    secao("1.2 Construtor(posição, string) — GetPosition e GetInstructionString");
     {
         Instruction i(7, "ADD R1, R2, R3");
         check("GetPosition() == 7",                         i.GetPosition() == 7);
         check("GetInstructionString() == 'ADD R1, R2, R3'", i.GetInstructionString() == "ADD R1, R2, R3");
     }
 
-    secao("Identificação de tipo e latências — LOAD");
+    secao("1.3 String vazia — position vira -1");
+    {
+        Instruction i(5, "");
+        check("position vira -1 se string vazia", i.GetPosition() == -1);
+    }
+
+    /*
+    // Teste das flags de segurança do programa (abortam a execução):
+
+    secao("[ABORT] Instrução desconhecida deve abortar");
+    {
+        Instruction i(10, "XPTO R1, R2, R3");
+        std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
+    }
+    */
+
+    // ════════════════════════════════════════════════════════════════════
+    // 2. IDENTIFICAÇÃO DE TIPO — MEMÓRIA E INTEIROS
+    // ════════════════════════════════════════════════════════════════════
+
+    secao("2.1 LOAD (L.D)");
     {
         Instruction i(0, "L.D F2, 0(R1)");
         check("L.D: tipo == LOAD",           i.GetInstructionType() == INSTRUCTION_TYPE::LOAD);
@@ -39,7 +63,7 @@ int main() {
         check("L.D: K id=1",                 i.GetK().GetId()   == 1);
     }
 
-    secao("Identificação de tipo e latências — STORE");
+    secao("2.2 STORE (S.D)");
     {
         Instruction i(1, "S.D F6, 0(R2)");
         check("S.D: tipo == STORE",          i.GetInstructionType() == INSTRUCTION_TYPE::STORE);
@@ -52,7 +76,7 @@ int main() {
         check("S.D: K id=2",                 i.GetK().GetId()   == 2);
     }
 
-    secao("Identificação de tipo e latências — INT_BASIC");
+    secao("2.3 INT_BASIC (DADDIU, ADD)");
     {
         Instruction i(2, "DADDIU R1, R1, #8");
         check("DADDIU: tipo == INT_BASIC",   i.GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC);
@@ -69,7 +93,22 @@ int main() {
         check("ADD: K id=2",     add.GetK().GetId()          == 2);
     }
 
-    secao("Identificação de tipo e latências — BRANCH");
+    secao("2.4 INT_MUL e INT_DIV (MUL, DIV)");
+    {
+        Instruction mul(5, "MUL R3, R1, R2");
+        check("MUL: tipo == INT_MUL",        mul.GetInstructionType() == INSTRUCTION_TYPE::INT_MUL);
+        check("MUL: exLatency == 4",         mul.GetExLatency() == 4);
+
+        Instruction div(6, "DIV R3, R1, R2");
+        check("DIV: tipo == INT_DIV",        div.GetInstructionType() == INSTRUCTION_TYPE::INT_DIV);
+        check("DIV: exLatency == 10",        div.GetExLatency() == 10);
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 3. IDENTIFICAÇÃO DE TIPO — BRANCH
+    // ════════════════════════════════════════════════════════════════════
+
+    secao("3.1 BNEZ e BEQ — operandos padrão");
     {
         Instruction i(4, "BNEZ R3, foo");
         check("BNEZ: tipo == BRANCH",        i.GetInstructionType() == INSTRUCTION_TYPE::BRANCH);
@@ -86,7 +125,7 @@ int main() {
         check("BEQ: K id=2",     beq.GetK().GetId()   == 2);
     }
 
-    secao("BRANCH — outros opcodes");
+    secao("3.2 Outros opcodes: JR, J, BGTZ");
     {
         Instruction jr(0, "JR R1");
         check("JR: J tipo='R'", jr.GetJ().GetType() == 'R');
@@ -98,21 +137,11 @@ int main() {
         check("BGTZ: J id=4", bgtz.GetJ().GetId() == 4);
     }
 
-    secao("Identificação de tipo e latências — INT_MUL");
-    {
-        Instruction i(5, "MUL R3, R1, R2");
-        check("MUL: tipo == INT_MUL",        i.GetInstructionType() == INSTRUCTION_TYPE::INT_MUL);
-        check("MUL: exLatency == 4",         i.GetExLatency() == 4);
-    }
+    // ════════════════════════════════════════════════════════════════════
+    // 4. IDENTIFICAÇÃO DE TIPO — PONTO FLUTUANTE
+    // ════════════════════════════════════════════════════════════════════
 
-    secao("Identificação de tipo e latências — INT_DIV");
-    {
-        Instruction i(6, "DIV R3, R1, R2");
-        check("DIV: tipo == INT_DIV",        i.GetInstructionType() == INSTRUCTION_TYPE::INT_DIV);
-        check("DIV: exLatency == 10",        i.GetExLatency() == 10);
-    }
-
-    secao("Identificação de tipo e latências — FLOAT_BASIC");
+    secao("4.1 FLOAT_BASIC (ADD.D)");
     {
         Instruction i(7, "ADD.D F6, F4, F6");
         check("ADD.D: tipo == FLOAT_BASIC", i.GetInstructionType() == INSTRUCTION_TYPE::FLOAT_BASIC);
@@ -125,7 +154,7 @@ int main() {
         check("ADD.D: K id=6",               i.GetK().GetId()   == 6);
     }
 
-    secao("Identificação de tipo e latências — FLOAT_MUL");
+    secao("4.2 FLOAT_MUL (MUL.D)");
     {
         Instruction i(8, "MUL.D F4, F2, F0");
         check("MUL.D: tipo == FLOAT_MUL",    i.GetInstructionType() == INSTRUCTION_TYPE::FLOAT_MUL);
@@ -138,37 +167,18 @@ int main() {
         check("MUL.D: K id=0",               i.GetK().GetId()   == 0);
     }
 
-    secao("Identificação de tipo e latências — FLOAT_DIV");
+    secao("4.3 FLOAT_DIV (DIV.D)");
     {
         Instruction i(9, "DIV.D F4, F2, F0");
         check("DIV.D: tipo == FLOAT_DIV",    i.GetInstructionType() == INSTRUCTION_TYPE::FLOAT_DIV);
         check("DIV.D: exLatency == 40",      i.GetExLatency() == 40);
     }
 
-    /*
+    // ════════════════════════════════════════════════════════════════════
+    // 5. LATÊNCIAS
+    // ════════════════════════════════════════════════════════════════════
 
-    Fica evidenciado que o programa aborta quando tenta colocar uma instrução inválida
-
-    secao("Instrução desconhecida");
-    {
-        Instruction i(10, "XPTO R1, R2, R3");
-        check("XPTO: tipo == NONEXISTENT",  i.GetInstructionType() == INSTRUCTION_TYPE::NONEXISTENT);
-        check("XPTO: exLatency == 0",        i.GetExLatency() == 0);
-    }
-     */
-
-    secao("SetExLatency / SetMemLatency");
-    {
-        Instruction i(11, "L.D F0, 0(R0)");
-        check("antes: exLat == 1",  i.GetExLatency()  == 1);
-        check("antes: memLat == 1", i.GetMemLatency() == 1);
-        i.SetExLatency(5);
-        i.SetMemLatency(3);
-        check("depois: exLat == 5",  i.GetExLatency()  == 5);
-        check("depois: memLat == 3", i.GetMemLatency() == 3);
-    }
-
-    secao("base_ex_latencies (vetor estático)");
+    secao("5.1 base_ex_latencies / base_mem_latencies — tabelas estáticas");
     {
         check("latEX[NONEXISTENT]=0",    Instruction::base_ex_latencies[0]  == 0);
         check("latEX[LOAD]=1",           Instruction::base_ex_latencies[1]  == 1);
@@ -181,7 +191,22 @@ int main() {
         check("latMEM[STORE]=1",         Instruction::base_mem_latencies[1] == 1);
     }
 
-    secao("NormalizeInstruction — casos variados");
+    secao("5.2 SetExLatency / SetMemLatency");
+    {
+        Instruction i(11, "L.D F0, 0(R0)");
+        check("antes: exLat == 1",  i.GetExLatency()  == 1);
+        check("antes: memLat == 1", i.GetMemLatency() == 1);
+        i.SetExLatency(5);
+        i.SetMemLatency(3);
+        check("depois: exLat == 5",  i.GetExLatency()  == 5);
+        check("depois: memLat == 3", i.GetMemLatency() == 3);
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 6. NORMALIZAÇÃO
+    // ════════════════════════════════════════════════════════════════════
+
+    secao("6.1 NormalizeInstruction — casos variados");
     {
         Instruction i1(0, "add r1, r2, r3");
         check("lowercase -> uppercase", i1.GetInstructionString() == "ADD R1, R2, R3");
@@ -196,7 +221,7 @@ int main() {
         check("STORE sem vírgula", i4.GetInstructionString() == "SW R1, 4(R2)");
     }
 
-    secao("BRANCH — normalização de labels");
+    secao("6.2 BRANCH — normalização de labels");
     {
         Instruction i1(0, "BNEZ r3, LOOP");
         check("label vira minúsculo", i1.GetInstructionString() == "BNEZ R3, loop");
@@ -210,14 +235,11 @@ int main() {
         check("label 'retry' não afetou K",                     i3.GetK().GetType() == 'Z');
     }
 
-    secao("Construtor — Posição válido, string vazia");
+    secao("6.3 Opcode minúsculo reconhecido (mul.d)");
     {
-        Instruction i(5, "");
-        check("position vira -1 se string vazia", i.GetPosition() == -1);
+        Instruction i(0, "mul.d f4, f2, f0");
+        check("opcode minúsculo é reconhecido", i.GetInstructionType() == INSTRUCTION_TYPE::FLOAT_MUL);
     }
-
-    Instruction i(0, "mul.d f4, f2, f0");
-    check("opcode minúsculo é reconhecido", i.GetInstructionType() == INSTRUCTION_TYPE::FLOAT_MUL);
 
     std::cout << "\n-----------------------------\n";
     std::cout << "Resultado: " << passou << " OK, " << falhou << " FALHOU\n";

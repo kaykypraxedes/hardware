@@ -9,7 +9,12 @@
 using namespace processor;
 
 int main() {
-    secao("Register() — construtor padrão");
+
+    // ════════════════════════════════════════════════════════════════════
+    // 1. CONSTRUÇÃO E PARSING
+    // ════════════════════════════════════════════════════════════════════
+
+    secao("1.1 Register() — construtor padrão");
     {
         Register r;
         check("GetType() == 'Z'",  r.GetType() == 'Z');
@@ -19,7 +24,7 @@ int main() {
         check("GetAllocatedRS() vazio",    r.GetAllocatedRS().empty());
     }
 
-    secao("Register(string) — construtor com nome");
+    secao("1.2 Register(string) — construtor com nome");
     {
         Register r("R5");
         check("R5: GetType() == 'R'", r.GetType() == 'R');
@@ -33,34 +38,50 @@ int main() {
         Register r0("R0");
         check("R0: GetId() == 0", r0.GetId() == 0);
 
-        /*
-        Testado que esse registrador não é aceito (aborta).
-        Register inv("XYZ");
-        */
-
         Register vazio("");
         check("'': GetType() == 'Z'", vazio.GetType() == 'Z');
+        check("'': GetId() == -1 (sem id)", vazio.GetId() == -1);
     }
 
-    secao("Register(string) — limites de id");
+    secao("1.3 Register(string) — limites de id");
     {
         Register ok("R31");
         check("R31: válido (limite superior)", ok.GetId() == 31);
-        /*
-        Testado que esse registrador não é aceito (aborta).
-        Register invalido("R32");
-        */
     }
 
-    secao("Register(string) — tipo sem id");
+    secao("1.4 Normalização do registrador");
     {
-        /*
-        Testado que esse registrador não é aceito (aborta).
-        Register r("R");
-        */
+        Register r("r5");
+        check("tipo minúsculo é normalizado", r.GetType() == 'R');
     }
 
-    secao("ToggleBusy()");
+    /*
+    // Teste das flags de segurança do programa (abortam a execução):
+
+    secao("[ABORT] Register('XYZ') — registrador inválido deve abortar");
+    {
+        Register inv("XYZ");
+        std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
+    }
+
+    secao("[ABORT] Register('R') — tipo sem id deve abortar");
+    {
+        Register r("R");
+        std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
+    }
+
+    secao("[ABORT] Register('R32') — id acima do limite deve abortar");
+    {
+        Register invalido("R32");
+        std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
+    }
+    */
+
+    // ════════════════════════════════════════════════════════════════════
+    // 2. ESTADO DE BUSY
+    // ════════════════════════════════════════════════════════════════════
+
+    secao("2.1 ToggleBusy() — alternância");
     {
         Register r("R1");
         check("antes: GetBusy() == false", r.GetBusy() == false);
@@ -70,7 +91,11 @@ int main() {
         check("depois 2 trocas: GetBusy() == false", r.GetBusy() == false);
     }
 
-    secao("AllocateRS(rs, start)");
+    // ════════════════════════════════════════════════════════════════════
+    // 3. ALOCAÇÃO E DESALOCAÇÃO
+    // ════════════════════════════════════════════════════════════════════
+
+    secao("3.1 AllocateRS(rs, start) — primeira alocação");
     {
         Register r("F4");
         std::string rs1 = "load0";
@@ -95,7 +120,7 @@ int main() {
               r.GetAllocationTimes().size() == 4);
     }
 
-    secao("DeallocateRS(rs_id, start_cycle, end_cycle)");
+    secao("3.2 DeallocateRS(rs_id, start_cycle, end_cycle) — desalocação simples");
     {
         Register r("R2");
         std::string rs = "int_basic0";
@@ -112,24 +137,23 @@ int main() {
               !r.GetAllocatedRS().empty() && r.GetAllocatedRS()[0] == "int_basic0");
     }
 
-    secao("Ciclo completo: aloca -> desaloca -> aloca novamente");
+    secao("3.3 DeallocateRS() — casos de erro");
     {
-        Register f("F6");
-        std::string rs_a = "load1";
-        std::string rs_b = "load2";
-        f.AllocateRS(rs_a, 2);
-        f.DeallocateRS("load1", 2, 4);
-        f.AllocateRS(rs_b, 10);
-        f.DeallocateRS("load2", 10, 12);
+        Register r("R9");
+        r.AllocateRS("x", 1);
+        bool result = r.DeallocateRS("nao_existe", 1, 5);
+        check("DeallocateRS retorna false p/ rs_id inexistente", result == false);
+        check("estado não foi alterado (ainda busy)", r.GetBusy() == true);
 
-        check("busy == false ao final",    f.GetBusy() == false);
-        check("2 RS alocadas no historico", f.GetAllocatedRS().size() == 2);
-        auto t = f.GetAllocationTimes();
-        check("tempos: [2,4,10,12]",
-              t.size() == 4 && t[0]==2 && t[1]==4 && t[2]==10 && t[3]==12);
+        bool result2 = r.DeallocateRS("x", 999, 5); // start_cycle errado
+        check("DeallocateRS retorna false p/ start_cycle errado", result2 == false);
     }
 
-    secao("GetRSCycleStart(rs_id)");
+    // ════════════════════════════════════════════════════════════════════
+    // 4. CONSULTAS DE DEPENDÊNCIA
+    // ════════════════════════════════════════════════════════════════════
+
+    secao("4.1 GetRSCycleStart(rs_id)");
     {
         Register r("R3");
         r.AllocateRS("load0", 5);
@@ -141,7 +165,7 @@ int main() {
               r.GetRSCycleStart("load0") == -1);
     }
 
-    secao("IsDependencyResolved(rs_id, start_cycle)");
+    secao("4.2 IsDependencyResolved(rs_id, start_cycle)");
     {
         Register r("F2");
         r.AllocateRS("mul0", 3);
@@ -154,7 +178,11 @@ int main() {
         check("rs_id errado: não encontrado",        !r.IsDependencyResolved("outro", 3));
     }
 
-    secao("WAW — múltiplos produtores pendentes");
+    // ════════════════════════════════════════════════════════════════════
+    // 5. MÚLTIPLOS PRODUTORES (WAW)
+    // ════════════════════════════════════════════════════════════════════
+
+    secao("5.1 WAW — múltiplos produtores pendentes");
     {
         Register r("R4");
         r.AllocateRS("add0", 1);
@@ -175,7 +203,7 @@ int main() {
         check("GetCurrentRS() vazio",             r.GetCurrentRS().empty());
     }
 
-    secao("Mesmo rs_id reutilizado em ciclos diferentes");
+    secao("5.2 Mesmo rs_id reutilizado em ciclos diferentes");
     {
         Register r("R7");
         r.AllocateRS("loop_rs", 2);
@@ -190,22 +218,25 @@ int main() {
               !r.IsDependencyResolved("loop_rs", 10));
     }
 
-    secao("DeallocateRS — RS inexistente");
-    {
-        Register r("R9");
-        r.AllocateRS("x", 1);
-        bool result = r.DeallocateRS("nao_existe", 1, 5);
-        check("DeallocateRS retorna false p/ rs_id inexistente", result == false);
-        check("estado não foi alterado (ainda busy)", r.GetBusy() == true);
+    // ════════════════════════════════════════════════════════════════════
+    // 6. INTEGRAÇÃO
+    // ════════════════════════════════════════════════════════════════════
 
-        bool result2 = r.DeallocateRS("x", 999, 5); // start_cycle errado
-        check("DeallocateRS retorna false p/ start_cycle errado", result2 == false);
-    }
-
-    secao("Normalização do registrador");
+    secao("6.1 Ciclo completo: aloca -> desaloca -> aloca novamente");
     {
-        Register r("r5");
-        check("tipo minúsculo é normalizado", r.GetType() == 'R');
+        Register f("F6");
+        std::string rs_a = "load1";
+        std::string rs_b = "load2";
+        f.AllocateRS(rs_a, 2);
+        f.DeallocateRS("load1", 2, 4);
+        f.AllocateRS(rs_b, 10);
+        f.DeallocateRS("load2", 10, 12);
+
+        check("busy == false ao final",    f.GetBusy() == false);
+        check("2 RS alocadas no historico", f.GetAllocatedRS().size() == 2);
+        auto t = f.GetAllocationTimes();
+        check("tempos: [2,4,10,12]",
+              t.size() == 4 && t[0]==2 && t[1]==4 && t[2]==10 && t[3]==12);
     }
 
     std::cout << "\n-----------------------------\n";

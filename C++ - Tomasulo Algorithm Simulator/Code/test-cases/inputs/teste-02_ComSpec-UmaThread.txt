@@ -20,9 +20,10 @@ previsor 0
 num_threads 1
 
 # Modelo do multithreading:
-# 0 = GRANULACAO_FINA
-# 1 = GRANULACAO_GROSSA
-# 2 = SMT
+# 0 = NONE
+# 1 = FINE_GRAINED
+# 2 = COARSE_GRAINED
+# 3 = SMT
 modelo 0
 
 # Largura de despacho do processador

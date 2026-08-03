@@ -33,22 +33,21 @@ class Thread {
         Thread(
             const std::vector<std::string>&,
             const std::vector<std::tuple<int,int,int>>& = {},
-            const std::vector<int>&                     = {},
-            const std::vector<int>&                     = {},
-            const std::vector<int>&                     = {},
-            const int                                   = 1,
-            const int                                   = 0,
-            const bool                                  = false
+            const std::vector<int>& = {},
+            const std::vector<int>& = {},
+            const std::vector<int>& = {},
+            const int               = 1,
+            const int               = 0,
+            const bool              = false
         );
 
         // Getters:
-        int          GetCurrentInstructionPosition() const;
-        int          GetNumStalls()                  const;
+        int GetCurrentInstructionPosition() const;
         // "const &" para evitar cópia (para tipos básicos e enums o ganho é marginal)
-        const CDB&                    GetCDB()       const;
-        const RESERVATION_STATIONS&   GetRS()        const;
-        const FUNCTIONAL_UNITS&       GetFU()        const;
-        const std::vector<TABLE_ROW>& GetTable()     const;
+        const CDB&                    GetCDB()   const;
+        const RESERVATION_STATIONS&   GetRS()    const;
+        const FUNCTIONAL_UNITS&       GetFU()    const;
+        const std::vector<TABLE_ROW>& GetTable() const;
 
         // Métodos públicos:
         bool IsSwitchCycle();
@@ -67,13 +66,12 @@ class Thread {
         );
     private:
         // Atributos:
-        // - Elementos auxiliares dentro da Thread:
+        // - Elementos auxiliares:
         int                      num_finished_instructions{};
         int                      num_committed_instructions{};
-        int                      num_stalls{};
         int                      commit_pointer{};
         int                      unresolved_branch_position{-1};
-        // - Elementos funcionais da Thread:
+        // - Elementos funcionais:
         bool                     has_rob{false};
         int                      rob_capacity{1};
         int                      current_instruction_position{};
@@ -94,7 +92,7 @@ class Thread {
             const int
         );
         std::vector<std::vector<ReservationStation>*> GetAllRSGroups();
-        std::vector<std::vector<FU>*>                 GetAllFUGroups();
+        std::vector<std::vector<FU>*> GetAllFUGroups();
 
         // EX/MEM
         void StartExOrMemPhase(

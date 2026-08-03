@@ -359,7 +359,7 @@ void ReservationStation::ResolveDependency(
 
 // Público:
 void ReservationStation::Release(
-    int cycle
+    const int cycle
 ){
     allocation_times.push_back(cycle);
     busy                 = false;

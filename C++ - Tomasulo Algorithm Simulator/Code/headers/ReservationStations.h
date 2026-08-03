@@ -47,7 +47,7 @@ class ReservationStation {
             const int
         );
         void Release(
-            int
+            const int
         );
         void ResolveDependency(
             const std::string& rs_id,

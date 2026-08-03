@@ -22,9 +22,9 @@ class Register {
         );
 
         // Getters:
-        char             GetType()            const;
-        int              GetId()              const;
-        bool             GetBusy()            const;
+        char GetType() const;
+        int  GetId()   const;
+        bool GetBusy() const;
         // Não são "const &" pois podem enviar dados de variáveis locais (apagados ao final da função)
         std::vector<int> GetAllocationTimes() const;
         std::string      GetCurrentRS()       const; // retorna o produtor mais recente (último de allocated_rs com end_times == -1)
@@ -84,7 +84,7 @@ struct FUNCTIONAL_UNITS {
     std::vector<FU> float_basic_alu;
     std::vector<FU> float_mult_div_alu;
     int             wr{1};
-    int             commit{1};
+    int             commit{0};
 };
 
 } // namespace processor

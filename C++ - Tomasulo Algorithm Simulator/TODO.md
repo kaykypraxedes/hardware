@@ -15,12 +15,13 @@
 ###   Cosméticas
 - [x] **Thread: type→RS group mapeamento duplicado** — `Issue()` usa `switch`, `WriteBackNormal()` usa `if-else` para o mesmo mapeamento. Extrair `GetGroupForType()`.
 - [x] **Thread::PerformWriteResult(): fluxo assimétrico** — `continue` no STORE c/ ROB pula `RemoveWB()` e contador; `WriteBackStoreWithROB()` faz isso internamente. Tornar simétrico com if-else.
-- [ ] **Código morto: `AddWB()`, `num_stalls`, `num_ufs_por_tipo`** — Declarados mas nunca usados. Remover.
+- [x] **Código morto: `AddWB()`, `num_stalls`, `num_ufs_por_tipo`** — Declarados mas nunca usados. Remover.
 
 ## ⏳ Funcionalidades Incompletas (ADIADO)
 
-Itens que existem na interface (`enum`, construtores) mas não têm implementação real. Serão abordados em uma fase futura de expansão:
-
-- [ ] **`PROCESSOR_TYPE::IN_ORDER`** — Pipeline clássico de 5 estágios (sem Tomasulo), dispatch width limitado a 1, stalls estruturais diferenciados
-- [ ] **`MULTITHREADING_MODEL::COARSE_GRAINED`** — Troca de contexto baseada em `switch_instructions` (contagem de instruções). Atualmente comporta como FINE_GRAINED
+- [ ] **`PROCESSOR_TYPE::IN_ORDER`** — Pipeline clássico de 5 estágios (sem Tomasulo), stalls estruturais diferenciados, etc.
+- [x] **`MULTITHREADING_MODEL::COARSE_GRAINED`** — Troca de contexto baseada em `switch_instructions` (contagem de instruções). Atualmente comporta como FINE_GRAINED
 - [ ] **Flush especulativo sem ROB** — Quando BRANCH sem ROB completa, limpar das RSs as instruções emitidas após o BRANCH (thread entra WAITING mas RSs ficam ocupadas)
+- [ ] **Desdobramento de loop simulado** — Identificação do label indicado pelo branch e desenrolamento do caminho completo da instrução (indicando quantas vezes o loop será feito antes de a comparação ser falsa). Nessa mesma alteração será simulado o flush dos RSs e previsores de desvios baseados em máquinas de estados de 1 bit, 2 bits, que o desvio sempre será tomado ou que o desvio nunca será tomado (mais abrangente pra tornar a simulação ainda mais completa).
+- [ ] **Suporte completo à códigos reais de assembly** — Atualmente o suporte é basicamente apenas à trechos de assembly, mas há a ideia de expansão para códigos mais completos com elementos não convenvionais para simulações de Tomasulo, como `sections`, instruções como `mov`, `syscalls`, etc., todos com suas latências adaptadas.
+

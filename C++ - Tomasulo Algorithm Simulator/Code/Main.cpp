@@ -75,9 +75,9 @@ std::vector<int> ReadIntVector(
 }
 
 struct CONFIG {
-    PROCESSOR_TYPE       type          = PROCESSOR_TYPE::TOMASULO_WITHOUT_ROB;
+    PROCESSOR_TYPE       type          = PROCESSOR_TYPE::TOMASULO_CLASSIC;
     int                  num_threads   = 1;
-    MULTITHREADING_MODEL model         = MULTITHREADING_MODEL::FINE_GRAINED;
+    MULTITHREADING_MODEL model         = MULTITHREADING_MODEL::NONE;
     bool                 predictor     = false;
     int                  dispatch      = 2;
     std::vector<int>     num_rs        = {5, 5, 5, 4, 3, 2};
@@ -105,7 +105,7 @@ CONFIG ReadConfig() {
             int aux;
             iss >> aux;
             cfg.type = (aux == 0 ? PROCESSOR_TYPE::IN_ORDER :
-                (aux == 1 ? PROCESSOR_TYPE::TOMASULO_WITHOUT_ROB : PROCESSOR_TYPE::TOMASULO_WITH_ROB));
+                (aux == 1 ? PROCESSOR_TYPE::TOMASULO_CLASSIC : PROCESSOR_TYPE::TOMASULO_ESPECULATIVE));
         }
         else if (key == "previsor"){
             int aux;
@@ -116,8 +116,9 @@ CONFIG ReadConfig() {
         else if (key == "modelo"){
             int aux;
             iss >> aux;
-            cfg.model = (aux == 2 ? MULTITHREADING_MODEL::SMT :
-                (aux == 0 ? MULTITHREADING_MODEL::FINE_GRAINED : MULTITHREADING_MODEL::COARSE_GRAINED));
+            cfg.model = (aux == 3 ? MULTITHREADING_MODEL::SMT    :
+                (aux == 2 ? MULTITHREADING_MODEL::COARSE_GRAINED :
+                (aux == 1 ? MULTITHREADING_MODEL::FINE_GRAINED   : MULTITHREADING_MODEL::NONE)));
         }
         else if (key == "despacho")    { iss >> cfg.dispatch;       }
         else if (key == "ciclo_limite"){ iss >> cfg.cycle_limit;    }
@@ -145,10 +146,12 @@ void PrintConfig(
                  "CONFIGURAÇÕES:\n" <<
                  "==============\n\n" <<
         "- Tipo: " << (cfg.type == PROCESSOR_TYPE::IN_ORDER ? "IN_ORDER" :
-            (cfg.type == PROCESSOR_TYPE::TOMASULO_WITHOUT_ROB ? "TOMASULO_SEM_ROB" : "TOMASULO_COM_ROB")) << '\n' <<
+            (cfg.type == PROCESSOR_TYPE::TOMASULO_CLASSIC ? "TOMASULO_CLASSIC" : "TOMASULO_ESPECULATIVE")) << '\n' <<
         "- Numero de Threads: " << cfg.num_threads << '\n' <<
-        "- Modelo Multi-Threading: " << (cfg.model == MULTITHREADING_MODEL::FINE_GRAINED ? "GRANULACAO_FINA" :
-            (cfg.model == MULTITHREADING_MODEL::COARSE_GRAINED ? "GRANULACAO_GROSSA" : "SMT")) << '\n' <<
+        "- Modelo Multi-Threading: " <<
+            (cfg.model == MULTITHREADING_MODEL::FINE_GRAINED ? "FINE_GRAINED" :
+            (cfg.model == MULTITHREADING_MODEL::COARSE_GRAINED ? "COARSE_GRAINED" :
+            (cfg.model == MULTITHREADING_MODEL::SMT ? "SMT" : "NONE"))) << '\n' <<
         "- Previsor: " << (cfg.predictor == 0 ? "false" : "true") << '\n' <<
         "- Despacho: " << cfg.dispatch << '\n' <<
         "- Número de RSs: ";
@@ -362,7 +365,7 @@ int main() {
 
     PrintTable(
         p.GetThreadTable(0),
-        p.GetType() == processor::PROCESSOR_TYPE::TOMASULO_WITH_ROB
+        p.GetType() == processor::PROCESSOR_TYPE::TOMASULO_ESPECULATIVE
     );
 
     std::cout << "=====================\n";
