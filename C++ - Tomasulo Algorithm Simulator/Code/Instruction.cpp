@@ -25,25 +25,25 @@ static bool IsRegister(
 
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:
-int Instruction::GetPosition()          const { return position;            }
+int Instruction::GetPosition()          const { return position; }
 
 // Público:
-int Instruction::GetExLatency()         const { return ex_latency;    }
+int Instruction::GetExLatency()         const { return ex_latency; }
 
 // Público:
-int Instruction::GetMemLatency()        const { return mem_latency;   }
+int Instruction::GetMemLatency()        const { return mem_latency; }
 
 // Público:
-INSTRUCTION_TYPE Instruction::GetInstructionType()     const { return type;               }
+INSTRUCTION_TYPE Instruction::GetInstructionType()     const { return type; }
 
 // Público:
-const Register& Instruction::GetDestRegister()         const { return dest_register;      }
+const Register& Instruction::GetDestRegister()         const { return dest_register; }
 
 // Público:
-const Register& Instruction::GetJ()                    const { return reg_j;              }
+const Register& Instruction::GetJ()                    const { return reg_j; }
 
 // Público:
-const Register& Instruction::GetK()                    const { return reg_k;              }
+const Register& Instruction::GetK()                    const { return reg_k; }
 
 // Público:
 const std::string& Instruction::GetInstructionString() const { return instruction_string; }
@@ -56,7 +56,7 @@ Instruction::Instruction(
 ) {
     // Verifica se é uma posição válida (>= 0).
     if(position < -1){ // -1 é o valor de instrução não iniciada
-        std::cerr << "[ERRO] Valor inválido de posição passado: " << position << "\n";
+        std::cerr << "[ERRO] Valor inválido de posição: " << position << "\n";
         std::abort();
     }
     this->position = position;

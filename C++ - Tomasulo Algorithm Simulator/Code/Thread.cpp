@@ -7,84 +7,96 @@ namespace processor {
 static const int NUM_RS_GROUPS = 6;
 static const int NUM_FU_GROUPS = 6;
 
-static int PCOfRS(
-    ReservationStation* r
-){
-    return r->GetCurrentInstruction().GetPosition();
+// Retorna a referência para o vetor do grupo de RS correto da instrução.
+static std::vector<ReservationStation>& GetRSGroupForType(
+    RESERVATION_STATIONS&  rs,
+    const INSTRUCTION_TYPE type
+) {
+    switch (type) {
+        case INSTRUCTION_TYPE::LOAD:
+            return rs.load;
+        case INSTRUCTION_TYPE::STORE:
+            return rs.store;
+        case INSTRUCTION_TYPE::FLOAT_BASIC:
+            return rs.float_basic;
+        case INSTRUCTION_TYPE::INT_MUL:
+        case INSTRUCTION_TYPE::INT_DIV:
+            return rs.int_mult_div;
+        case INSTRUCTION_TYPE::FLOAT_MUL:
+        case INSTRUCTION_TYPE::FLOAT_DIV:
+            return rs.float_mult_div;
+        default: // Cobre BRANCH também.
+            return rs.int_basic;
+    }
 }
 
-static int PCOfEvent(
-    const EVENT& e
-){
-    return e.pc;
+// Função auxiliar para indicar ao stable_sort o padrão de organização desejado (nesse caso, crescente).
+static bool ComparePositionOnRS(
+    const ReservationStation* a,
+    const ReservationStation* b
+) {
+    return a->GetCurrentInstruction().GetPosition() < b->GetCurrentInstruction().GetPosition();
 }
 
-static void SortCandidatesByPC(
-    std::vector<ReservationStation*>& candidates
-){
-    sort_utils::insertionSort(candidates, PCOfRS);
+// Libera a célula da RS que terminou o WR (identificada pela posição da instrução).
+static void ReleaseRS(
+    std::vector<ReservationStation>& group,
+    const int                        position,
+    const int                        cycle
+) {
+    for (ReservationStation& r : group) {
+        if (r.IsBusy() &&
+            r.GetInstructionPhase() == INSTRUCTION_PHASE::WR &&
+            r.GetCurrentInstruction().GetPosition() == position) {
+
+            r.Release(cycle);
+            break; // Já encontrou a célula correta (não precisa continuar iterando).
+        }
+    }
 }
 
+// ReleaseRS() focado no caso de Store com ROB: a célula da RS é liberada ainda na fase MEM.
+// - Ignora a checagem da fase WR para evitar que o processador trave (já que Store não tem a fase WR marcada).
+static void ReleaseRSStoreWithROB(
+    std::vector<ReservationStation>& group,
+    const int                        position,
+    const int                        cycle
+) {
+    for (ReservationStation& r : group) {
+        if (r.IsBusy() &&
+            r.GetCurrentInstruction().GetPosition() == position) {
+
+            r.Release(cycle);
+            break; // Já encontrou a célula correta (não precisa continuar iterando).
+        }
+    }
+}
+
+// Passa em um grupo de RS resolvendo dependências onde Qj/Qk = dest.
 static void ResolveDependencyInGroup(
     std::vector<ReservationStation>& group,
-    const std::string& rs_id,
-    const Register& dest
+    const std::string&               rs_id,
+    const Register&                  dest
 ){
-   for (ReservationStation& dep : group)
-        if (dep.GetBusy()) dep.ResolveDependency(rs_id, dest);
-}
-
-static void SortEventsByPC(
-    std::vector<EVENT>& events
-){
-    sort_utils::insertionSort(events, PCOfEvent);
-}
-
-static void ReleaseRSByRegister(
-    std::vector<ReservationStation>& rs,
-    Register      dest_reg,
-    int              cycle
-){
-    for(ReservationStation& r : rs){
-        if(!r.GetBusy()) continue;
-        Register aux{r.GetCurrentInstruction().GetDestRegister()};
-        if(r.GetInstructionPhase() == INSTRUCTION_PHASE::WB &&
-            aux.GetType() == dest_reg.GetType() &&
-            aux.GetId() == dest_reg.GetId())
-            r.Release(cycle);
-    }
-}
-
-static void ReleaseRSByPC(
-    std::vector<ReservationStation>& group,
-    int              position,
-    int              cycle
-){
-    for (ReservationStation& r : group) {
-        if (r.GetBusy() && r.GetInstructionPhase() == INSTRUCTION_PHASE::WB
-            && r.GetCurrentInstruction().GetPosition() == position)
-            r.Release(cycle);
-    }
+    for (ReservationStation& dep : group)
+        if (dep.IsBusy()) dep.ResolveDependency(rs_id, dest);
 }
 
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:
-int Thread::GetCurrentInstructionPosition() const { return current_instruction_position; }
+int Thread::GetCurrentInstructionPosition()      const { return current_instruction_position; }
 
 // Público:
-int Thread::GetNumStalls()                  const { return num_stalls;                   }
+int Thread::GetNumStalls()                       const { return num_stalls; }
 
 // Público:
-THREAD_STATE Thread::GetThreadState()       const {return state;                         }
+const CDB& Thread::GetCDB()                      const { return cdb; }
 
 // Público:
-const CDB& Thread::GetCDB()                      const { return cdb;               }
+const RESERVATION_STATIONS& Thread::GetRS()      const { return rs; }
 
 // Público:
-const RESERVATION_STATIONS& Thread::GetRS()      const { return rs;                }
-
-// Público:
-const FUNCTIONAL_UNITS& Thread::GetFU()          const { return fu;                }
+const FUNCTIONAL_UNITS& Thread::GetFU()          const { return fu; }
 
 // Público:
 const std::vector<TABLE_ROW>& Thread::GetTable() const { return instruction_table; }
@@ -108,9 +120,10 @@ Thread::Thread(
 {
     // Verifica inconsistência de input
     if (has_predictor && !has_rob) {
-        std::cerr << "[ERRO] Para ter previsor de desvios é obrigatório ter ROB\n";
+        std::cerr << "[ERRO] ROB obrigatório para previsor de desvios!\n";
         std::abort();
     }
+
     // Passa as instruções para a tabela.
     int i{};
     for (const std::string& instr : assembly)
@@ -119,58 +132,90 @@ Thread::Thread(
         #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
         instruction_table.push_back({Instruction(i++, instr)}); // Warning ignorado.
         #pragma GCC diagnostic pop
+
     // Inicializa os RSs e as FUs.
     InitializeComponents(num_rs, num_fus, dispatch_width);
+
     // Passa as novas latências às instruções.
-    for (const auto& [pc, ex, mem] : new_latency) {
-        if (static_cast<size_t>(pc) < instruction_table.size()) {
-            instruction_table[pc].instruction.SetExLatency(ex);
-            if (mem > 0) instruction_table[pc].instruction.SetMemLatency(mem);
+    for (const auto& [position, ex, mem] : new_latency) {
+        if (static_cast<size_t>(position) < instruction_table.size()) {
+            instruction_table[position].instruction.SetExLatency(ex);
+            if (mem > 0) instruction_table[position].instruction.SetMemLatency(mem);
         }
     }
 }
+
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Privado:
 void Thread::InitializeComponents(
     const std::vector<int>& num_rs,
     const std::vector<int>& num_fus,
-    int                     dispatch_width
+    const int               dispatch_width
 ){
     // Declara os registradores do banco:
     for(int i{}; i < num_registers; i++){
         cdb.R.push_back(Register("R" + std::to_string(i))); // R: R0, R1, ..., R31
         cdb.F.push_back(Register("F" + std::to_string(i))); // F: F0, F1, ..., F31
     }
+
+    // Declara os componententes da RS:
+    // Verifica se foram passados valores para RSs:
     std::vector<int> aux;
-    // Declara os componententes do RS:
+    aux = num_rs.empty() ? std::vector<int>{5,5,5,4,3,2} : num_rs; // Valores arbitrários de default.
     // Verifica se a quantidade de valores para RSs passados é válido:
-    if(num_rs.empty()) aux = {5,5,5,4,3,2}; // Valores arbitrários de default.
-    // Verifica se o valor passado é válido:
-    else if(num_rs.size() != NUM_RS_GROUPS){
-        std::cerr << "[ERRO] Quantidade inválida de valores para RSs: " << num_rs.size() << "\n";
+    if(aux.size() != NUM_RS_GROUPS){
+        std::cerr << "[ERRO] Quantidade inválida de RSs: " << num_rs.size() << "\n";
         std::abort();
     }
-    else aux = num_rs;
-    for(int i{}; i < aux[0]; i++) rs.load.push_back(ReservationStation("load" + std::to_string(i)));
-    for(int i{}; i < aux[1]; i++) rs.store.push_back(ReservationStation("store" + std::to_string(i)));
-    for(int i{}; i < aux[2]; i++) rs.int_basic.push_back(ReservationStation("int_basic" + std::to_string(i)));
-    for(int i{}; i < aux[3]; i++) rs.int_mult_div.push_back(ReservationStation("int_mult_div" + std::to_string(i)));
-    for(int i{}; i < aux[4]; i++) rs.float_basic.push_back(ReservationStation("float_basic" + std::to_string(i)));
-    for(int i{}; i < aux[5]; i++) rs.float_mult_div.push_back(ReservationStation("float_mult_div" + std::to_string(i)));
-    // Verifica se o número de valores para FUs passados é válido:
-    if(num_fus.empty()) aux = {1,1,1,1,1,2}; // Valores arbitrários de default.
-    // Verifica se o valor passado é válido:
-    else if(num_fus.size() != NUM_FU_GROUPS){
-        std::cerr << "[ERRO] Quantidade inválida de valores para FUs: " << num_fus.size() << "\n";
+    int i{};
+    std::vector<std::string> rs_names{"load", "store", "int_basic", "int_mult_div", "float_basic", "float_mult_div"};
+    for (std::vector<ReservationStation>* group : GetAllRSGroups()) {
+        for(int j{}; j < aux[i]; j++) group->push_back(ReservationStation(rs_names[i] + std::to_string(j)));
+        i++;
+    }
+
+    // Declara os componententes do FU:
+    // Verifica se foram passados valores para FUs:
+    aux = num_fus.empty() ? std::vector<int>{1,1,1,1,1,2} : num_fus; // Valores arbitrários de default.
+    // Verifica se a quantidade de valores para FUs passados é válido:
+    if(aux.size() != NUM_FU_GROUPS){
+        std::cerr << "[ERRO] Quantidade inválida de FUs: " << num_fus.size() << "\n";
         std::abort();
-    } else aux = num_fus;
-    for(int i{}; i < aux[0]; i++) fu.memory_access.push_back(FU{});
-    for(int i{}; i < aux[1]; i++) fu.int_basic_alu.push_back(FU{});
-    for(int i{}; i < aux[2]; i++) fu.int_mult_div_alu.push_back(FU{});
-    for(int i{}; i < aux[3]; i++) fu.float_basic_alu.push_back(FU{});
-    for(int i{}; i < aux[4]; i++) fu.float_mult_div_alu.push_back(FU{});
+    }
+    i = 0;
+    for (std::vector<FU>* group : GetAllFUGroups()) {
+        for(int j{}; j < aux[i]; j++) group->push_back(FU{});
+        i++;
+    }
+    // Valores int.
     fu.wr     = aux[5];
     if(has_rob) fu.commit = dispatch_width; // Só inicializa commit se tem ROB
+}
+
+// Privado:
+// Retorna um vetor com os ponteiros para todos os grupos de RS.
+// - Utilizado também em StartExOrMemPhase(), WriteResult(), BroadcastCDB() e DetectPhaseTransitions().
+std::vector<std::vector<ReservationStation>*> Thread::GetAllRSGroups() {
+    return {
+        &rs.load,
+        &rs.store,
+        &rs.int_basic,
+        &rs.int_mult_div,
+        &rs.float_basic,
+        &rs.float_mult_div
+    };
+}
+
+// Privado:
+// Retorna um vetor com os ponteiros para todos os grupos da FU (menos wr e commit que são int).
+std::vector<std::vector<FU>*> Thread::GetAllFUGroups() {
+    return {
+        &fu.memory_access,
+        &fu.int_basic_alu,
+        &fu.int_mult_div_alu,
+        &fu.float_basic_alu,
+        &fu.float_mult_div_alu
+    };
 }
 
 // Público:
@@ -184,428 +229,330 @@ bool Thread::IsSwitchCycle() {
 
 // ─── ISSUE ────────────────────────────────────────────────────────
 // Público:
+// Tenta adicionar Issues no RS.
 bool Thread::Issue(
     const int cycle
 ){
+    // Testa se faltam instruções a ser adicionadas.
     if (current_instruction_position >= static_cast<int>(instruction_table.size())) return false;
+    // Testa se tem espaço no ROB para adicionar mais instruções.
     if (rob.size() >= static_cast<size_t>(rob_capacity)) return false;
 
+    // Verifica se a instrução é válida.
     Instruction& instruction = instruction_table[current_instruction_position].instruction;
     INSTRUCTION_TYPE type    = instruction.GetInstructionType();
     if (type == INSTRUCTION_TYPE::NONEXISTENT) {
-        std::cerr << "[ERRO] Tentativa de adicionar instrução inválida no issue: \n" <<
-        "- Instrução = " << instruction_table[current_instruction_position].instruction.GetInstructionString()
-        << "\n" << "- Position = " << current_instruction_position << "\n";
+        std::cerr << "[ERRO] Tentativa de adicionar instrução inválida no issue! \n"
+                  << "- Instrução: " << instruction.GetInstructionString() << "\n"
+                  << "- Posição: "   << current_instruction_position << "\n";
         std::abort();
     }
 
-    std::vector<ReservationStation>* group = nullptr;
-    switch (type) {
-        case INSTRUCTION_TYPE::LOAD:         group = &rs.load;          break;
-        case INSTRUCTION_TYPE::STORE:        group = &rs.store;         break;
-        case INSTRUCTION_TYPE::FLOAT_BASIC:  group = &rs.float_basic;   break;
-        case INSTRUCTION_TYPE::INT_MUL:
-        case INSTRUCTION_TYPE::INT_DIV:      group = &rs.int_mult_div;  break;
-        case INSTRUCTION_TYPE::FLOAT_MUL:
-        case INSTRUCTION_TYPE::FLOAT_DIV:    group = &rs.float_mult_div;break;
-        default:                             group = &rs.int_basic;     break;
-    }
+    // Identifica o tipo de grupo de RS necessário para alocar e procura uma vaga.
+    std::vector<ReservationStation>& group = GetRSGroupForType(rs, type);
 
-    for (ReservationStation& r : *group) {
+    for (ReservationStation& r : group) {
+        // Se conseguiu adicionar:
         if (r.AddIssue(instruction, cdb, cycle)) {
-            RegisterIssue(cycle);
-            if(has_rob) rob.push_back(instruction);
+
+            // 1. Marca na tabela o IS da instrução.
+            instruction_table[current_instruction_position].issue_cycle = cycle;
+            // 2.1. Se tem um ROB:
+            // - Adiciona a instrução no ROB.
+            if (has_rob) rob.push_back(instruction);
+            // 2.2. Se não tem ROB (obrigatóriamente sem previsor de desvio) e for um branch:
+            // - Marca para as instruções posteriores serem atrasadas.
+            else if (type == INSTRUCTION_TYPE::BRANCH)
+                unresolved_branch_position = current_instruction_position;
+            // 3. Passa para a próxima instrução.
             current_instruction_position++;
-            if (type == INSTRUCTION_TYPE::BRANCH && !has_rob)
-                unresolved_branch_pc = current_instruction_position - 1;
+
             return true;
         }
     }
     return false;
 }
 
-// Privado:
-void Thread::RegisterIssue(
-    int cycle
-){
-    instruction_table[current_instruction_position].issue_cycle = cycle;
-}
-
 // ─── EX/MEM ───────────────────────────────────────────────────────
 // Público:
+// Verifica se as instruções já foram devidamente já estão aptas a começar a fase EX/MEM.
 bool Thread::ExMem(
     const int cycle
 ){
-    if(static_cast<size_t>(num_committed_instructions) == instruction_table.size() ||
-       (!has_rob && static_cast<size_t>(num_finished_instructions) == instruction_table.size()))
-       return true;
-    if (state == THREAD_STATE::BRANCH_RESOLVING)
-        state = THREAD_STATE::ACTIVE;
+    // Com ROB: Verifica se todas as instruções já foram commitadas.
+    if (static_cast<size_t>(num_committed_instructions) == instruction_table.size()) return true;
+    // Sem ROB: Verifica se todas as instruções já passaram pelo WR.
+    if (!has_rob && static_cast<size_t>(num_finished_instructions) == instruction_table.size()) return true;
+
+    // Se ainda faltar instruções a serem executadas, ele as executa no ciclo.
     if(static_cast<size_t>(num_finished_instructions) != instruction_table.size())
         StartExOrMemPhase(cycle);
     return false;
 }
 
 // Privado:
+// Muda a instrução de fase se não tem mais dependências (Qj/Qk = null).
 void Thread::StartExOrMemPhase(
-    int cycle
+    const int cycle
 ){
+    // Procura em todos os grupos de RS com instruções aptas a mudar de fase:
+    // IS  -> EX
+    // EX  -> MEM
     std::vector<ReservationStation*> candidates;
-    CollectCandidatesToAdvance(candidates);
-    SortCandidatesByPC(candidates);
+    for (std::vector<ReservationStation>* group : GetAllRSGroups()) {
+        for (ReservationStation& r : *group) {
+            // Célula da RS vazia.
+            if (!r.IsBusy()) continue;
+            // Filtro que garante selecionar apenas as instruções em IS ou MEM (que vai começar), já que são as únicas que podem ter o countdown = -1.
+            // - Redundante em lógica, já que o ReservationStations::UpdateDependencies() já faz esse filtro, mas diminui o sort.
+            if (r.GetCountdown() != -1 || r.GetInstructionPhase() == INSTRUCTION_PHASE::WR) continue;
 
-    for (ReservationStation* rp : candidates) {
-        ReservationStation& r = *rp;
-        TryAdvanceRS(r, cycle);
+            // Instrução observada foi adicionada após um branch não resolvido:
+            // - Tem sua execução atrasada (branch stall).
+            int inst_position = r.GetCurrentInstruction().GetPosition();
+            if (unresolved_branch_position >= 0 && inst_position > unresolved_branch_position) continue;
+
+            // Previne que STORE com ROB seja escalonado para WR (nesse caso é apenas commit).
+            INSTRUCTION_TYPE type = r.GetCurrentInstruction().GetInstructionType();
+            if (type == INSTRUCTION_TYPE::STORE && has_rob && r.GetInstructionPhase() == INSTRUCTION_PHASE::MEM) continue;
+
+            candidates.push_back(&r);
+        }
     }
-}
 
-// Privado:
-void Thread::CollectCandidatesToAdvance(
-    std::vector<ReservationStation*>& candidates
-){
-    CollectCandidatesFromGroup(rs.load, candidates);
-    CollectCandidatesFromGroup(rs.store, candidates);
-    CollectCandidatesFromGroup(rs.int_basic, candidates);
-    CollectCandidatesFromGroup(rs.int_mult_div, candidates);
-    CollectCandidatesFromGroup(rs.float_basic, candidates);
-    CollectCandidatesFromGroup(rs.float_mult_div, candidates);
-}
+    // Ordena os candidatos com base na sua ordenação original.
+    std::stable_sort(candidates.begin(), candidates.end(), ComparePositionOnRS);
 
-// Privado:
-void Thread::CollectCandidatesFromGroup(
-    std::vector<ReservationStation>& group,
-    std::vector<ReservationStation*>& candidates
-){
-    for (ReservationStation& r : group) {
-        if (!r.GetBusy()) continue;
-        int inst_pc = r.GetCurrentInstruction().GetPosition();
-        if (unresolved_branch_pc >= 0 && inst_pc > unresolved_branch_pc) continue;
-        INSTRUCTION_TYPE type = r.GetCurrentInstruction().GetInstructionType();
-        if (type == INSTRUCTION_TYPE::STORE && has_rob && r.GetInstructionPhase() == INSTRUCTION_PHASE::MEM)
-            continue;
-        candidates.push_back(&r);
+    // Avança as instruções de fase:
+    for (ReservationStation* r : candidates) {
+        // Verifica se conseguiu mudar a instrução de fase:
+        if (r->UpdateDependencies(cdb, fu, cycle)) {
+
+            // Marca na tabela.
+            int position = r->GetCurrentInstruction().GetPosition();
+            if (r->GetInstructionPhase() == INSTRUCTION_PHASE::EX)
+                instruction_table[position].ex_cycles.push_back(cycle);
+            else if (r->GetInstructionPhase() == INSTRUCTION_PHASE::MEM)
+                instruction_table[position].mem_cycles.push_back(cycle);
+
+            // Se o branch foi resolvido, a flag é desmarcada.
+            if (position == unresolved_branch_position && r->GetInstructionPhase() == INSTRUCTION_PHASE::EX)
+                unresolved_branch_position = -1; // Valor default.
+        }
     }
-}
-
-// Privado:
-void Thread::TryAdvanceRS(
-    ReservationStation& r,
-    int cycle
-){
-    if (r.UpdateDependencies(cdb, fu, cycle)) {
-        int pc = r.GetCurrentInstruction().GetPosition();
-        if (r.GetInstructionPhase() == INSTRUCTION_PHASE::EX)
-            AddExCycle(pc, cycle);
-        else if (r.GetInstructionPhase() == INSTRUCTION_PHASE::MEM)
-            AddMemCycle(pc, cycle);
-        if (pc == unresolved_branch_pc && r.GetInstructionPhase() == INSTRUCTION_PHASE::EX)
-            unresolved_branch_pc = -1;
-    }
-}
-
-// Privado: (também usado em WR/ProcessTransition)
-void Thread::AddExCycle(
-    int pc,
-    int cycle
-){
-    instruction_table[pc].ex_cycles.push_back(cycle);
-}
-
-// Privado: (também usado em WR/ProcessTransition)
-void Thread::AddMemCycle(
-    int pc,
-    int cycle
-){
-    instruction_table[pc].mem_cycles.push_back(cycle);
 }
 
 // ─── WR ───────────────────────────────────────────────────────────
 // Público:
+// Verifica se as instruções já foram devidamente processadas.
 void Thread::Wr(
     const int cycle
 ){
-    FlushPendingWBBuffer();
+    // Pega os WR que estavam pendentes e coloca no buffer.
+    for (int p : pending_wr_buffer)
+        wr_buffer.push_back(p);
+    pending_wr_buffer.clear();
+
+    // Ordena o buffer de WR.
+    std::sort(wr_buffer.begin(), wr_buffer.end());
+
+    // Escreve os resultados prontos.
     PerformWriteResult(cycle);
+    // Detecta novas transições de fase.
     DetectPhaseTransitions(cycle);
-    if (!has_rob) {
-        for (int i : pending_wb_buffer) {
-            if (instruction_table[i].instruction.GetInstructionType() == INSTRUCTION_TYPE::BRANCH)
-                state = THREAD_STATE::BRANCH_RESOLVING;
-        }
-    }
 }
 
 // Privado:
-void Thread::FlushPendingWBBuffer() {
-    for (int pc : pending_wb_buffer)
-        wb_buffer.push_back(pc);
-    pending_wb_buffer.clear();
-}
-
-// Privado:
+// Efetiva a marcação do WR na tabela.
 void Thread::PerformWriteResult(
-    int cycle
+    const int cycle
 ){
-    SortWBBuffer();
-
+    // Marca na tabela as instruções que chegaram ao WR.
     int writes{};
-    while (!wb_buffer.empty() && writes < fu.wr) {
-        int pc = NextWB();
-        INSTRUCTION_TYPE instr_type{instruction_table[pc].instruction.GetInstructionType()};
+    while (!wr_buffer.empty() && writes < fu.wr) { // Limitado pela capacidade de WR simultâneo.
+        int position = wr_buffer.front();
+        INSTRUCTION_TYPE instr_type{instruction_table[position].instruction.GetInstructionType()};
         bool store_with_rob = (instr_type == INSTRUCTION_TYPE::STORE && has_rob);
 
+        // O estágio WR do STORE só é marcado se o o processador não possui ROB.
+        // - Pula essa marcação na tabela.
         if (store_with_rob) {
-            WriteBackStoreWithROB(pc, cycle);
-            continue;
+            ReleaseRSStoreWithROB(rs.store, position, cycle);
+            wr_buffer.erase(wr_buffer.begin());
+            num_finished_instructions++;
+            continue; // Não conta como um WR (não há resultado sendo escrito de fato).
         }
 
-        WriteBackNormal(pc, cycle);
-        RemoveWB();
+        // Escreve o resultado, propaga no CDB e libera a célula da RS.
+        WriteResultOnComponents(position, cycle);
+        wr_buffer.erase(wr_buffer.begin());
         num_finished_instructions++;
-        if(instr_type != INSTRUCTION_TYPE::BRANCH) writes++;
+
+        // Branch não ocupa porta de WR (não escreve em registrador nenhum).
+        if (instr_type != INSTRUCTION_TYPE::BRANCH) writes++;
     }
 }
 
 // Privado:
-void Thread::SortWBBuffer() {
-    sort_utils::insertionSort(wb_buffer);
-}
-
-// Privado:
-int Thread::NextWB() const {
-    return wb_buffer.front();
-}
-
-// Privado:
-void Thread::RemoveWB() {
-    wb_buffer.erase(wb_buffer.begin());
-}
-
-// Privado:
-void Thread::AddWB(
-    int pc
+// Realiza as modificações no CDB e no RS.
+void Thread::WriteResultOnComponents(
+    const int position,
+    const int cycle
 ){
-    wb_buffer.push_back(pc);
+    INSTRUCTION_TYPE type = instruction_table[position].instruction.GetInstructionType();
+
+    // STORE e BRANCH não escrevem em nenhum registrador.
+    if (type != INSTRUCTION_TYPE::STORE && type != INSTRUCTION_TYPE::BRANCH)
+        instruction_table[position].wr_cycle = cycle;
+
+    // Propaga o resultado no CDB e libera o registrador e resolve as dependências (Qj/Qk) de quem estava esperando.
+    Register dest = instruction_table[position].instruction.GetDestRegister();
+    BroadcastOnRSAndCDB(dest, position, cycle);
+
+    // Libera a célula da RS produtora.
+    ReleaseRS(GetRSGroupForType(rs, type), position, cycle);
 }
 
 // Privado:
-void Thread::WriteBackStoreWithROB(
-    int pc,
-    int cycle
-){
-    for (ReservationStation& r : rs.store)
-        if (r.GetBusy() && r.GetCurrentInstruction().GetPosition() == pc)
-            r.Release(cycle);
-    RemoveWB();
-    num_finished_instructions++;
-}
-
-// Privado:
-// 3 etapas: (1) marca WR para instruções c/ destino; (2) broadcast CDB p/ liberar
-// dependências; (3) switch por type p/ grupo RS correto (LOAD -> rs.load, etc.)
-void Thread::WriteBackNormal(
-    int pc,
-    int cycle
-){
-    if(instruction_table[pc].instruction.GetInstructionType() != INSTRUCTION_TYPE::STORE &&
-       instruction_table[pc].instruction.GetInstructionType() != INSTRUCTION_TYPE::BRANCH)
-        SetWR(pc, cycle);
-
-    Register dest = instruction_table[pc].instruction.GetDestRegister();
-    BroadcastCDB(pc, dest, cycle);
-
-    INSTRUCTION_TYPE t{instruction_table[pc].instruction.GetInstructionType()};
-    if(t == INSTRUCTION_TYPE::LOAD)
-        ReleaseRSByRegister(rs.load, dest, cycle);
-    else if(t == INSTRUCTION_TYPE::STORE)
-        ReleaseRSByPC(rs.store, pc, cycle);
-    else if(t == INSTRUCTION_TYPE::BRANCH)
-        ReleaseRSByPC(rs.int_basic, pc, cycle);
-    else if(t == INSTRUCTION_TYPE::FLOAT_BASIC)
-        ReleaseRSByRegister(rs.float_basic, dest, cycle);
-    else if(t == INSTRUCTION_TYPE::INT_MUL || t == INSTRUCTION_TYPE::INT_DIV)
-        ReleaseRSByRegister(rs.int_mult_div, dest, cycle);
-    else if(t == INSTRUCTION_TYPE::FLOAT_MUL || t == INSTRUCTION_TYPE::FLOAT_DIV)
-        ReleaseRSByRegister(rs.float_mult_div, dest, cycle);
-    else
-        ReleaseRSByRegister(rs.int_basic, dest, cycle);
-}
-
-// Privado: (usado em WriteBackNormal)
-void Thread::SetWR(
-    int pc,
-    int cycle
-){
-    instruction_table[pc].wr_cycle = cycle;
-}
-
-// Privado:
-// Percorre todos os 6 grupos de RS resolvendo dependências de Qj/Qk que
-// apontam para esta instrução (rs_id), e desaloca o produtor do CDB.
-void Thread::BroadcastCDB(
-    int pc,
+// Transmite no CDB na RS as instruções que chegaram ao ciclo de WR.
+// - Elimina as dependências em Qj/Qk para que a instrução possa começar o EX ou o MEM.
+void Thread::BroadcastOnRSAndCDB(
     const Register& dest,
-    int cycle
+    const int       position,
+    const int       cycle
 ){
-    FindWBInGroup(rs.load, pc, dest, cycle);
-    FindWBInGroup(rs.store, pc, dest, cycle);
-    FindWBInGroup(rs.int_basic, pc, dest, cycle);
-    FindWBInGroup(rs.int_mult_div, pc, dest, cycle);
-    FindWBInGroup(rs.float_basic, pc, dest, cycle);
-    FindWBInGroup(rs.float_mult_div, pc, dest, cycle);
-}
+    // Instrução sem registrador de destino válido.
+    if (dest.GetType() == 'Z') return;
 
-// Privado:
-void Thread::FindWBInGroup(
-    std::vector<ReservationStation>& group,
-    int pc,
-    const Register& dest,
-    int cycle
-){
-    for (ReservationStation& r : group) {
+    // Nos componentes:
+    // 1. Desaloca no CDB registradores travados das instruções que finalizaram o WR.
+    // 2. Atualiza em todos os grupos de RS as dependências das instruções que dependiam desse resultado.
+    std::vector<Register>& regs = (dest.GetType() == 'F') ? cdb.F : cdb.R;
+    for (std::vector<ReservationStation>* group : GetAllRSGroups()) {
+        for (ReservationStation& r : *group) {
 
-        if (!r.GetBusy() || r.GetInstructionPhase() != INSTRUCTION_PHASE::WB) continue;
+            // Ignora células da RS vazias ou que ainda não chegaram em WB.
+            if (!r.IsBusy() || r.GetInstructionPhase() != INSTRUCTION_PHASE::WR) continue;
+            // Ignora células da RS de outras instruções (posição diferente).
+            if (r.GetCurrentInstruction().GetPosition() != position) continue;
 
-        if (r.GetCurrentInstruction().GetPosition() != pc) continue;
+            // Tenta desalocar a célula da RS do registrador de destino no CDB.
+            std::string rs_id       = r.GetId();
+            int         start_cycle = regs[dest.GetId()].GetRSCycleStart(rs_id);
+            if (!regs[dest.GetId()].DeallocateRS(rs_id, start_cycle, cycle)) {
+                std::cerr << "[ERRO] Falha na desalocação da célula da RS!"
+                "- RS: " << rs_id << '\n' <<
+                "- [start-end]: [" << start_cycle << "-" << cycle << "]\n";
+                std::abort();
+            }
 
-        if (dest.GetType() == 'Z' || dest.GetId() < 0 || dest.GetId() >= num_registers) continue;
-
-        // Cria uma referência do vetor de registradores a ser operado no CDB
-        std::vector<Register>& regs = (dest.GetType() == 'F') ? cdb.F : cdb.R;
-        std::string rs_id = r.GetId();
-        int start_cycle = regs[dest.GetId()].GetRSCycleStart(rs_id);
-        // Tenta desalocar
-        if(!regs[dest.GetId()].DeallocateRS(rs_id, start_cycle, cycle)){
-            std::cerr << "[ERRO] Falha na desalocação do RS:" <<
-            " rs_id( " << rs_id
-            << " ), start_cycle( " << start_cycle
-            << " ), end_cycle( " << cycle << " )\n";
-            std::abort();
+            // Propaga o valor para todas as RSs que esperavam por essa produção (Qj/Qk == rs_id).
+            for (std::vector<ReservationStation>* group : GetAllRSGroups())
+                ResolveDependencyInGroup(*group, rs_id, dest);
         }
-        ResolveDependencyInGroup(rs.load, rs_id, dest);
-        ResolveDependencyInGroup(rs.store, rs_id, dest);
-        ResolveDependencyInGroup(rs.int_basic, rs_id, dest);
-        ResolveDependencyInGroup(rs.int_mult_div, rs_id, dest);
-        ResolveDependencyInGroup(rs.float_basic, rs_id, dest);
-        ResolveDependencyInGroup(rs.float_mult_div, rs_id, dest);
     }
 }
 
 // Privado:
+// Encontra instruções que mudaram de fase após a passagem do ciclo.
 void Thread::DetectPhaseTransitions(
-    int cycle
+    const int cycle
 ){
-    std::vector<EVENT> events;
-    CollectTransitionEvents(events, cycle);
+    // Procura em todos os grupos de RS instruções que finalizaram uma operação:
+    // EX  -> MEM
+    // EX  -> WR
+    // MEM -> WR
+    for (std::vector<ReservationStation>* group : GetAllRSGroups()) {
+        for (ReservationStation& r : *group) {
+            // Célula da RS vazia.
+            if (!r.IsBusy()) continue;
 
-    SortEventsByPC(events);
+            // Verifica se a fase mudou com o incremento do contador:
+            // - Guarda a fase antes da tentativa, para comparar com a fase depois.
+            INSTRUCTION_PHASE phase_before = r.GetInstructionPhase();
 
-    for (const EVENT& e : events)
-        ProcessTransition(e, cycle);
-}
+            // Ainda executando.
+            if (!r.UpdateCountdown(fu, cycle)) continue;
 
-// Privado:
-void Thread::CollectTransitionEvents(
-    std::vector<EVENT>& events,
-    int cycle
-){
-    CollectEventsFromGroup(rs.load, events, cycle);
-    CollectEventsFromGroup(rs.store, events, cycle);
-    CollectEventsFromGroup(rs.int_basic, events, cycle);
-    CollectEventsFromGroup(rs.int_mult_div, events, cycle);
-    CollectEventsFromGroup(rs.float_basic, events, cycle);
-    CollectEventsFromGroup(rs.float_mult_div, events, cycle);
-}
+            INSTRUCTION_PHASE phase_after = r.GetInstructionPhase();
+            int               position    = r.GetCurrentInstruction().GetPosition();
+            INSTRUCTION_TYPE  type        = r.GetCurrentInstruction().GetInstructionType();
+            bool has_mem        = (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE);
+            bool store_with_rob = (type == INSTRUCTION_TYPE::STORE && has_rob);
 
-// Privado:
-// Privado:
-void Thread::CollectEventsFromGroup(std::vector<ReservationStation>& group, std::vector<EVENT>& events, int cycle) {
-    for (ReservationStation& r : group) {
-        if (!r.GetBusy()) continue;
-        INSTRUCTION_PHASE phase_before = r.GetInstructionPhase();
-        if (r.UpdateCountdown(fu, cycle)) {
-            events.push_back({
-                r.GetCurrentInstruction().GetPosition(),
-                phase_before,
-                r.GetInstructionPhase(),
-                r.GetCurrentInstruction().GetInstructionType()
-            });
+            // Caso 1: EX -> MEM
+            if (phase_before == INSTRUCTION_PHASE::EX && phase_after == INSTRUCTION_PHASE::MEM) {
+                // Marca na tabela.
+                instruction_table[position].ex_cycles.push_back(cycle);
+                // O ciclo MEM do STORE é representado apenas quando ele não possui ROB.
+                // - Pula direto pro WR.
+                if (store_with_rob) pending_wr_buffer.push_back(position);
+
+            // Caso 2: * -> WR
+            // - Não precisa verificar o phase_before por que mudou de fase para o final.
+            } else if (phase_after == INSTRUCTION_PHASE::WR) {
+                // Se tem MEM e não é o caso especial de STORE+ROB (que já marcou o próprio ciclo de EX acima).
+                if (has_mem && !store_with_rob)
+                    instruction_table[position].mem_cycles.push_back(cycle);
+                // Fim da execução das demais.
+                else if (!has_mem)
+                    instruction_table[position].ex_cycles.push_back(cycle);
+
+                // Coloca a instrução na fila de WR
+                pending_wr_buffer.push_back(position);
+            }
         }
     }
-}
-
-// Privado:
-void Thread::ProcessTransition(
-    const EVENT& e,
-    int cycle
-){
-    int pc              = e.pc;
-    bool has_mem        = (e.type == INSTRUCTION_TYPE::LOAD || e.type == INSTRUCTION_TYPE::STORE);
-    bool store_with_rob = (e.type == INSTRUCTION_TYPE::STORE && has_rob);
-
-    if (e.phase_before == INSTRUCTION_PHASE::EX && e.phase_after == INSTRUCTION_PHASE::MEM) {
-        instruction_table[pc].ex_cycles.push_back(cycle);
-        if (store_with_rob)
-            AddPendingWB(pc);
-    } else if (e.phase_after == INSTRUCTION_PHASE::WB) {
-        if (has_mem && !store_with_rob)
-            AddMemCycle(pc, cycle);
-        else if (!has_mem)
-            AddExCycle(pc, cycle);
-        AddPendingWB(pc);
-    }
-}
-
-// Privado: (usado em ProcessTransition)
-void Thread::AddPendingWB(
-    int pc
-){
-    pending_wb_buffer.push_back(pc);
 }
 
 // ─── COMMIT ───────────────────────────────────────────────────────
 // Público:
-// Apenas c/ ROB. Itera ROB em ordem (commit_pointer). Lógica de "pronto"
-// varia por type: STORE simula latência MEM, BRANCH espera 2 ciclos EX,
-// demais aguardam WR < ciclo atual. BRANCH s/ previsor trava no ciclo.
+// Verifica instruções aptas ao commit.
 void Thread::Commit(
     const int cycle
 ){
+    // Apenas realiza commit se possui ROB.
     if (!has_rob) return;
 
     int writes{};
+    // Até acabar as instruções ou até o limite de despacho.
     while (!rob.empty() && writes < fu.commit){
         TABLE_ROW& row{instruction_table[commit_pointer]};
         INSTRUCTION_TYPE type = row.instruction.GetInstructionType();
-        bool store_with_rob = (type == INSTRUCTION_TYPE::STORE && has_rob);
+        bool is_store = (type == INSTRUCTION_TYPE::STORE);
         bool pronto = false;
 
-        if (store_with_rob) {
-            if (row.store_commit_state == STORE_COMMIT_STATE::PENDING) {
-                row.store_commit_state = STORE_COMMIT_STATE::WAITING_MEM;
-                row.mem_cycles.push_back(cycle);
+        // Verifica se é um Store (caso especial, pois não tem WR).
+        if (is_store) {
+            // Verifica se a instrução já concluiu o MEM dela.
+            if (row.mem_cycles.empty()) {
+                row.mem_cycles.push_back(cycle); // Marca temporariamente o ciclo de início do MEM.
             }
-            if (row.store_commit_state == STORE_COMMIT_STATE::WAITING_MEM) {
+            // Verifica se a instrução já acabou o MEM.
+            if (row.mem_cycles.size() == 1) {
                 int mem_end = row.mem_cycles.back() + row.instruction.GetMemLatency() - 1;
                 if (cycle >= mem_end) {
-                    row.store_commit_state = STORE_COMMIT_STATE::READY;
-                    row.mem_cycles.pop_back();
+                    row.mem_cycles.pop_back(); // Tira a marcação temporária da tabela.
                     pronto = true;
                 }
             }
-        } else if (type == INSTRUCTION_TYPE::BRANCH) {
+        } // Verifica se é um Branch (sem WR também, dependendo do EX completo).
+        else if (type == INSTRUCTION_TYPE::BRANCH) {
             pronto = (row.ex_cycles.size() == 2);
-        } else {
+        } // Demais instruções.
+        else {
             pronto = (row.wr_cycle > 0 && row.wr_cycle < cycle);
         }
 
+        // Marca na tabela:
         if (pronto) {
             row.commit_cycle = cycle;
             num_committed_instructions++;
             writes++;
             commit_pointer++;
             rob.erase(rob.begin());
+
+            // Se não tem previsor, as instruções após um Branch tem que ser em outro ciclo.
             if (type == INSTRUCTION_TYPE::BRANCH && !(has_predictor && has_rob)) break;
         }
         else break;

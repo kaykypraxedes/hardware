@@ -8,7 +8,7 @@ namespace processor {
 char Register::GetType() const { return type; }
 
 // Público:
-int  Register::GetId()   const { return id;   }
+int  Register::GetId()   const { return id; }
 
 // Público:
 bool Register::GetBusy() const { return busy; }

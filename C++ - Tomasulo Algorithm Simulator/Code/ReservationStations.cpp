@@ -65,19 +65,19 @@ static std::vector<FU>& GetFUGroup(
 
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:
-bool ReservationStation::GetBusy()      const { return busy;                 }
+bool ReservationStation::IsBusy()       const { return busy; }
 
 // Público:
 int ReservationStation::GetCountdown()  const { return allocation_countdown; }
 
 // Público:
-int ReservationStation::GetFUPosition() const { return fu_position;          }
+int ReservationStation::GetFUPosition() const { return fu_position; }
 
 // Público:
 INSTRUCTION_PHASE ReservationStation::GetInstructionPhase() const { return phase; }
 
 // Público:
-const std::string& ReservationStation::GetId() const { return id;       }
+const std::string& ReservationStation::GetId() const { return id; }
 
 // Público:
 const std::string& ReservationStation::GetQj() const { return Qj.first; }
@@ -86,10 +86,10 @@ const std::string& ReservationStation::GetQj() const { return Qj.first; }
 const std::string& ReservationStation::GetQk() const { return Qk.first; }
 
 // Público:
-const std::vector<int>& ReservationStation::GetTimes()                const { return allocation_times;       }
+const std::vector<int>& ReservationStation::GetTimes()                const { return allocation_times; }
 
 // Público:
-const Instruction& ReservationStation::GetCurrentInstruction()        const { return current_instruction;    }
+const Instruction& ReservationStation::GetCurrentInstruction()        const { return current_instruction; }
 
 // Público:
 const std::vector<std::string>& ReservationStation::GetInstructions() const { return allocated_instructions; }
@@ -190,8 +190,8 @@ bool ReservationStation::UpdateDependencies(
 ){
     // Se o RS estiver vazio ou com sua execução travada por dependencias.
     if (!busy || allocation_countdown != -1) return false;
-    // Se já estiver na fase WB (-1, mas não atualiza mais)
-    if (phase == INSTRUCTION_PHASE::WB) return false;
+    // Se já estiver na fase WR (-1, mas não atualiza mais)
+    if (phase == INSTRUCTION_PHASE::WR) return false;
 
     // Verifica se os Qj e/ou Qk já desapareceram (se sim, marca o Vj/Vk).
     CheckDependency('J', cdb);
@@ -270,9 +270,9 @@ bool ReservationStation::TryAllocateFU(
     // Evita latências inválidas de instrução
     if (latency <= 0) {
         std::cerr <<
-        "[ERRO] TryAllocateFU: latência inválida (" << latency <<
-        ") para instrução \'" << current_instruction.GetInstructionString() <<
-        "\' na RS " << id << "\n";
+        "[ERRO] Latência inválida: " << latency << '\n' <<
+        "- Instrução: " << current_instruction.GetInstructionString() << '\n' <<
+        "- RS: " << id << '\n';
         std::abort();
     }
     // Procura uma unidade funcional livre.
@@ -291,7 +291,7 @@ int ReservationStation::FindFreeFU(
     FUNCTIONAL_UNITS&       fu,
     const INSTRUCTION_PHASE target_phase,
     const int               cycle
-) const {
+) {
     std::vector<FU>& fu_group{GetFUGroup(fu, current_instruction.GetInstructionType(), target_phase)};
     return AllocateFreeFU(fu_group, cycle, id);
 }
@@ -317,10 +317,10 @@ bool ReservationStation::UpdateCountdown(
         // EX  -> MEM
         if (phase == INSTRUCTION_PHASE::EX) phase = INSTRUCTION_PHASE::MEM;
         // MEM -> WR
-        else                                phase = INSTRUCTION_PHASE::WB;
+        else                                phase = INSTRUCTION_PHASE::WR;
     }   // EX  -> WR
     else {
-        phase = INSTRUCTION_PHASE::WB;
+        phase = INSTRUCTION_PHASE::WR;
     }
     allocation_countdown = -1;
     return true;
@@ -338,10 +338,9 @@ void ReservationStation::ReleaseFU(
 
     if (!DeallocateFU(fu_group, fu_position, cycle)) {
         std::cerr <<
-        "[ERRO] posição inválida de fu (" << fu_position <<
-        ") fora dos limites do grupo (tamanho " << fu_group.size() <<
-        ") ao liberar RS " << id
-        << " na fase " << static_cast<int>(finished_phase) << "\n";
+        "[ERRO] Posição inválida de fu: " << fu_position <<
+        "- RS: " << id << "\n" <<
+        "- Fase: " << static_cast<int>(finished_phase) << "\n";
         std::abort();
     }
     fu_position = -1;

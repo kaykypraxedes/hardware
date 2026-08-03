@@ -1,5 +1,5 @@
 /* headers/Components.h */
-#ifndef COMPONENTS_H
+#ifndef COMPONENTS_H  // Include guard
 #define COMPONENTS_H
 #include <string>
 #include <vector>
@@ -73,9 +73,9 @@ struct CDB {
 };
 struct FU {
     bool                     busy{false};
-    std::string              current_rs{};
-    std::vector<int>         allocation_times{};
-    std::vector<std::string> allocated_rs{};
+    std::string              current_rs;
+    std::vector<int>         allocation_times;
+    std::vector<std::string> allocated_rs;
 };
 struct FUNCTIONAL_UNITS {
     std::vector<FU> memory_access;

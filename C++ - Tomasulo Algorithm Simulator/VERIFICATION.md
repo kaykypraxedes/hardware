@@ -73,7 +73,134 @@ else if(num_rs.size() != NUM_RS_GROUPS){
 O mesmo para FUs. O fu.commit só é iniciado se ele tiver ROB.
 - [x] `SetCustomLatency()` fica obsoleto já que dentro do construtor é definido as latências específicas.
 
-** ANALISADO ATÉ `IsSwitchCycle()`**
+Resumir funções desnecessárias (wrappers pequenos ou funções de uma linha), que dificultam o entendimento e poluem o código. A solução será a aplicação direta dessas operações na função que as chamava:
+  - [x] `RegisterIssue()` — vira `instruction_table[pos].issue_cycle = cycle;` direto em `Issue()`
+  - [x] `SetWR()` — vira `instruction_table[pos].wr_cycle = cycle;` direto em `WriteBackNormal()`
+  - [x] `NextWB()` — vira `return wb_buffer.front();` direto em `PerformWriteResult()`
+  - [x] `RemoveWB()` — vira `wb_buffer.erase(wb_buffer.begin());` direto em `PerformWriteResult()` (2 pontos, mesma função)
+  - [x] `AddPendingWB()` — vira `pending_wb_buffer.push_back(position);` direto em `DetectPhaseTransitions()` (2 pontos, mesma função)
+  - [x] `AddExCycle()` — vira `instruction_table[pos].ex_cycles.push_back(cycle);` direto em `StartExOrMemPhase()` e `DetectPhaseTransitions()`
+  - [x] `AddMemCycle()` — vira `instruction_table[pos].mem_cycles.push_back(cycle);` idem
+  - [x] `FlushPendingWBBuffer()` — vira `insert` + `clear` (2 linhas) no início de `Wr()`
+  - [x] `SortWBBuffer()` — vira `std::sort(wb_buffer.begin(), wb_buffer.end())` direto em `PerformWriteResult()` (wrapper do `insertionSort`)
+
+- [x] Remover a função de código morto `AddWB()` (declarada e implementada, nenhuma chamada em todo o projeto) de `Thread.h` e `Thread.cpp`.
+- [x] Fusão de funções parecidas em uma única lógica:
+- `CollectCandidatesToAdvance()`, `CollectCandidatesFromGroup()`, `TryAdvanceRS()` → fundidas em `StartExOrMemPhase()`.
+- `CollectTransitionEvents()`, `CollectEventsFromGroup()`, `ProcessTransition()` → fundidas em `DetectPhaseTransitions()`.
+- `FindWBInGroup()` → fundida em `BroadcastCDB()`.
+- `WriteBackStoreWithROB()` → vira um branch dentro de `PerformWriteResult()` (com a correção do bug de release de STORE com ROB, na seção **BUG** abaixo).
+**Funções livres / arquivo inteiro**
+- [x] `PositionOfRS`, `SortCandidatesByPosition` — saem; o comparador vira lambda inline em `std::sort` no local de uso.
+- [x] `PositionOfEvent`, `SortEventsByPosition` — saem por completo, incluindo a própria ordenação (motivo lógico, ver a seção **Eliminar a ordenação de `events`** abaixo).
+- [x] `ReleaseRSByRegister()` — sai, substituída por `ReleaseRSByPosition()` + `GetRSGroupForType()` (motivo lógico, ver a seção **Troca de critério** abaixo).
+- [x] **`SortUtils.h`** — arquivo inteiro removido do projeto. As duas ordenações que sobrevivem (`candidates`, `wb_buffer`) usam `std::sort` de `<algorithm>` diretamente.
+
+**Funções a serem refatoradas/divididas por quantidade de código**
+
+ - [x] Ponto central: o padrão **"chamar a mesma função nos 6 grupos de RS"** se repetia em pelo menos 4 lugares, e o mapeamento **`INSTRUCTION_TYPE → grupo de RS`** era refeito à mão em 2 lugares. Dois helpers novos resolvem isso:
+
+```C++
+// Aplica uma operação sobre os 6 grupos de RS.
+template <typename Func>
+static void ForEachRSGroup(RESERVATION_STATIONS& rs, Func&& func) {
+    func(rs.load);
+    func(rs.store);
+    func(rs.int_basic);
+    func(rs.int_mult_div);
+    func(rs.float_basic);
+    func(rs.float_mult_div);
+}
+
+// Único ponto de verdade do mapeamento tipo → grupo (mesmo espírito do
+// GetFUGroup() já existente em ReservationStations.cpp).
+static std::vector<ReservationStation>& GetRSGroupForType(
+    RESERVATION_STATIONS& rs,
+    INSTRUCTION_TYPE      type
+) {
+    switch (type) {
+        case INSTRUCTION_TYPE::LOAD:         return rs.load;
+        case INSTRUCTION_TYPE::STORE:        return rs.store;
+        case INSTRUCTION_TYPE::FLOAT_BASIC:  return rs.float_basic;
+        case INSTRUCTION_TYPE::INT_MUL:
+        case INSTRUCTION_TYPE::INT_DIV:      return rs.int_mult_div;
+        case INSTRUCTION_TYPE::FLOAT_MUL:
+        case INSTRUCTION_TYPE::FLOAT_DIV:    return rs.float_mult_div;
+        default:                             return rs.int_basic; // cobre BRANCH e INT_BASIC
+    }
+}
+```
+
+Funções que mudam por causa disso:
+
+- [x] **`Issue()`** — o `switch` local que escolhe o grupo de RS sai; vira `GetRSGroupForType(rs, type)`.
+- [x] **`WriteBackNormal()`** — o `if/else if` de 6 ramos escolhendo grupo + tipo de release sai; vira `GetRSGroupForType(rs, type)` + `ReleaseRSByPosition(group, position, cycle)`.
+- [x] **`StartExOrMemPhase()`** — absorve a coleta de candidatas (`ForEachRSGroup` + filtro de `has_rob`/`unresolved_branch_position` inline), a ordenação (`std::sort`) e o avanço de fase (lógica de `TryAdvanceRS` inline no loop final). Fica com um único corpo: coletar → ordenar → avançar.
+- [x] **`BroadcastCDB()`** — absorve a busca da RS produtora (`ForEachRSGroup`) e a resolução de dependências nos outros grupos (`ForEachRSGroup` aninhado). Validação de `dest` inválido sobe pro topo da função (fail-fast, evita rodar o loop dos 6 grupos à toa quando não há destino).
+- [x] **`DetectPhaseTransitions()`** — absorve a coleta de eventos (`ForEachRSGroup`) e o processamento (antigo `ProcessTransition`, agora inline no loop). **Sem** a ordenação por posição — ver a seção **Eliminar a ordenação de `events`** abaixo.
+- [x] **`InitializeComponents()`** — o `if(vazio) default; else if (tamanho errado) abort; else usa`; vira `aux = vazio ? default : num_rs; if (aux.size() != N) abort;` — mesma regra, uma ramificação a menos. Mesma coisa para FUs.
+- [-] **`ExMem()`** — os dois `if` que calculam "todas as instruções terminaram" viram um ternário único.
+
+**Funções a serem refatoradas por questão de lógica**
+
+**BUG — release de `STORE` com ROB nunca acontece**
+`STORE` com ROB é liberado da RS logo na transição `EX → MEM` (a latência real de memória é simulada depois, no `Commit()`, via `store_commit_state`). Por isso, essa RS **nunca chega em `phase == WB`** — ela é excluída de propósito de `StartExOrMemPhase` assim que entra em `MEM`, pra não competir pela FU de memória.
+
+Se o release desse caminho usar a mesma `ReleaseRSByPosition()` que exige `phase == WB` (usada no caminho normal), a condição nunca bate e a RS fica presa em `busy = true` para sempre. Com o pool default de RS de `store` (5), a partir do 6º `STORE` do programa `Issue()` trava pra sempre nessa instrução — bug determinístico, não um edge case raro.
+
+**Ação:** manter dois helpers de release, não um só:
+```C++
+// Caminho normal: a RS realmente chegou em WB antes de ser liberada.
+static void ReleaseRSByPosition(
+    std::vector<ReservationStation>& group, int position, int cycle
+) {
+    for (ReservationStation& r : group) {
+        if (r.GetBusy() &&
+            r.GetInstructionPhase() == INSTRUCTION_PHASE::WB &&
+            r.GetCurrentInstruction().GetPosition() == position) {
+            r.Release(cycle);
+            break;
+        }
+    }
+}
+
+// Caminho STORE+ROB: a RS é liberada ainda em MEM, por design — não checar fase.
+static void ReleaseStoreRSWithROB(
+    std::vector<ReservationStation>& group, int position, int cycle
+) {
+    for (ReservationStation& r : group) {
+        if (r.GetBusy() && r.GetCurrentInstruction().GetPosition() == position) {
+            r.Release(cycle);
+            break;
+        }
+    }
+}
+```
+Usar `ReleaseStoreRSWithROB()` só no branch `if (type == STORE && has_rob)` de `PerformWriteResult()`. Usar `ReleaseRSByPosition()` em todo o resto (via `WriteBackNormal()`).
+
+**Troca de critério: registrador → posição (correção, não só estilo)**
+Nos outros 5 tipos (tudo exceto `STORE`+ROB), trocar `ReleaseRSByRegister()` (match por registrador de destino, sem `break`, podendo liberar mais de uma RS por chamada) por `ReleaseRSByPosition()` (match pela posição exata da instrução) é uma **correção de comportamento**, não neutra:
+- `BroadcastCDB()` já identifica a RS produtora pela posição, não pelo registrador.
+- Num cenário de WAW com porta de WR limitada (duas RS diferentes, mesmo registrador de destino, ambas em `WB` ao mesmo tempo no mesmo grupo), o match por registrador podia liberar a RS **errada** — uma instrução mais nova, antes da própria vez dela passar por `WriteBackNormal()`.
+**Ação:** adotar o match por posição nesses 5 casos (já é o que `GetRSGroupForType()` + `ReleaseRSByPosition()` fazem), e deixar um comentário no código explicando o motivo — é fácil essa distinção se perder de novo numa futura "limpeza".
+
+**Eliminar a ordenação de `events`, não só a implementação**
+Das 3 ordenações do arquivo, só 2 são funcionalmente necessárias:
+- `candidates` (em `StartExOrMemPhase`) — **necessária**: quem é processado primeiro "ganha" a FU disputada.
+- `wb_buffer` (em `PerformWriteResult`) — **necessária**: quem é processado primeiro "ganha" a porta de WR limitada (`fu.wr`).
+- `events` (em `DetectPhaseTransitions`) — **dispensável**: cada evento só mexe na própria posição em `instruction_table`, não há disputa de recurso entre eles nesse ponto, e o resultado final (`pending_wb_buffer → wb_buffer`) é reordenado de novo por `wb_buffer`'s sort antes de qualquer uso.
+**Ação:** remover o `std::sort`/`std::stable_sort` de `events` inteiramente — não só trocar a implementação. Processar os eventos na ordem em que `ForEachRSGroup` os encontrar.
+
+**Assinatura final de `Thread.h` (privados)**
+Depois de tudo isso, os métodos privados de `Thread` ficam reduzidos a:
+```
+InitializeComponents()
+StartExOrMemPhase()
+PerformWriteResult()
+WriteBackNormal()
+BroadcastCDB()
+DetectPhaseTransitions()
+```
 
 ## Processor.cpp/.h
 

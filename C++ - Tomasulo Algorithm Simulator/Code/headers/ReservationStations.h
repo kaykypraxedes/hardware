@@ -5,8 +5,8 @@
 #include "Instruction.h"
 #include <string>
 #include <vector>
-#include <cstdlib>    // para std::abort
-#include <iostream>   // para std::cerr
+#include <cstdlib>             // para std::abort
+#include <iostream>            // para std::cerr
 
 namespace processor {
 
@@ -19,7 +19,7 @@ class ReservationStation {
         );
 
         // Getters:
-        bool              GetBusy()             const;
+        bool              IsBusy()              const;
         int               GetCountdown()        const;
         int               GetFUPosition()       const;
         INSTRUCTION_PHASE GetInstructionPhase() const;
@@ -103,7 +103,7 @@ class ReservationStation {
             FUNCTIONAL_UNITS&,
             const INSTRUCTION_PHASE,
             const int
-        ) const;
+        );
         // - UpdateCountdown()
         void ReleaseFU(
             FUNCTIONAL_UNITS&,

@@ -1,5 +1,5 @@
 /* headers/Instruction.h */
-#ifndef INSTRUCTION_H
+#ifndef INSTRUCTION_H // Include guard
 #define INSTRUCTION_H
 #include "Components.h"
 #include <string>
@@ -26,7 +26,7 @@ enum class INSTRUCTION_PHASE {
     ISSUE,
     EX,
     MEM,
-    WB,
+    WR,
     COMMIT
 };
 

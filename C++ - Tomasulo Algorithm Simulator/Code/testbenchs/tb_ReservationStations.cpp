@@ -35,7 +35,7 @@ int main() {
     {
         ReservationStation r("load0");
         check("GetId() == 'load0'",            r.GetId() == "load0");
-        check("GetBusy() == false",            r.GetBusy() == false);
+        check("IsBusy() == false",             r.IsBusy() == false);
         check("GetCountdown() == -1",          r.GetCountdown() == -1);
         check("GetFUPosition() == -1",         r.GetFUPosition() == -1);
         check("GetQj() vazio",                 r.GetQj().empty());
@@ -50,16 +50,22 @@ int main() {
         CDB cdb = makeCDB();
         Instruction instr(0, "ADD R3, R1, R2");
         bool ok = rs.AddIssue(instr, cdb, 1);
-        check("AddIssue() retorna true",       ok);
-        check("GetBusy() == true",             rs.GetBusy());
-        check("GetInstructionPhase() == ISSUE", rs.GetInstructionPhase() == INSTRUCTION_PHASE::ISSUE);
-        check("GetQj() vazio (R1 livre)",      rs.GetQj().empty());
-        check("GetQk() vazio (R2 livre)",      rs.GetQk().empty());
+        check("AddIssue() retorna true",
+            ok);
+        check("IsBusy() == true",
+            rs.IsBusy());
+        check("GetInstructionPhase() == ISSUE",
+            rs.GetInstructionPhase() == INSTRUCTION_PHASE::ISSUE);
+        check("GetQj() vazio (R1 livre)",
+            rs.GetQj().empty());
+        check("GetQk() vazio (R2 livre)",
+            rs.GetQk().empty());
         check("GetInstructions()[0] == 'ADD R3, R1, R2'",
               rs.GetInstructions().size() == 1 && rs.GetInstructions()[0] == "ADD R3, R1, R2");
         check("GetTimes()[0] == 1 (ciclo de issue)",
               rs.GetTimes().size() == 1 && rs.GetTimes()[0] == 1);
-        check("CDB.R[3].GetCurrentRS() == 'int0'", cdb.R[3].GetCurrentRS() == "int0");
+        check("CDB.R[3].GetCurrentRS() == 'int0'",
+            cdb.R[3].GetCurrentRS() == "int0");
         Instruction instr2(1, "SUB R5, R1, R2");
         bool dup = rs.AddIssue(instr2, cdb, 2);
         check("AddIssue em RS ocupada retorna false", !dup);
@@ -139,11 +145,11 @@ int main() {
 
         bool terminou = rs.UpdateCountdown(fu, 2);
         check("UpdateCountdown retorna true (EX terminou)", terminou);
-        check("fase == WB após EX de 1 ciclo",              rs.GetInstructionPhase() == INSTRUCTION_PHASE::WB);
+        check("fase == WR após EX de 1 ciclo",              rs.GetInstructionPhase() == INSTRUCTION_PHASE::WR);
         check("GetFUPosition() == -1 (FU liberada)",        rs.GetFUPosition() == -1);
     }
 
-    secao("UpdateCountdown() — LOAD (EX->MEM->WB)");
+    secao("UpdateCountdown() — LOAD (EX->MEM->WR)");
     {
         ReservationStation rs("load0");
         CDB cdb = makeCDB();
@@ -163,10 +169,10 @@ int main() {
 
         bool mem_end = rs.UpdateCountdown(fu, 3);
         check("LOAD: UpdateCountdown sinaliza fim do MEM", mem_end);
-        check("LOAD: fase == WB após MEM",                 rs.GetInstructionPhase() == INSTRUCTION_PHASE::WB);
+        check("LOAD: fase == WR após MEM",                 rs.GetInstructionPhase() == INSTRUCTION_PHASE::WR);
     }
 
-    secao("UpdateCountdown() — STORE (EX->espera dado->MEM->WB)");
+    secao("UpdateCountdown() — STORE (EX->espera dado->MEM->WR)");
     {
         ReservationStation rs("store0");
         CDB cdb = makeCDB();
@@ -189,7 +195,7 @@ int main() {
 
         bool mem_end = rs.UpdateCountdown(fu, 4);
         check("STORE: fim do MEM sinalizado", mem_end);
-        check("STORE: fase == WB", rs.GetInstructionPhase() == INSTRUCTION_PHASE::WB);
+        check("STORE: fase == WR", rs.GetInstructionPhase() == INSTRUCTION_PHASE::WR);
     }
 
     secao("Release()");
@@ -203,13 +209,13 @@ int main() {
         rs.UpdateCountdown(fu, 2);
 
         rs.Release(3);
-        check("GetBusy() == false após Release",           !rs.GetBusy());
-        check("GetCountdown() == -1",                      rs.GetCountdown() == -1);
-        check("GetFUPosition() == -1",                     rs.GetFUPosition() == -1);
-        check("GetQj() vazio",                              rs.GetQj().empty());
-        check("GetQk() vazio",                              rs.GetQk().empty());
-        check("GetTimes() tem 2 entradas após Release",    rs.GetTimes().size() == 2);
-        check("GetTimes()[1] == 3 (ciclo de release)",     rs.GetTimes()[1] == 3);
+        check("IsBusy() == false após Release",         !rs.IsBusy());
+        check("GetCountdown() == -1",                   rs.GetCountdown() == -1);
+        check("GetFUPosition() == -1",                  rs.GetFUPosition() == -1);
+        check("GetQj() vazio",                          rs.GetQj().empty());
+        check("GetQk() vazio",                          rs.GetQk().empty());
+        check("GetTimes() tem 2 entradas após Release", rs.GetTimes().size() == 2);
+        check("GetTimes()[1] == 3 (ciclo de release)",  rs.GetTimes()[1] == 3);
     }
 
     secao("FU esgotada -> AddIssue ok mas UpdateDependencies retorna false");
@@ -249,19 +255,19 @@ int main() {
         rs.UpdateDependencies(cdb, fu, 3);
         rs.UpdateCountdown(fu, 3);
 
-        check("LOAD antes de Release: fase == WB",  rs.GetInstructionPhase() == INSTRUCTION_PHASE::WB);
-        check("LOAD antes de Release: busy == true", rs.GetBusy());
+        check("LOAD antes de Release: fase == WR",  rs.GetInstructionPhase() == INSTRUCTION_PHASE::WR);
+        check("LOAD antes de Release: busy == true", rs.IsBusy());
 
         rs.Release(4);
 
-        check("LOAD: busy == false após Release",        !rs.GetBusy());
-        check("LOAD: countdown == -1 após Release",       rs.GetCountdown() == -1);
-        check("LOAD: fuPosition == -1 após Release",       rs.GetFUPosition() == -1);
-        check("LOAD: Qj vazio após Release",              rs.GetQj().empty());
-        check("LOAD: Qk vazio após Release",              rs.GetQk().empty());
-        check("LOAD: GetTimes().size() == 2",            rs.GetTimes().size() == 2);
-        check("LOAD: GetTimes()[0] == 1 (issue)",        rs.GetTimes()[0] == 1);
-        check("LOAD: GetTimes()[1] == 4 (release)",      rs.GetTimes()[1] == 4);
+        check("LOAD: busy == false após Release",    !rs.IsBusy());
+        check("LOAD: countdown == -1 após Release",  rs.GetCountdown() == -1);
+        check("LOAD: fuPosition == -1 após Release", rs.GetFUPosition() == -1);
+        check("LOAD: Qj vazio após Release",         rs.GetQj().empty());
+        check("LOAD: Qk vazio após Release",         rs.GetQk().empty());
+        check("LOAD: GetTimes().size() == 2",        rs.GetTimes().size() == 2);
+        check("LOAD: GetTimes()[0] == 1 (issue)",    rs.GetTimes()[0] == 1);
+        check("LOAD: GetTimes()[1] == 4 (release)",  rs.GetTimes()[1] == 4);
         Instruction instr2(1, "L.D F6, 0(R3)");
         bool reuso = rs.AddIssue(instr2, cdb, 5);
         check("LOAD: RS pode ser reusada após Release",  reuso);
@@ -340,7 +346,7 @@ int main() {
         Instruction i1(0, "ADD R7, R1, R2");
         rs.AddIssue(i1, cdb, 1);
         rs.UpdateDependencies(cdb, fu, 2);
-        rs.UpdateCountdown(fu, 2);          // WB
+        rs.UpdateCountdown(fu, 2);           // WR
         cdb.R[7].DeallocateRS("int7", 1, 3); // simula fim do broadcast
         rs.Release(3);
 

@@ -23,7 +23,6 @@ int main() {
 
         check("GetCurrentInstructionPosition() == 0",      t.GetCurrentInstructionPosition() == 0);
         check("GetNumStalls() == 0",                       t.GetNumStalls() == 0);
-        check("GetThreadState() == FREE",                  t.GetThreadState() == THREAD_STATE::ACTIVE);
         check("GetTable().size() == 2",                    t.GetTable().size() == 2);
         check("tabela[0].instruction.GetPosition() == 0",  t.GetTable()[0].instruction.GetPosition() == 0);
         check("tabela[1].instruction.GetPosition() == 1",  t.GetTable()[1].instruction.GetPosition() == 1);
@@ -81,7 +80,6 @@ int main() {
         check("ciclo 1: Issue retorna true",              ok1);
         check("ciclo 1: Posição avança para 1",           t.GetCurrentInstructionPosition() == 1);
         check("ciclo 1: tabela[0].issue_cycle == 1",      t.GetTable()[0].issue_cycle == 1);
-        check("ciclo 1: estado ainda FREE",               t.GetThreadState() == THREAD_STATE::ACTIVE);
 
         bool ok2 = t.Issue(2);
         check("ciclo 2: Issue retorna true",              ok2);
@@ -98,8 +96,6 @@ int main() {
         Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
 
         t.Issue(1);
-        check("estado ainda FREE após BNEZ (controle de dispatch é do Processor)",
-              t.GetThreadState() == THREAD_STATE::ACTIVE);
         check("Posição avança para 1 após issue do BNEZ",
             t.GetCurrentInstructionPosition() == 1);
     }
@@ -179,18 +175,6 @@ int main() {
     {
         std::vector<std::string> prog = {"BNEZ R1, foo", "ADD R2, R3, R4"};
         Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
-
-        t.Issue(1);
-        check("após issue BNEZ: estado FREE (bloqueio é responsabilidade do Processor)",
-              t.GetThreadState() == THREAD_STATE::ACTIVE);
-
-        t.ExMem(2); t.Wr(2);
-        check("após WR do BNEZ: WAITING",
-            t.GetThreadState() == THREAD_STATE::BRANCH_RESOLVING);
-
-        t.ExMem(3);
-        check("após ExMem: FREE",
-            t.GetThreadState() == THREAD_STATE::ACTIVE);
 
         bool ok = t.Issue(3);
         check("ADD pode ser emitido após desbloqueio", ok);

@@ -43,7 +43,7 @@ void Processor::InitializeThreads(
     const std::vector<int>&         num_fus,
     const std::vector<int>&         switch_cycles
 ){
-    int rob_capacity = (type == PROCESSOR_TYPE::TOMASULO_WITH_ROB) ? ROB_CAPACITY_DEFAULT : 0;
+    int rob_capacity = (type == PROCESSOR_TYPE::TOMASULO_WITH_ROB) ? rob_capacity_default : 0;
     for (int i = 0; i < num_threads; i++)
         threads.push_back(Thread(Assembly, {}, num_rs, num_fus, switch_cycles, dispatch_width, rob_capacity, has_predictor));
 }
@@ -86,9 +86,11 @@ void Processor::ExecuteIssue() {
         bool ok = threads[thread_pointer].Issue(current_cycle);
         if (ok) {
             despachadas++;
-            if(threads[thread_pointer].GetTable()[threads[thread_pointer].GetCurrentInstructionPosition() - 1].instruction.GetInstructionType() ==
-                INSTRUCTION_TYPE::BRANCH && mt_model != MULTITHREADING_MODEL::SMT
-                && !has_predictor) // Instrução é um branch
+            Instruction i{threads[thread_pointer].GetTable()[threads[thread_pointer].GetCurrentInstructionPosition() - 1].instruction};
+            // Verifica se a instrução é um Branch.
+            if(i.GetInstructionType() == INSTRUCTION_TYPE::BRANCH &&
+                mt_model != MULTITHREADING_MODEL::SMT && // Como rotaciona, não precisa parar o ciclo
+                !has_predictor)
                 break;
             // SMT: rotaciona após issue bem-sucedido
             // (garante alternância entre threads a cada dispatch)
