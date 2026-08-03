@@ -35,6 +35,8 @@ int main() {
     // 1. CONSTRUÇÃO E ESTADO INICIAL
     // ════════════════════════════════════════════════════════════════════
 
+    print_title("1. CONSTRUÇÃO E ESTADO INICIAL");
+
     secao("1.1 ReservationStation() — construtor");
     {
         ReservationStation r("load0");
@@ -51,6 +53,9 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 2. ISSUE — EMISSÃO NA RS (AddIssue)
     // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("2. ISSUE — EMISSÃO NA RS (AddIssue)");
 
     secao("2.1 AddIssue() — instrução sem dependências (ADD R3, R1, R2)");
     {
@@ -115,6 +120,9 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 3. DEPENDÊNCIAS — ENTRADA EM EX (UpdateDependencies)
     // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("3. DEPENDÊNCIAS — ENTRADA EM EX (UpdateDependencies)");
 
     secao("3.1 UpdateDependencies() — instrução pronta (sem Qj/Qk) entra em EX");
     {
@@ -253,6 +261,9 @@ int main() {
     // 4. CONTAGEM DE CICLOS — PROGRESSÃO DE FASES (UpdateCountdown)
     // ════════════════════════════════════════════════════════════════════
 
+    std::cout << "\n";
+    print_title("4. CONTAGEM DE CICLOS — PROGRESSÃO DE FASES (UpdateCountdown)");
+
     secao("4.1 UpdateCountdown() — INT_BASIC (exLat=1): EX -> WR");
     {
         ReservationStation rs("int3");
@@ -320,6 +331,9 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 5. LIBERAÇÃO E REUSO (Release)
     // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("5. LIBERAÇÃO E REUSO (Release)");
 
     secao("5.1 Release() — RS de inteiros liberada");
     {
@@ -393,6 +407,9 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 6. HAZARDS ESTRUTURAIS — FU
     // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("6. HAZARDS ESTRUTURAIS — FU");
 
     secao("6.1 FU esgotada -> AddIssue ok mas UpdateDependencies retorna false");
     {

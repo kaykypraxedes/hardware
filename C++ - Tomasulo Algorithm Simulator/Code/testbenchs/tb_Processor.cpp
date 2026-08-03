@@ -22,6 +22,8 @@ int main() {
     // 1. CONSTRUÇÃO E CONFIGURAÇÃO
     // ════════════════════════════════════════════════════════════════════
 
+    print_title("1. CONSTRUÇÃO E CONFIGURAÇÃO");
+
     secao("1.1 Construtor — 1 thread, TOMASULO_CLASSIC");
     {
         std::vector<std::string> prog = {"ADD R1, R2, R3"};
@@ -65,6 +67,9 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 2. PIPELINE DE UMA INSTRUÇÃO (TRAÇOS COMPLETOS)
     // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("2. PIPELINE DE UMA INSTRUÇÃO (TRAÇOS COMPLETOS)");
 
     secao("2.1 ADD — issue->EX->WR em 3 ciclos (ExecuteCycle() retorna true)");
     {
@@ -148,6 +153,9 @@ int main() {
     // 3. DESPACHO E MULTITHREADING
     // ════════════════════════════════════════════════════════════════════
 
+    std::cout << "\n";
+    print_title("3. DESPACHO E MULTITHREADING");
+
     secao("3.1 Superscalar (largura=2): 2 instruções independentes no ciclo 1");
     {
         std::vector<std::string> prog = {"ADD R1, R2, R3", "ADD R4, R5, R6"};
@@ -223,6 +231,9 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 4. DEPENDÊNCIAS E HAZARDS
     // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("4. DEPENDÊNCIAS E HAZARDS");
 
     secao("4.1 RAW via Processor: ADD -> SUB dependente");
     {
@@ -306,6 +317,9 @@ int main() {
     // 5. BRANCH
     // ════════════════════════════════════════════════════════════════════
 
+    std::cout << "\n";
+    print_title("5. BRANCH");
+
     secao("5.1 BRANCH sem ROB e sem previsor: dispatch para após o BNEZ");
     {
         std::vector<std::string> prog = {"BNEZ R1, fim", "ADD R2, R3, R4"};
@@ -326,6 +340,9 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 6. TOMASULO ESPECULATIVO (COM ROB)
     // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("6. TOMASULO ESPECULATIVO (COM ROB)");
 
     secao("6.1 Tomasulo Especulativo (com ROB): Thread::Commit() e Branches/Stores ordenados");
     {

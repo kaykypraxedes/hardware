@@ -1,24 +1,24 @@
-==============
-CONFIGURAÇÕES:
-==============
+══════════════════════════════════════════════════════════
+═══ CONFIGURAÇÕES ════════════════════════════════════════
+══════════════════════════════════════════════════════════
 
 - Tipo: TOMASULO_CLASSIC
 - Numero de Threads: 1
 - Modelo Multi-Threading: NONE
 - Previsor: false
 - Despacho: 1
-- Número de RSs: 5 5 5 5 5 3 
-- Número de UFs: 2 2 2 2 1 1 
+- Número de RSs: load=5 store=5 int_basic=5 int_mult_div=5 float_basic=5 float_mult_div=3 
+- Número de UFs: load=2 store=2 int_basic=2 int_mult_div=2 float_basic=1 float_mult_div=1 
 - Ciclo limite: 10000
-- Latências de EX: 0 1 1 1 1 4 10 5 14 15 
-- Latências de MEM: 1 1 
+- Latências de EX: op0=0 op1=1 op2=1 op3=1 op4=1 op5=4 op6=10 op7=5 op8=14 op9=15 
+- Latências de MEM: load=1 store=1 
 
 Simulando...
 Concluido!
 
-=====================
-TABELA DE RESULTADOS
-=====================
+══════════════════════════════════════════════════════════
+═══ TABELA DE RESULTADOS ═════════════════════════════════
+══════════════════════════════════════════════════════════
 
 Posição   Instrução                   Issue       EX              MEM             WR          
 --------------------------------------------------------------------------------------------------
@@ -39,59 +39,123 @@ Posição   Instrução                   Issue       EX              MEM       
 14        DADDIU R1, R1, #24          25          26-26           --              27          
 15        BNEZ R1, loop               26          28-28           --              --          
 
-=====================
-RESERVATION STATIONS
-=====================
+══════════════════════════════════════════════════════════
+═══ RESERVATION STATIONS (RS) ════════════════════════════
+══════════════════════════════════════════════════════════
 
-load:
-load0               LD F0, 0(R1) (1-4) | L.D F0, 8(R1) (4-7) | LD F0, 0(R1) (9-13) 
-load1               L.D F0, 8(R1) (12-15) 
+─── load ─────────────────────────────────────────────────
+- load0:
+    LD F0, 0(R1)       - [1-4]
+    L.D F0, 8(R1)      - [4-7]
+    LD F0, 0(R1)       - [9-13]
 
-store:
-store0              S.D F4, 16(R1) (6-25) 
-store1              S.D F4, 16(R1) (24-55) 
+- load1:
+    L.D F0, 8(R1)      - [12-15]
 
-int_basic:
-int_basic0          DADDIU R1, R1, #24 (7-9) | DADDIU R1, R1, #24 (25-27) 
-int_basic1          BNEZ R1, loop (8-11) | BNEZ R1, loop (26-29) 
 
-int_mult_div:
+─── store ────────────────────────────────────────────────
+- store0:
+    S.D F4, 16(R1)     - [6-25]
 
-float_basic:
-float_basic0        ADD.D F0, F0, F6 (2-10) | ADD.D F0, F0, F6 (10-19) 
+- store1:
+    S.D F4, 16(R1)     - [24-55]
 
-float_mult_div:
-float_mult_div0     DIV.D F2, F2, F0 (3-38) 
-float_mult_div1     DIV.D F4, F0, F8 (5-23) | DIV.D F4, F0, F8 (23-53) 
-float_mult_div2     DIV.D F2, F2, F0 (11-68) 
 
-=====================
-CDB
-=====================
+─── int_basic ────────────────────────────────────────────
+- int_basic0:
+    DADDIU R1, R1, #24 - [7-9]
+    DADDIU R1, R1, #24 - [25-27]
 
-F:
-F0      load0 (1-4) | float_basic0 (2-10) | load0 (4-7) | load0 (9-13) | float_basic0 (10-19) | load1 (12-15) 
-F2      float_mult_div0 (3-38) | float_mult_div2 (11-68) 
-F4      float_mult_div1 (5-23) | float_mult_div1 (23-53) 
+- int_basic1:
+    BNEZ R1, loop      - [8-11]
+    BNEZ R1, loop      - [26-29]
 
-R:
-R1      int_basic0 (7-9) | int_basic0 (25-27) 
 
-=====================
-UNIDADES FUNCIONAIS
-=====================
+─── float_basic ──────────────────────────────────────────
+- float_basic0:
+    ADD.D F0, F0, F6   - [2-10]
+    ADD.D F0, F0, F6   - [10-19]
 
-acessar_memoria:
-acessar_memoria0        load0 (3-3) | load0 (6-6) | load0 (12-12) | load1 (14-14) | store0 (24-24) | store1 (54-54) 
 
-ula_int_basico:
-ula_int_basico0         load0 (2-2) | load0 (5-5) | store0 (7-7) | int_basic0 (8-8) | int_basic1 (10-10) | load0 (11-11) | load1 (13-13) | store1 (25-25) | int_basic0 (26-26) | int_basic1 (28-28) 
+─── float_mult_div ───────────────────────────────────────
+- float_mult_div0:
+    DIV.D F2, F2, F0   - [3-38]
 
-ula_int_mult_div:
+- float_mult_div1:
+    DIV.D F4, F0, F8   - [5-23]
+    DIV.D F4, F0, F8   - [23-53]
 
-ula_float_basico:
-ula_float_basico0       float_basic0 (5-9) | float_basic0 (14-18) 
+- float_mult_div2:
+    DIV.D F2, F2, F0   - [11-68]
 
-ula_float_mult_div:
-ula_float_mult_div0     float_mult_div1 (8-22) | float_mult_div0 (23-37) | float_mult_div1 (38-52) | float_mult_div2 (53-67) 
+
+══════════════════════════════════════════════════════════
+═══ COMMOM DATA BUS (CDB) ════════════════════════════════
+══════════════════════════════════════════════════════════
+
+─── F ────────────────────────────────────────────────────
+- F0:
+    RS_load0           - [1-4]
+    RS_float_basic0    - [2-10]
+    RS_load0           - [4-7]
+    RS_load0           - [9-13]
+    RS_float_basic0    - [10-19]
+    RS_load1           - [12-15]
+
+- F2:
+    RS_float_mult_div0 - [3-38]
+    RS_float_mult_div2 - [11-68]
+
+- F4:
+    RS_float_mult_div1 - [5-23]
+    RS_float_mult_div1 - [23-53]
+
+
+─── R ────────────────────────────────────────────────────
+- R1:
+    RS_int_basic0      - [7-9]
+    RS_int_basic0      - [25-27]
+
+
+══════════════════════════════════════════════════════════
+═══ FUNCIONAL UNITYS (FU) ════════════════════════════════
+══════════════════════════════════════════════════════════
+
+─── memory_access ────────────────────────────────────────
+- memory_access0:
+    RS_load0           - [3-3]
+    RS_load0           - [6-6]
+    RS_load0           - [12-12]
+    RS_load1           - [14-14]
+    RS_store0          - [24-24]
+    RS_store1          - [54-54]
+
+
+─── int_basic_alu ────────────────────────────────────────
+- int_basic_alu0:
+    RS_load0           - [2-2]
+    RS_load0           - [5-5]
+    RS_store0          - [7-7]
+    RS_int_basic0      - [8-8]
+    RS_int_basic1      - [10-10]
+    RS_load0           - [11-11]
+    RS_load1           - [13-13]
+    RS_store1          - [25-25]
+    RS_int_basic0      - [26-26]
+    RS_int_basic1      - [28-28]
+
+
+─── float_basic_alu ──────────────────────────────────────
+- float_basic_alu0:
+    RS_float_basic0    - [5-9]
+    RS_float_basic0    - [14-18]
+
+
+─── float_mult_div_alu ───────────────────────────────────
+- float_mult_div_alu0:
+    RS_float_mult_div1 - [8-22]
+    RS_float_mult_div0 - [23-37]
+    RS_float_mult_div1 - [38-52]
+    RS_float_mult_div2 - [53-67]
+
 

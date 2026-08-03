@@ -14,6 +14,8 @@ int main() {
     // 1. CONSTRUÇÃO E ESTADO BÁSICO
     // ════════════════════════════════════════════════════════════════════
 
+    print_title("1. CONSTRUÇÃO E ESTADO BÁSICO");
+
     secao("1.1 Instruction() — construtor padrão");
     {
         Instruction i;
@@ -49,6 +51,9 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 2. IDENTIFICAÇÃO DE TIPO — MEMÓRIA E INTEIROS
     // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("2. IDENTIFICAÇÃO DE TIPO — MEMÓRIA E INTEIROS");
 
     secao("2.1 LOAD (L.D)");
     {
@@ -108,6 +113,9 @@ int main() {
     // 3. IDENTIFICAÇÃO DE TIPO — BRANCH
     // ════════════════════════════════════════════════════════════════════
 
+    std::cout << "\n";
+    print_title("3. IDENTIFICAÇÃO DE TIPO — BRANCH");
+
     secao("3.1 BNEZ e BEQ — operandos padrão");
     {
         Instruction i(4, "BNEZ R3, foo");
@@ -140,6 +148,9 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 4. IDENTIFICAÇÃO DE TIPO — PONTO FLUTUANTE
     // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("4. IDENTIFICAÇÃO DE TIPO — PONTO FLUTUANTE");
 
     secao("4.1 FLOAT_BASIC (ADD.D)");
     {
@@ -178,6 +189,9 @@ int main() {
     // 5. LATÊNCIAS
     // ════════════════════════════════════════════════════════════════════
 
+    std::cout << "\n";
+    print_title("5. LATÊNCIAS");
+
     secao("5.1 base_ex_latencies / base_mem_latencies — tabelas estáticas");
     {
         check("latEX[NONEXISTENT]=0",    Instruction::base_ex_latencies[0]  == 0);
@@ -205,6 +219,9 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 6. NORMALIZAÇÃO
     // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("6. NORMALIZAÇÃO");
 
     secao("6.1 NormalizeInstruction — casos variados");
     {

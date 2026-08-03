@@ -167,7 +167,7 @@ void Thread::InitializeComponents(
     int i{};
     std::vector<std::string> rs_names{"load", "store", "int_basic", "int_mult_div", "float_basic", "float_mult_div"};
     for (std::vector<ReservationStation>* group : GetAllRSGroups()) {
-        for(int j{}; j < aux[i]; j++) group->push_back(ReservationStation(rs_names[i] + std::to_string(j)));
+        for(int j{}; j < aux[i]; j++) group->push_back(ReservationStation("RS_" + rs_names[i] + std::to_string(j)));
         i++;
     }
 

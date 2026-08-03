@@ -20,6 +20,8 @@ int main() {
     // 1. CONSTRUÇÃO E CONFIGURAÇÃO
     // ════════════════════════════════════════════════════════════════════
 
+    print_title("1. CONSTRUÇÃO E CONFIGURAÇÃO");
+
     secao("1.1 Thread() — construtor sem ROB");
     {
         std::vector<std::string> prog = {"ADD R1, R2, R3", "SUB R4, R1, R5"};
@@ -119,6 +121,9 @@ int main() {
     // 2. Issue() ISOLADO
     // ════════════════════════════════════════════════════════════════════
 
+    std::cout << "\n";
+    print_title("2. Issue() ISOLADO");
+
     secao("2.1 Issue() — emissão simples sem dependência");
     {
         std::vector<std::string> prog = {"ADD R3, R1, R2", "SUB R5, R3, R4"};
@@ -193,6 +198,9 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 3. PIPELINE DE UMA INSTRUÇÃO POR VEZ (TRAÇOS COMPLETOS)
     // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("3. PIPELINE DE UMA INSTRUÇÃO POR VEZ (TRAÇOS COMPLETOS)");
 
     secao("3.1 ADD R3,R1,R2 — issue->EX->WR em 3 ciclos");
     {
@@ -314,6 +322,9 @@ int main() {
     // 4. DEPENDÊNCIAS E HAZARDS
     // ════════════════════════════════════════════════════════════════════
 
+    std::cout << "\n";
+    print_title("4. DEPENDÊNCIAS E HAZARDS");
+
     secao("4.1 RAW: SUB espera ADD terminar antes de executar");
     {
         std::vector<std::string> prog = {"ADD R3, R1, R2", "SUB R5, R3, R4"};
@@ -403,6 +414,9 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 5. BRANCH
     // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("5. BRANCH");
 
     // Um ciclo de processador equivale a: ExMem -> Wr -> Commit -> Issue
     // (mesma ordem de Processor::ExecuteCycle()).
@@ -506,6 +520,9 @@ int main() {
     // 6. Commit() (tudo com ROB)
     // ════════════════════════════════════════════════════════════════════
 
+    std::cout << "\n";
+    print_title("6. Commit() (tudo com ROB)");
+
     secao("6.1 Commit() em ordem, respeitando commit_pointer");
     {
         std::vector<std::string> prog = {"ADD R1,R2,R3", "SUB R4,R5,R6"}; // independentes
@@ -553,6 +570,9 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 7. INTEGRAÇÃO
     // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("7. INTEGRAÇÃO");
 
     secao("7.1 ExMem() retorna true após todas as instruções finalizadas (sem ROB)");
     {

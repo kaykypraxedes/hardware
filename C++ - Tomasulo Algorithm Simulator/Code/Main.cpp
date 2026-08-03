@@ -21,6 +21,15 @@ static const int W_MEM      = 16;
 static const int W_WR       = 12;
 static const int W_COMMIT   = 12;
 
+// Ordem dos componentes usada tanto nos vetores de config (num_rs/num_fus)
+// quanto nos grupos de RS/FU impressos no final.
+static const std::vector<std::string> COMPONENT_LABELS = {
+    "load", "store", "int_basic", "int_mult_div", "float_basic", "float_mult_div"
+};
+
+// Ordem assumida para latencias_mem (load, store). Ajustar se necessário.
+static const std::vector<std::string> MEM_LABELS = { "load", "store" };
+
 std::string CycleStr(
     int c
 ){
@@ -139,12 +148,26 @@ CONFIG ReadConfig() {
     return cfg;
 }
 
+// Imprime um vetor de inteiros como "rotulo=valor rotulo=valor ...".
+// Se faltar rótulo para alguma posição, imprime só o valor.
+void PrintLabeledVector(
+    const std::vector<int>&         values,
+    const std::vector<std::string>& labels
+){
+    for (size_t i{}; i < values.size(); i++) {
+        if (i < labels.size())
+            std::cout << labels[i] << '=' << values[i] << ' ';
+        else
+            std::cout << values[i] << ' ';
+    }
+}
+
 void PrintConfig(
     CONFIG cfg
 ){
-    std::cout << "==============\n" <<
-                 "CONFIGURAÇÕES:\n" <<
-                 "==============\n\n" <<
+    std::cout << "══════════════════════════════════════════════════════════\n" <<
+                 "═══ CONFIGURAÇÕES ════════════════════════════════════════\n" <<
+                 "══════════════════════════════════════════════════════════\n\n" <<
         "- Tipo: " << (cfg.type == PROCESSOR_TYPE::IN_ORDER ? "IN_ORDER" :
             (cfg.type == PROCESSOR_TYPE::TOMASULO_CLASSIC ? "TOMASULO_CLASSIC" : "TOMASULO_ESPECULATIVE")) << '\n' <<
         "- Numero de Threads: " << cfg.num_threads << '\n' <<
@@ -153,34 +176,37 @@ void PrintConfig(
             (cfg.model == MULTITHREADING_MODEL::COARSE_GRAINED ? "COARSE_GRAINED" :
             (cfg.model == MULTITHREADING_MODEL::SMT ? "SMT" : "NONE"))) << '\n' <<
         "- Previsor: " << (cfg.predictor == 0 ? "false" : "true") << '\n' <<
-        "- Despacho: " << cfg.dispatch << '\n' <<
-        "- Número de RSs: ";
-        for(int i : cfg.num_rs){
-            std::cout << i << ' ';
-        }
-        std::cout << "\n- Número de UFs: ";
-        for(int i : cfg.num_fus){
-            std::cout << i << ' ';
-        }
-        std::cout << "\n- Ciclo limite: " << cfg.cycle_limit;
-        std::cout << "\n- Latências de EX: ";
-        for(int i : cfg.ex_latencies){
-            std::cout << i << ' ';
-        }
-        std::cout << "\n- Latências de MEM: ";
-        for(int i : cfg.mem_latencies){
-            std::cout << i << ' ';
-        }
-        std::cout << '\n';
+        "- Despacho: " << cfg.dispatch << '\n';
+
+    std::cout << "- Número de RSs: ";
+    PrintLabeledVector(cfg.num_rs, COMPONENT_LABELS);
+
+    std::cout << "\n- Número de UFs: ";
+    PrintLabeledVector(cfg.num_fus, COMPONENT_LABELS);
+
+    std::cout << "\n- Ciclo limite: " << cfg.cycle_limit;
+
+    // TODO: os rótulos abaixo (op0..op9) são placeholders — a ordem real dos
+    // 10 valores depende do enum/ordem de opcodes definido em Instruction.h.
+    // Trocar por nomes reais assim que essa ordem for confirmada.
+    std::cout << "\n- Latências de EX: ";
+    for (size_t i{}; i < cfg.ex_latencies.size(); i++) {
+        std::cout << "op" << i << '=' << cfg.ex_latencies[i] << ' ';
+    }
+
+    std::cout << "\n- Latências de MEM: ";
+    PrintLabeledVector(cfg.mem_latencies, MEM_LABELS);
+
+    std::cout << '\n';
 }
 
 void PrintTable(
     const std::vector<TABLE_ROW>& table,
     bool                            rob
 ) {
-    std::cout << "=====================\n";
-    std::cout << "TABELA DE RESULTADOS\n";
-    std::cout << "=====================\n\n";
+    std::cout << "══════════════════════════════════════════════════════════\n";
+    std::cout << "═══ TABELA DE RESULTADOS ═════════════════════════════════\n";
+    std::cout << "══════════════════════════════════════════════════════════\n\n";
 
     std::cout << std::left
               << std::setw(W_POSITION) << "Posição"
@@ -228,101 +254,86 @@ void PrintTable(
     std::cout << '\n';
 }
 
-template<typename T>
-void PrintStructure(
-    const std::string&    title,
-    const std::vector<T>& structure
+// ──────────────────────────────────────────────────────────
+// Impressão unificada de "grupos de componentes" (RS, FU e CDB).
+//
+// Um grupo (ex.: "load") é composto por N unidades (load0, load1, ...).
+// Cada unidade tem uma linha do tempo de pares (rótulo, início-fim).
+//
+// get_times/get_labels são extractors (lambdas) que sabem como pegar,
+// de cada unidade, o vetor de tempos e o vetor de rótulos — isso permite
+// reaproveitar a mesma função para RS (métodos GetTimes/GetInstructions),
+// FU (membros allocation_times/allocated_rs) e Registradores da CDB
+// (métodos GetAllocationTimes/GetAllocatedRS), sem duplicar a lógica de
+// impressão em três funções quase idênticas.
+// ──────────────────────────────────────────────────────────
+
+template<typename LabelT>
+struct TimelineEntry {
+    LabelT label;
+    int    start;
+    int    end;
+};
+
+template<typename LabelT>
+std::vector<TimelineEntry<LabelT>> BuildTimeline(
+    const std::vector<int>&    times,
+    const std::vector<LabelT>& labels
 ){
-    std::cout << title << ":\n";
+    std::vector<TimelineEntry<LabelT>> entries;
 
-    for (int j{}; j < (int)structure.size(); j++) {
-
-        auto tempos = structure[j].GetTimes();
-        auto insts  = structure[j].GetInstructions();
-
-        if (tempos.empty())
-            continue;
-
-        std::cout << std::left
-                  << std::setw(20)
-                  << (title + std::to_string(j));
-
-        for (int i{1}; i < (int)tempos.size(); i += 2) {
-
-            std::cout
-                << insts[(i - 1) / 2]
-                << " ("
-                << tempos[i - 1]
-                << '-'
-                << tempos[i]
-                << ") ";
-
-            if (i + 1 < (int)tempos.size())
-                std::cout << "| ";
-        }
-
-        std::cout << '\n';
+    for (int i{1}; i < (int)times.size(); i += 2) {
+        entries.push_back({ labels[(i - 1) / 2], times[i - 1], times[i] });
     }
 
-    std::cout << '\n';
+    return entries;
 }
 
-template<typename T>
-void PrintFU(
-    const std::string&    title,
-    const std::vector<T>& structure
-) {
-    std::cout << title << ":\n";
+template<typename LabelT>
+void PrintTimeline(
+    const std::vector<TimelineEntry<LabelT>>& entries,
+    int                                        indent
+){
+    std::string pad(indent, ' ');
+    static const int TIME_COL = 26; // coluna onde [ini-fim] começa
 
-    for (int j{}; j < (int)structure.size(); j++) {
-
-        auto tempos = structure[j].allocation_times;
-        auto rs     = structure[j].allocated_rs;
-
-        if (tempos.empty())
-            continue;
-
-        std::cout << std::left
-                  << std::setw(24)
-                  << (title + std::to_string(j));
-
-        for (int i{1}; i < (int)tempos.size(); i += 2) {
-
-            std::cout
-                << rs[(i - 1) / 2]
-                << " ("
-                << tempos[i - 1]
-                << '-'
-                << tempos[i]
-                << ") ";
-
-            if (i + 1 < (int)tempos.size())
-                std::cout << "| ";
-        }
-
-        std::cout << '\n';
+    for (const auto& e : entries) {
+        std::cout << pad
+                  << std::left << std::setw(TIME_COL - indent - 4) << e.label
+                  << " - [" << e.start << '-' << e.end << "]\n";
     }
-
-    std::cout << '\n';
 }
 
-void PrintRegisters(
-    const std::string&          label,
-    const std::vector<Register>& regs
-) {
-    for (int j{}; j < num_registers; j++) {
-        auto tempos = regs[j].GetAllocationTimes();
-        auto rsaloc = regs[j].GetAllocatedRS();
-        if (tempos.empty()) continue;
+template<typename T, typename TimesFn, typename LabelsFn>
+void PrintComponentGroup(
+    const std::string&    group_title,
+    const std::vector<T>& components,
+    TimesFn               get_times,
+    LabelsFn              get_labels
+){
+    bool has_content = false;
+    for (const auto& c : components) {
+        if (!get_times(c).empty()) { has_content = true; break; }
+    }
 
-        std::cout << std::setw(8) << (label + std::to_string(j));
-        for (int i{1}; i < (int)tempos.size(); i += 2) {
-            std::cout << rsaloc[(i - 1) / 2]
-                      << " (" << tempos[i - 1] << '-' << tempos[i] << ") ";
-            if (i + 1 < (int)tempos.size()) std::cout << "| ";
-        }
+    // Componente sem nenhuma utilização (ex.: int_mult_div vazio) não é impresso.
+    if (!has_content) return;
+    std::cout << "─── " << group_title << ' ';
+    size_t rest{53 - group_title.length()};
+    for (size_t i{}; i < rest; i++) std::cout << "─";
+    std::cout << '\n';
+
+    for (int j{}; j < (int)components.size(); j++) {
+        auto times  = get_times(components[j]);
+        auto labels = get_labels(components[j]);
+
+        if (times.empty()) continue;
+
+        std::cout << "- " << group_title << j << ":\n";
+        PrintTimeline(BuildTimeline(times, labels), 4);
         std::cout << '\n';
     }
+
     std::cout << '\n';
 }
 
@@ -368,41 +379,75 @@ int main() {
         p.GetType() == processor::PROCESSOR_TYPE::TOMASULO_ESPECULATIVE
     );
 
-    std::cout << "=====================\n";
-    std::cout << "RESERVATION STATIONS\n";
-    std::cout << "=====================\n\n";
+    std::cout << "══════════════════════════════════════════════════════════\n";
+    std::cout << "═══ RESERVATION STATIONS (RS) ════════════════════════════\n";
+    std::cout << "══════════════════════════════════════════════════════════\n\n";
 
     auto rs = p.GetThread(0).GetRS();
 
-    processor::PrintStructure("load", rs.load);
-    processor::PrintStructure("store", rs.store);
-    processor::PrintStructure("int_basic", rs.int_basic);
-    processor::PrintStructure("int_mult_div", rs.int_mult_div);
-    processor::PrintStructure("float_basic", rs.float_basic);
-    processor::PrintStructure("float_mult_div", rs.float_mult_div);
+    processor::PrintComponentGroup("load", rs.load,
+        [](const auto& c) { return c.GetTimes(); },
+        [](const auto& c) { return c.GetInstructions(); });
 
-    std::cout << "=====================\n";
-    std::cout << "CDB\n";
-    std::cout << "=====================\n\n";
+    processor::PrintComponentGroup("store", rs.store,
+        [](const auto& c) { return c.GetTimes(); },
+        [](const auto& c) { return c.GetInstructions(); });
+
+    processor::PrintComponentGroup("int_basic", rs.int_basic,
+        [](const auto& c) { return c.GetTimes(); },
+        [](const auto& c) { return c.GetInstructions(); });
+
+    processor::PrintComponentGroup("int_mult_div", rs.int_mult_div,
+        [](const auto& c) { return c.GetTimes(); },
+        [](const auto& c) { return c.GetInstructions(); });
+
+    processor::PrintComponentGroup("float_basic", rs.float_basic,
+        [](const auto& c) { return c.GetTimes(); },
+        [](const auto& c) { return c.GetInstructions(); });
+
+    processor::PrintComponentGroup("float_mult_div", rs.float_mult_div,
+        [](const auto& c) { return c.GetTimes(); },
+        [](const auto& c) { return c.GetInstructions(); });
+
+    std::cout << "══════════════════════════════════════════════════════════\n";
+    std::cout << "═══ COMMOM DATA BUS (CDB) ════════════════════════════════\n";
+    std::cout << "══════════════════════════════════════════════════════════\n\n";
 
     auto cdb = p.GetThread(0).GetCDB();
 
-    std::cout << "F:\n";
-    processor::PrintRegisters("F", cdb.F);
-    std::cout << "R:\n";
-    processor::PrintRegisters("R", cdb.R);
+    processor::PrintComponentGroup("F", cdb.F,
+        [](const auto& r) { return r.GetAllocationTimes(); },
+        [](const auto& r) { return r.GetAllocatedRS(); });
 
-    std::cout << "=====================\n";
-    std::cout << "UNIDADES FUNCIONAIS\n";
-    std::cout << "=====================\n\n";
+    processor::PrintComponentGroup("R", cdb.R,
+        [](const auto& r) { return r.GetAllocationTimes(); },
+        [](const auto& r) { return r.GetAllocatedRS(); });
+
+    std::cout << "══════════════════════════════════════════════════════════\n";
+    std::cout << "═══ FUNCIONAL UNITYS (FU) ════════════════════════════════\n";
+    std::cout << "══════════════════════════════════════════════════════════\n\n";
 
     auto fu = p.GetThread(0).GetFU();
 
-    processor::PrintFU("acessar_memoria", fu.memory_access);
-    processor::PrintFU("ula_int_basico", fu.int_basic_alu);
-    processor::PrintFU("ula_int_mult_div", fu.int_mult_div_alu);
-    processor::PrintFU("ula_float_basico", fu.float_basic_alu);
-    processor::PrintFU("ula_float_mult_div", fu.float_mult_div_alu);
+    processor::PrintComponentGroup("memory_access", fu.memory_access,
+        [](const auto& c) { return c.allocation_times; },
+        [](const auto& c) { return c.allocated_rs; });
+
+    processor::PrintComponentGroup("int_basic_alu", fu.int_basic_alu,
+        [](const auto& c) { return c.allocation_times; },
+        [](const auto& c) { return c.allocated_rs; });
+
+    processor::PrintComponentGroup("int_mult_div_alu", fu.int_mult_div_alu,
+        [](const auto& c) { return c.allocation_times; },
+        [](const auto& c) { return c.allocated_rs; });
+
+    processor::PrintComponentGroup("float_basic_alu", fu.float_basic_alu,
+        [](const auto& c) { return c.allocation_times; },
+        [](const auto& c) { return c.allocated_rs; });
+
+    processor::PrintComponentGroup("float_mult_div_alu", fu.float_mult_div_alu,
+        [](const auto& c) { return c.allocation_times; },
+        [](const auto& c) { return c.allocated_rs; });
 
     return 0;
 }

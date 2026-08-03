@@ -38,21 +38,24 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
 $(EXEC): $(OBJS)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
-# --- Testbenchs ---
+# --- Testbenchs (suas regras originais com dependências) ---
 $(OBJDIR)/tb_Components: $(OBJDIR)/Components.o $(TSTDIR)/tb_Components.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) $(TSTDIR)/tb_Components.cpp $(OBJDIR)/Components.o -o $@
+	$(CXX) $(CXXFLAGS) -MMD -MP -MF $(OBJDIR)/tb_Components.d $(TSTDIR)/tb_Components.cpp $(OBJDIR)/Components.o -o $@
 
 $(OBJDIR)/tb_Instruction: $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(TSTDIR)/tb_Instruction.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) $(TSTDIR)/tb_Instruction.cpp $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o -o $@
+	$(CXX) $(CXXFLAGS) -MMD -MP -MF $(OBJDIR)/tb_Instruction.d $(TSTDIR)/tb_Instruction.cpp $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o -o $@
 
 $(OBJDIR)/tb_ReservationStations: $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(OBJDIR)/ReservationStations.o $(TSTDIR)/tb_ReservationStations.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) $(TSTDIR)/tb_ReservationStations.cpp $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(OBJDIR)/ReservationStations.o -o $@
+	$(CXX) $(CXXFLAGS) -MMD -MP -MF $(OBJDIR)/tb_ReservationStations.d $(TSTDIR)/tb_ReservationStations.cpp $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(OBJDIR)/ReservationStations.o -o $@
 
 $(OBJDIR)/tb_Thread: $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(OBJDIR)/ReservationStations.o $(OBJDIR)/Thread.o $(TSTDIR)/tb_Thread.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) $(TSTDIR)/tb_Thread.cpp $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(OBJDIR)/ReservationStations.o $(OBJDIR)/Thread.o -o $@
+	$(CXX) $(CXXFLAGS) -MMD -MP -MF $(OBJDIR)/tb_Thread.d $(TSTDIR)/tb_Thread.cpp $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(OBJDIR)/ReservationStations.o $(OBJDIR)/Thread.o -o $@
 
-$(OBJDIR)/tb_Processor: $(OBJS) $(TSTDIR)/tb_Processor.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) $(TSTDIR)/tb_Processor.cpp $(filter-out $(MAIN_OBJ),$(OBJS)) -o $@
+$(OBJDIR)/tb_Processor: $(filter-out $(MAIN_OBJ),$(OBJS)) $(TSTDIR)/tb_Processor.cpp | $(OBJDIR)
+	$(CXX) $(CXXFLAGS) -MMD -MP -MF $(OBJDIR)/tb_Processor.d $(TSTDIR)/tb_Processor.cpp $(filter-out $(MAIN_OBJ),$(OBJS)) -o $@
+
+# Inclui dependências dos testbenchs
+-include $(patsubst $(OBJDIR)/%,$(OBJDIR)/%.d,$(TB_BINS))
 
 testbenchs: $(TB_BINS)
 
@@ -60,7 +63,7 @@ testbenchs: $(TB_BINS)
 test: testbenchs
 	@total_ok=0; total_all=0; total_tb=0; fail_tb=0; failed_list=""; \
 	echo ""; \
-	echo "═════════════════════ TESTBENCHS ════════════════════"; \
+	echo "═══ TESTBENCHS ══════════════════════════════════════"; \
 	nome=0; \
 	for tb in $(TB_BINS); do \
 		n=$$(basename $$tb); len=$${#n}; \
@@ -109,7 +112,7 @@ test: testbenchs
 simtest: $(EXEC)
 	@total=0; diff_count=0; missing=0; failed_list=""; \
 	echo ""; \
-	echo "═════════════════════ SIMULAÇÃO ═════════════════════"; \
+	echo "═══ SIMULAÇÃO ═══════════════════════════════════════"; \
 	mkdir -p $(EXPDIR); \
 	nome=0; \
 	for input in $(INPUTS); do \
@@ -169,7 +172,7 @@ simtest: $(EXEC)
 simtest-completo: $(EXEC) testbenchs
 	@outdir=$(OBJDIR)/simtest; \
 	echo ""; \
-	echo "══════════════════════ COMPLETO ═════════════════════"; \
+	echo "═══ COMPLETO ════════════════════════════════════════"; \
 	mkdir -p $$outdir $(EXPDIR); \
 	has_fail=0; fail_count=0; \
 	nome=0; \
@@ -218,9 +221,8 @@ simtest-completo: $(EXEC) testbenchs
 			echo "$$result" | tail -5 | sed 's/^/    /'; \
 		fi; \
 		{ \
-			echo "================================================"; \
-			echo "  $$name"; \
-			echo "================================================"; \
+			echo "$$name"; \
+			echo ""; \
 			echo "$$result"; \
 			echo ""; \
 		} > "$$outf"; \
@@ -237,9 +239,8 @@ simtest-completo: $(EXEC) testbenchs
 			$(EXEC) < $$input > $$expected 2>&1; \
 			printf "  %-*s \033[0;33m%*s\033[0m\n" "$$nome" "$$name" "$$sim_status" "[OK - referencia gerada]"; \
 			{ \
-				echo "================================================"; \
-				echo "  $$name"; \
-				echo "================================================"; \
+				echo "$$name"; \
+				echo ""; \
 				cat $$expected; \
 				echo ""; \
 			} > "$$outf"; \
@@ -248,9 +249,8 @@ simtest-completo: $(EXEC) testbenchs
 			if diff -q /tmp/$$name.full $$expected > /dev/null 2>&1; then \
 				printf "  %-*s \033[0;32m%*s\033[0m\n" "$$nome" "$$name" "$$sim_status" "OK"; \
 				{ \
-					echo "================================================"; \
-					echo "  $$name"; \
-					echo "================================================"; \
+					echo "$$name"; \
+					echo ""; \
 					cat $$expected; \
 					echo ""; \
 				} > "$$outf"; \
@@ -259,9 +259,8 @@ simtest-completo: $(EXEC) testbenchs
 				has_fail=1; fail_count=$$((fail_count + 1)); \
 				failed_list="$$failed_list\n    $$name"; \
 				{ \
-					echo "================================================"; \
 					echo "  $$name"; \
-					echo "================================================"; \
+					echo ""; \
 					echo "[DIFERENTE]"; \
 					diff /tmp/$$name.full $$expected; \
 					echo ""; \
@@ -289,7 +288,7 @@ simtest-update: $(EXEC)
 	@mkdir -p $(EXPDIR); \
 	total=0; \
 	echo ""; \
-	echo "═══════════════════════ UPDATE ══════════════════════"; \
+	echo "═══ UPDATE ══════════════════════════════════════════"; \
 	nome=0; \
 	for input in $(INPUTS); do \
 		n=$$(basename $$input .txt); len=$${#n}; \

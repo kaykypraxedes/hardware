@@ -4,6 +4,7 @@
 // ──────────────────────────────────────────────────────────────────────────
 #include "../headers/Components.h"
 #include "tb_helpers.h"
+#include <iostream>
 #include <vector>
 
 using namespace processor;
@@ -13,6 +14,8 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 1. CONSTRUÇÃO E PARSING
     // ════════════════════════════════════════════════════════════════════
+
+    print_title("1. CONSTRUÇÃO E PARSING");
 
     secao("1.1 Register() — construtor padrão");
     {
@@ -81,6 +84,9 @@ int main() {
     // 2. ESTADO DE BUSY
     // ════════════════════════════════════════════════════════════════════
 
+    std::cout << "\n";
+    print_title("2. ESTADO DE BUSY");
+
     secao("2.1 ToggleBusy() — alternância");
     {
         Register r("R1");
@@ -94,6 +100,9 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 3. ALOCAÇÃO E DESALOCAÇÃO
     // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("3. ALOCAÇÃO E DESALOCAÇÃO");
 
     secao("3.1 AllocateRS(rs, start) — primeira alocação");
     {
@@ -153,6 +162,9 @@ int main() {
     // 4. CONSULTAS DE DEPENDÊNCIA
     // ════════════════════════════════════════════════════════════════════
 
+    std::cout << "\n";
+    print_title("4. CONSULTAS DE DEPENDÊNCIA");
+
     secao("4.1 GetRSCycleStart(rs_id)");
     {
         Register r("R3");
@@ -181,6 +193,9 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 5. MÚLTIPLOS PRODUTORES (WAW)
     // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("5. MÚLTIPLOS PRODUTORES (WAW)");
 
     secao("5.1 WAW — múltiplos produtores pendentes");
     {
@@ -221,6 +236,9 @@ int main() {
     // ════════════════════════════════════════════════════════════════════
     // 6. INTEGRAÇÃO
     // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("6. INTEGRAÇÃO");
 
     secao("6.1 Ciclo completo: aloca -> desaloca -> aloca novamente");
     {
