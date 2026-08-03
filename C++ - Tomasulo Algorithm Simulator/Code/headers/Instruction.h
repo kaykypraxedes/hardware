@@ -4,6 +4,7 @@
 #include "Components.h"
 #include <string>
 #include <vector>
+#include <iomanip>    // para std::setw
 #include <cstdlib>    // para std::abort
 #include <iostream>   // para std::cerr
 

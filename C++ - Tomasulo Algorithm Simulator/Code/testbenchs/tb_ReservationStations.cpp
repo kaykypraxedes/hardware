@@ -73,8 +73,8 @@ int main() {
             rs.GetQj().empty());
         check("GetQk() vazio (R2 livre)",
             rs.GetQk().empty());
-        check("GetInstructions()[0] == 'ADD R3, R1, R2'",
-              rs.GetInstructions().size() == 1 && rs.GetInstructions()[0] == "ADD R3, R1, R2");
+        check("GetInstructions()[0] == 'ADD    R3, R1, R2'",
+              rs.GetInstructions().size() == 1 && rs.GetInstructions()[0] == "ADD    R3, R1, R2");
         check("GetTimes()[0] == 1 (ciclo de issue)",
               rs.GetTimes().size() == 1 && rs.GetTimes()[0] == 1);
         check("CDB.R[3].GetCurrentRS() == 'int0'",

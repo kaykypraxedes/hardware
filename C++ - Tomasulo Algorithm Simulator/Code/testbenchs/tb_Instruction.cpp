@@ -29,7 +29,7 @@ int main() {
     {
         Instruction i(7, "ADD R1, R2, R3");
         check("GetPosition() == 7",                         i.GetPosition() == 7);
-        check("GetInstructionString() == 'ADD R1, R2, R3'", i.GetInstructionString() == "ADD R1, R2, R3");
+        check("GetInstructionString() == 'ADD    R1, R2, R3'", i.GetInstructionString() == "ADD    R1, R2, R3");
     }
 
     secao("1.3 String vazia — position vira -1");
@@ -226,25 +226,25 @@ int main() {
     secao("6.1 NormalizeInstruction — casos variados");
     {
         Instruction i1(0, "add r1, r2, r3");
-        check("lowercase -> uppercase", i1.GetInstructionString() == "ADD R1, R2, R3");
+        check("lowercase -> uppercase", i1.GetInstructionString() ==     "ADD    R1, R2, R3");
 
         Instruction i2(1, "   l.d     f2 ,    0(r1)   ");
-        check("espacos extras + tabs", i2.GetInstructionString() == "L.D F2, 0(R1)");
+        check("espacos extras + tabs", i2.GetInstructionString() ==      "L.D    F2, 0(R1)");
 
         Instruction i3(2, "ADD R1 R2 R3"); // sem vírgulas
-        check("apenas espaços -> vírgulas", i3.GetInstructionString() == "ADD R1, R2, R3");
+        check("apenas espaços -> vírgulas", i3.GetInstructionString() == "ADD    R1, R2, R3");
 
         Instruction i4(3, "SW R1 4(R2)");
-        check("STORE sem vírgula", i4.GetInstructionString() == "SW R1, 4(R2)");
+        check("STORE sem vírgula", i4.GetInstructionString() ==          "SW     R1, 4(R2)");
     }
 
     secao("6.2 BRANCH — normalização de labels");
     {
         Instruction i1(0, "BNEZ r3, LOOP");
-        check("label vira minúsculo", i1.GetInstructionString() == "BNEZ R3, loop");
+        check("label vira minúsculo", i1.GetInstructionString() ==       "BNEZ   R3, loop");
 
         Instruction i2(1, "J END");
-        check("J label vira minúsculo", i2.GetInstructionString() == "J end");
+        check("J label vira minúsculo", i2.GetInstructionString() ==     "J      end");
 
         // Este é o caso que expõe o bug do SetAttributes:
         Instruction i3(2, "BEQZ R2, retry");

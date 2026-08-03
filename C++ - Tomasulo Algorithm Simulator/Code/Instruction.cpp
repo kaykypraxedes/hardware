@@ -1,5 +1,6 @@
 /* Instruction.cpp */
 #include "headers/Instruction.h"
+#include <cstddef>
 
 namespace processor {
 
@@ -159,10 +160,19 @@ void Instruction::NormalizeInstruction(
         for (char& c : token) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
     std::string normalized{tokens[0]};
+
+    // Descobre o número de caracteres do opcode da instrução.
+    size_t n{};
+    for (unsigned char c : normalized)
+        if ((c & 0xC0) != 0x80) n++;   // ignora bytes de continuação do UTF-8
+
+    // Deixa todos os registradores começando no mesmo ponto.
+    for (size_t i{}; i < 7 - n; i++) normalized += ' ';
+
     // Load e Store:
     if (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE) {
         // tokens: [OP, REG, OFFSET, BASE_REG] -> "OP REG, OFFSET(BASE_REG)"
-        normalized += " " + tokens[1] + ", " + tokens[2] + "(" + tokens[3] + ")";
+        normalized += tokens[1] + ", " + tokens[2] + "(" + tokens[3] + ")";
     } // Salto (pode possuir label, que deve permanecer minúsculo por convenção):
     else if (type == INSTRUCTION_TYPE::BRANCH) {
         // BEQZ R1, LABEL -> BEQZ R1, label
@@ -173,12 +183,12 @@ void Instruction::NormalizeInstruction(
             std::string token{tokens[i]};
             if (!IsRegister(token))
                 for (char& c : token) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            normalized += (i == 1 ? " " : ", ") + token;
+            normalized += (i == 1 ? "" : ", ") + token;
         }
     }  // Resto
     else {
         for (size_t i = 1; i < tokens.size(); ++i)
-            normalized += (i == 1 ? " " : ", ") + tokens[i];
+            normalized += (i == 1 ? "" : ", ") + tokens[i];
     }
     instruction_string = normalized;
 }

@@ -129,13 +129,13 @@ CONFIG ReadConfig() {
                 (aux == 2 ? MULTITHREADING_MODEL::COARSE_GRAINED :
                 (aux == 1 ? MULTITHREADING_MODEL::FINE_GRAINED   : MULTITHREADING_MODEL::NONE)));
         }
-        else if (key == "despacho")    { iss >> cfg.dispatch;       }
-        else if (key == "ciclo_limite"){ iss >> cfg.cycle_limit;    }
-        else if (key == "num_rs")      { cfg.num_rs       = ReadIntVector(iss, 6, 1);   }
-        else if (key == "num_ufs")     { cfg.num_fus      = ReadIntVector(iss, 6, 1);   }
-        else if (key == "latencias_ex"){ cfg.ex_latencies = ReadIntVector(iss, 10, 1);  }
+        else if (key == "despacho")     { iss >> cfg.dispatch;       }
+        else if (key == "ciclo_limite") { iss >> cfg.cycle_limit;    }
+        else if (key == "num_rs")       { cfg.num_rs       = ReadIntVector(iss, 6, 1);   }
+        else if (key == "num_ufs")      { cfg.num_fus      = ReadIntVector(iss, 6, 1);   }
+        else if (key == "latencias_ex") { cfg.ex_latencies = ReadIntVector(iss, 10, 1);  }
         else if (key == "latencias_mem"){ cfg.mem_latencies = ReadIntVector(iss, 2, 1); }
-        else if (key == "programa")    {
+        else if (key == "programa")     {
             while (std::getline(std::cin, line)) {
                 if (line == "END_PROG") break;
                 if (!line.empty() && line[0] != '#')
@@ -202,7 +202,7 @@ void PrintConfig(
 
 void PrintTable(
     const std::vector<TABLE_ROW>& table,
-    bool                            rob
+    bool                          rob
 ) {
     std::cout << "══════════════════════════════════════════════════════════\n";
     std::cout << "═══ TABELA DE RESULTADOS ═════════════════════════════════\n";
@@ -292,7 +292,7 @@ std::vector<TimelineEntry<LabelT>> BuildTimeline(
 template<typename LabelT>
 void PrintTimeline(
     const std::vector<TimelineEntry<LabelT>>& entries,
-    int                                        indent
+    int                                       indent
 ){
     std::string pad(indent, ' ');
     static const int TIME_COL = 26; // coluna onde [ini-fim] começa
