@@ -1,5 +1,6 @@
 /* Thread.cpp */
 #include "headers/Thread.h"
+#include "headers/Instruction.h"
 
 namespace processor {
 
@@ -46,7 +47,7 @@ static void ReleaseRS(
 ) {
     for (ReservationStation& r : group) {
         if (r.IsBusy() &&
-            r.GetInstructionPhase() == INSTRUCTION_PHASE::WR &&
+            r.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR &&
             r.GetCurrentInstruction().GetPosition() == position) {
 
             r.Release(cycle);
@@ -302,7 +303,7 @@ void Thread::StartExOrMemPhase(
             if (!r.IsBusy()) continue;
             // Filtro que garante selecionar apenas as instruções em IS ou MEM (que vai começar), já que são as únicas que podem ter o countdown = -1.
             // - Redundante em lógica, já que o ReservationStations::UpdateDependencies() já faz esse filtro, mas diminui o sort.
-            if (r.GetCountdown() != -1 || r.GetInstructionPhase() == INSTRUCTION_PHASE::WR) continue;
+            if (r.GetCountdown() != -1 || r.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR) continue;
 
             // Instrução observada foi adicionada após um branch não resolvido:
             // - Tem sua execução atrasada (branch stall).
@@ -311,7 +312,7 @@ void Thread::StartExOrMemPhase(
 
             // Previne que STORE com ROB seja escalonado para WR (nesse caso é apenas commit).
             INSTRUCTION_TYPE type = r.GetCurrentInstruction().GetInstructionType();
-            if (type == INSTRUCTION_TYPE::STORE && has_rob && r.GetInstructionPhase() == INSTRUCTION_PHASE::MEM) continue;
+            if (type == INSTRUCTION_TYPE::STORE && has_rob && r.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM) continue;
 
             candidates.push_back(&r);
         }
@@ -327,9 +328,9 @@ void Thread::StartExOrMemPhase(
 
             // Marca na tabela.
             int position = r->GetCurrentInstruction().GetPosition();
-            if (r->GetInstructionPhase() == INSTRUCTION_PHASE::EX)
+            if (r->GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::EX)
                 instruction_table[position].ex_cycles.push_back(cycle);
-            else if (r->GetInstructionPhase() == INSTRUCTION_PHASE::MEM)
+            else if (r->GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM)
                 instruction_table[position].mem_cycles.push_back(cycle);
         }
     }
@@ -426,7 +427,7 @@ void Thread::BroadcastOnRSAndCDB(
         for (ReservationStation& r : *group) {
 
             // Ignora células da RS vazias ou que ainda não chegaram em WB.
-            if (!r.IsBusy() || r.GetInstructionPhase() != INSTRUCTION_PHASE::WR) continue;
+            if (!r.IsBusy() || r.GetInstructionPhase() != INSTRUCTION_PHASE_TOMASULO::WR) continue;
             // Ignora células da RS de outras instruções (posição diferente).
             if (r.GetCurrentInstruction().GetPosition() != position) continue;
 
@@ -463,19 +464,19 @@ void Thread::DetectPhaseTransitions(
 
             // Verifica se a fase mudou com o incremento do contador:
             // - Guarda a fase antes da tentativa, para comparar com a fase depois.
-            INSTRUCTION_PHASE phase_before = r.GetInstructionPhase();
+            INSTRUCTION_PHASE_TOMASULO phase_before = r.GetInstructionPhase();
 
             // Ainda executando.
             if (!r.UpdateCountdown(fu, cycle)) continue;
 
-            INSTRUCTION_PHASE phase_after = r.GetInstructionPhase();
-            int               position    = r.GetCurrentInstruction().GetPosition();
-            INSTRUCTION_TYPE  type        = r.GetCurrentInstruction().GetInstructionType();
+            INSTRUCTION_PHASE_TOMASULO phase_after = r.GetInstructionPhase();
+            int                        position    = r.GetCurrentInstruction().GetPosition();
+            INSTRUCTION_TYPE           type        = r.GetCurrentInstruction().GetInstructionType();
             bool has_mem        = (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE);
             bool store_with_rob = (type == INSTRUCTION_TYPE::STORE && has_rob);
 
             // Caso 1: EX -> MEM
-            if (phase_before == INSTRUCTION_PHASE::EX && phase_after == INSTRUCTION_PHASE::MEM) {
+            if (phase_before == INSTRUCTION_PHASE_TOMASULO::EX && phase_after == INSTRUCTION_PHASE_TOMASULO::MEM) {
                 // Marca na tabela.
                 instruction_table[position].ex_cycles.push_back(cycle);
                 // O ciclo MEM do STORE é representado apenas quando ele não possui ROB.
@@ -484,7 +485,7 @@ void Thread::DetectPhaseTransitions(
             }
             // Caso 2: * -> WR
             // - Não precisa verificar o phase_before por que mudou de fase para o final.
-            else if (phase_after == INSTRUCTION_PHASE::WR) {
+            else if (phase_after == INSTRUCTION_PHASE_TOMASULO::WR) {
                 // Se tem MEM e não é o caso especial de STORE+ROB (que já marcou o próprio ciclo de EX acima).
                 if (has_mem && !store_with_rob)
                     instruction_table[position].mem_cycles.push_back(cycle);
@@ -494,7 +495,7 @@ void Thread::DetectPhaseTransitions(
 
                 // Se o Branch foi resolvido, a flag é desmarcada.
                 if (position == unresolved_branch_position &&
-                    r.GetInstructionPhase() == INSTRUCTION_PHASE::WR)
+                    r.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR)
                     unresolved_branch_position = -1; // Valor default.
 
                 // Coloca a instrução na fila de WR

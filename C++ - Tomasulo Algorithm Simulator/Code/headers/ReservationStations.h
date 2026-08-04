@@ -19,10 +19,10 @@ class ReservationStation {
         );
 
         // Getters:
-        bool              IsBusy()              const;
-        int               GetCountdown()        const;
-        int               GetFUPosition()       const;
-        INSTRUCTION_PHASE GetInstructionPhase() const;
+        bool                       IsBusy()              const;
+        int                        GetCountdown()        const;
+        int                        GetFUPosition()       const;
+        INSTRUCTION_PHASE_TOMASULO GetInstructionPhase() const;
         // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
         const Instruction&              GetCurrentInstruction() const;
         const std::string&              GetId()                 const;
@@ -60,7 +60,7 @@ class ReservationStation {
         int                         fu_position{-1};
         std::string                 id;                     // Nome do RS ("load1", "addInt3", etc.)
         Instruction                 current_instruction;
-        INSTRUCTION_PHASE           phase{INSTRUCTION_PHASE::UNUSED};
+        INSTRUCTION_PHASE_TOMASULO  phase{INSTRUCTION_PHASE_TOMASULO::UNUSED};
         Register                    Vj;                     // Valor do operando J (se Qj vazio)
         Register                    Vk;                     // Valor do operando K (se Qk vazio)
         std::pair<std::string, int> Qj{"", -1};             // Qj/Qk: {rs_id, start_cycle} — produtor pendente
@@ -95,19 +95,19 @@ class ReservationStation {
         );
         bool TryAllocateFU(
             FUNCTIONAL_UNITS&,
-            const INSTRUCTION_PHASE,
+            const INSTRUCTION_PHASE_TOMASULO,
             const int,
             const int
         );
         int FindFreeFU(
             FUNCTIONAL_UNITS&,
-            const INSTRUCTION_PHASE,
+            const INSTRUCTION_PHASE_TOMASULO,
             const int
         );
         // - UpdateCountdown()
         void ReleaseFU(
             FUNCTIONAL_UNITS&,
-            const INSTRUCTION_PHASE,
+            const INSTRUCTION_PHASE_TOMASULO,
             const int
         );
     };

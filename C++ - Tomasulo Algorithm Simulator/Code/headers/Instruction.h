@@ -22,7 +22,7 @@ enum class INSTRUCTION_TYPE {
     FLOAT_MUL,
     FLOAT_DIV
 };
-enum class INSTRUCTION_PHASE {
+enum class INSTRUCTION_PHASE_TOMASULO {
     UNUSED,
     IS,
     EX,

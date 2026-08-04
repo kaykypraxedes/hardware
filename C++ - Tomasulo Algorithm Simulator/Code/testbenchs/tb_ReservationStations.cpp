@@ -68,7 +68,7 @@ int main() {
         check("IsBusy() == true",
             rs.IsBusy());
         check("GetInstructionPhase() == ISSUE",
-            rs.GetInstructionPhase() == INSTRUCTION_PHASE::IS);
+            rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::IS);
         check("GetQj() vazio (R1 livre)",
             rs.GetQj().empty());
         check("GetQk() vazio (R2 livre)",
@@ -134,7 +134,7 @@ int main() {
 
         bool iniciou = rs.UpdateDependencies(cdb, fu, 2);
         check("UpdateDependencies retorna true (pronta)",  iniciou);
-        check("fase == EX após UpdateDependencies",        rs.GetInstructionPhase() == INSTRUCTION_PHASE::EX);
+        check("fase == EX após UpdateDependencies",        rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::EX);
         check("GetCountdown() == exLat == 1",              rs.GetCountdown() == 1);
         check("GetFUPosition() >= 0 (FU alocada)",         rs.GetFUPosition() >= 0);
 
@@ -160,7 +160,7 @@ int main() {
         cdb.F[2].DeallocateRS("load0", 1, 3);
         bool depois = rs.UpdateDependencies(cdb, fu, 4);
         check("UpdateDependencies retorna true após Qj liberado", depois);
-        check("fase == EX após Qj liberado", rs.GetInstructionPhase() == INSTRUCTION_PHASE::EX);
+        check("fase == EX após Qj liberado", rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::EX);
     }
 
     secao("3.3 STORE com endereço pronto (Qk) mas dado pendente (Qj) entra em EX");
@@ -179,7 +179,7 @@ int main() {
         check("STORE entra em EX mesmo com dado pendente", entrou_ex);
 
         rs.UpdateCountdown(fu, 3);
-        check("fase == MEM aguardando dado",      rs.GetInstructionPhase() == INSTRUCTION_PHASE::MEM);
+        check("fase == MEM aguardando dado",      rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM);
 
         bool bloqueado = rs.UpdateDependencies(cdb, fu, 4);
         check("MEM bloqueado enquanto Qj não resolve", !bloqueado);
@@ -202,7 +202,7 @@ int main() {
 
         bool bloqueado = rs.UpdateDependencies(cdb, fu, 3);
         check("STORE não entra em EX com endereço pendente", !bloqueado);
-        check("fase permanece ISSUE",             rs.GetInstructionPhase() == INSTRUCTION_PHASE::IS);
+        check("fase permanece ISSUE",             rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::IS);
     }
 
     secao("3.5 ResolveDependency() — captura direta de Vj via broadcast simulado");
@@ -275,7 +275,7 @@ int main() {
 
         bool terminou = rs.UpdateCountdown(fu, 2);
         check("UpdateCountdown retorna true (EX terminou)", terminou);
-        check("fase == WR após EX de 1 ciclo",              rs.GetInstructionPhase() == INSTRUCTION_PHASE::WR);
+        check("fase == WR após EX de 1 ciclo",              rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR);
         check("GetFUPosition() == -1 (FU liberada)",        rs.GetFUPosition() == -1);
     }
 
@@ -290,7 +290,7 @@ int main() {
 
         bool fim_ex = rs.UpdateCountdown(fu, 2);
         check("LOAD: UpdateCountdown sinaliza fim do EX", fim_ex);
-        check("LOAD: fase == MEM após EX",                 rs.GetInstructionPhase() == INSTRUCTION_PHASE::MEM);
+        check("LOAD: fase == MEM após EX",                 rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM);
         check("LOAD: countdown == -1 (aguarda iniciar MEM)", rs.GetCountdown() == -1);
 
         bool iniciou_mem = rs.UpdateDependencies(cdb, fu, 3);
@@ -299,7 +299,7 @@ int main() {
 
         bool mem_end = rs.UpdateCountdown(fu, 3);
         check("LOAD: UpdateCountdown sinaliza fim do MEM", mem_end);
-        check("LOAD: fase == WR após MEM",                 rs.GetInstructionPhase() == INSTRUCTION_PHASE::WR);
+        check("LOAD: fase == WR após MEM",                 rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR);
     }
 
     secao("4.3 UpdateCountdown() — STORE (EX->espera dado->MEM->WR)");
@@ -321,11 +321,11 @@ int main() {
         cdb.F[6].DeallocateRS("float_basico0", 1, 4);
         bool mem_ok = rs.UpdateDependencies(cdb, fu, 4);
         check("STORE: UpdateDependencies inicia MEM após dado liberado", mem_ok);
-        check("STORE: fase == MEM", rs.GetInstructionPhase() == INSTRUCTION_PHASE::MEM);
+        check("STORE: fase == MEM", rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM);
 
         bool mem_end = rs.UpdateCountdown(fu, 4);
         check("STORE: fim do MEM sinalizado", mem_end);
-        check("STORE: fase == WR", rs.GetInstructionPhase() == INSTRUCTION_PHASE::WR);
+        check("STORE: fase == WR", rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR);
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -368,7 +368,7 @@ int main() {
         rs.UpdateDependencies(cdb, fu, 3);
         rs.UpdateCountdown(fu, 3);
 
-        check("LOAD antes de Release: fase == WR",  rs.GetInstructionPhase() == INSTRUCTION_PHASE::WR);
+        check("LOAD antes de Release: fase == WR",  rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR);
         check("LOAD antes de Release: busy == true", rs.IsBusy());
 
         rs.Release(4);
@@ -432,7 +432,7 @@ int main() {
         bool bloqueado = rs1.UpdateDependencies(cdb, fu, 2);
         check("Segunda RS bloqueada quando FU esgotada", !bloqueado);
         check("rs1 ainda em ISSUE",
-              rs1.GetInstructionPhase() == INSTRUCTION_PHASE::IS);
+              rs1.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::IS);
     }
 
     secao("6.2 Grupos de FU são independentes — EX (int_basic_alu) vs MEM (memory_access)");
@@ -450,7 +450,7 @@ int main() {
         rsA.UpdateCountdown(fu, 2);         // libera int_basic_alu, vai para MEM (sem FU ainda)
 
         bool rsB_ex = rsB.UpdateDependencies(cdb, fu, 2); // int_basic_alu livre de novo
-        check("rsB usa int_basic_alu livre após rsA liberar", rsB_ex && rsB.GetInstructionPhase() == INSTRUCTION_PHASE::EX);
+        check("rsB usa int_basic_alu livre após rsA liberar", rsB_ex && rsB.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::EX);
 
         bool memA = rsA.UpdateDependencies(cdb, fu, 3); // memory_access livre
         check("rsA inicia MEM (memory_access livre)", memA);

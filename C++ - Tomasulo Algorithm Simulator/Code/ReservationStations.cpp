@@ -1,5 +1,6 @@
 /* ReservationStations.cpp */
 #include "headers/ReservationStations.h"
+#include "headers/Instruction.h"
 
 namespace processor {
 
@@ -41,12 +42,12 @@ static bool DeallocateFU(
 
 // Retorna a referência ao grupo de FU correto para (tipo, fase).
 static std::vector<FU>& GetFUGroup(
-    FUNCTIONAL_UNITS&   fu,
-    const INSTRUCTION_TYPE  type,
-    const INSTRUCTION_PHASE phase
+    FUNCTIONAL_UNITS&                fu,
+    const INSTRUCTION_TYPE           type,
+    const INSTRUCTION_PHASE_TOMASULO phase
 ) {
     if (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE)
-        return (phase == INSTRUCTION_PHASE::EX)
+        return (phase == INSTRUCTION_PHASE_TOMASULO::EX)
             ? fu.int_basic_alu
             : fu.memory_access;
     switch (type) {
@@ -74,7 +75,7 @@ int ReservationStation::GetCountdown()  const { return allocation_countdown; }
 int ReservationStation::GetFUPosition() const { return fu_position; }
 
 // Público:
-INSTRUCTION_PHASE ReservationStation::GetInstructionPhase() const { return phase; }
+INSTRUCTION_PHASE_TOMASULO ReservationStation::GetInstructionPhase() const { return phase; }
 
 // Público:
 const std::string& ReservationStation::GetId() const { return id; }
@@ -133,7 +134,7 @@ void ReservationStation::SetupNewIssue(
     // RS está sendo usada
     busy                 = true;
     current_instruction  = instruction;
-    phase                = INSTRUCTION_PHASE::IS;
+    phase                = INSTRUCTION_PHASE_TOMASULO::IS;
     // Valores default
     allocation_countdown = -1;
     fu_position          = -1;
@@ -191,7 +192,7 @@ bool ReservationStation::UpdateDependencies(
     // Se o RS estiver vazio ou com sua execução travada por dependencias.
     if (!busy || allocation_countdown != -1) return false;
     // Se já estiver na fase WR (-1, mas não atualiza mais)
-    if (phase == INSTRUCTION_PHASE::WR) return false;
+    if (phase == INSTRUCTION_PHASE_TOMASULO::WR) return false;
 
     // Verifica se os Qj e/ou Qk já desapareceram (se sim, marca o Vj/Vk).
     CheckDependency('J', cdb);
@@ -239,33 +240,33 @@ bool ReservationStation::AdvancePhaseAllocation(
 
     // EX -> MEM:
     // - Apenas para LOAD e STORE
-    if (is_load_store && phase == INSTRUCTION_PHASE::MEM && allocation_countdown == -1) {
+    if (is_load_store && phase == INSTRUCTION_PHASE_TOMASULO::MEM && allocation_countdown == -1) {
         // O dado ainda não está pronto
         if (type == INSTRUCTION_TYPE::STORE && !Qj.first.empty()) return false;
 
-        return TryAllocateFU(fu, INSTRUCTION_PHASE::MEM, cycle, current_instruction.GetMemLatency());
+        return TryAllocateFU(fu, INSTRUCTION_PHASE_TOMASULO::MEM, cycle, current_instruction.GetMemLatency());
     }
 
     // IS -> EX:
     // - Para todos os tipos de instrução.
     if (is_load_store) { // LOAD ou STORE:
         // Cálculo de endereço só depende de Qk (Qj é assunto do MEM).
-        if (phase != INSTRUCTION_PHASE::IS || !Qk.first.empty()) return false;
+        if (phase != INSTRUCTION_PHASE_TOMASULO::IS || !Qk.first.empty()) return false;
     } // Instrução genérica:
     else {
         // Dependência não resolvida genérica que impede o cálculo em EX.
         if (!Qj.first.empty() || !Qk.first.empty()) return false;
     }
 
-    return TryAllocateFU(fu, INSTRUCTION_PHASE::EX, cycle, current_instruction.GetExLatency());
+    return TryAllocateFU(fu, INSTRUCTION_PHASE_TOMASULO::EX, cycle, current_instruction.GetExLatency());
 }
 
 // Privado:
 bool ReservationStation::TryAllocateFU(
-    FUNCTIONAL_UNITS&       fu,
-    const INSTRUCTION_PHASE new_phase,
-    const int               cycle,
-    const int               latency
+    FUNCTIONAL_UNITS&                fu,
+    const INSTRUCTION_PHASE_TOMASULO new_phase,
+    const int                        cycle,
+    const int                        latency
 ){
     // Evita latências inválidas de instrução
     if (latency <= 0) {
@@ -288,9 +289,9 @@ bool ReservationStation::TryAllocateFU(
 // Privado:
 // Recebe a fase em que a instrução VAI ENTRAR para escolher a UF correta.
 int ReservationStation::FindFreeFU(
-    FUNCTIONAL_UNITS&       fu,
-    const INSTRUCTION_PHASE target_phase,
-    const int               cycle
+    FUNCTIONAL_UNITS&                fu,
+    const INSTRUCTION_PHASE_TOMASULO target_phase,
+    const int                        cycle
 ) {
     std::vector<FU>& fu_group{GetFUGroup(fu, current_instruction.GetInstructionType(), target_phase)};
     return AllocateFreeFU(fu_group, cycle, id);
@@ -315,12 +316,12 @@ bool ReservationStation::UpdateCountdown(
     // Verifica o próximo estágio:
     if (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE) {
         // EX  -> MEM
-        if (phase == INSTRUCTION_PHASE::EX) phase = INSTRUCTION_PHASE::MEM;
+        if (phase == INSTRUCTION_PHASE_TOMASULO::EX) phase = INSTRUCTION_PHASE_TOMASULO::MEM;
         // MEM -> WR
-        else                                phase = INSTRUCTION_PHASE::WR;
+        else                                phase = INSTRUCTION_PHASE_TOMASULO::WR;
     }   // EX  -> WR
     else {
-        phase = INSTRUCTION_PHASE::WR;
+        phase = INSTRUCTION_PHASE_TOMASULO::WR;
     }
     allocation_countdown = -1;
     return true;
@@ -329,9 +330,9 @@ bool ReservationStation::UpdateCountdown(
 // Privado:
 // Recebe a fase que ACABOU para saber de qual grupo liberar.
 void ReservationStation::ReleaseFU(
-    FUNCTIONAL_UNITS&       fu,
-    const INSTRUCTION_PHASE finished_phase,
-    const int               cycle
+    FUNCTIONAL_UNITS&                fu,
+    const INSTRUCTION_PHASE_TOMASULO finished_phase,
+    const int                        cycle
 ){
     if (fu_position == -1) return;
     std::vector<FU>& fu_group{GetFUGroup(fu, current_instruction.GetInstructionType(),finished_phase)};
@@ -367,7 +368,7 @@ void ReservationStation::Release(
     fu_position          = -1;
     Qj = Qk              = {"", -1};
     Vj = Vk              = Register{};
-    phase                = INSTRUCTION_PHASE::UNUSED;
+    phase                = INSTRUCTION_PHASE_TOMASULO::UNUSED;
 }
 
 } // namespace processor
