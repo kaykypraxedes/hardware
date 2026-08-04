@@ -24,11 +24,28 @@ static const int W_COMMIT   = 12;
 // Ordem dos componentes usada tanto nos vetores de config (num_rs/num_fus)
 // quanto nos grupos de RS/FU impressos no final.
 static const std::vector<std::string> COMPONENT_LABELS = {
-    "load", "store", "int_basic", "int_mult_div", "float_basic", "float_mult_div"
+    "load",
+    "store",
+    "int_basic",
+    "int_mult_div",
+    "float_basic",
+    "float_mult_div"
 };
 
 // Ordem assumida para latencias_mem (load, store). Ajustar se necessário.
 static const std::vector<std::string> MEM_LABELS = { "load", "store" };
+static const std::vector<std::string> EX_LABELS = {
+    "none_exist",
+    "load",
+    "store",
+    "branch",
+    "int_basic",
+    "int_mult",
+    "int_div",
+    "float_basic",
+    "float_mult",
+    "float_div"
+};
 
 std::string CycleStr(
     int c
@@ -68,7 +85,7 @@ int SeparatorWidth(
     if (rob)
         total += W_COMMIT;
 
-    return total;
+    return total - 7;
 }
 
 std::vector<int> ReadIntVector(
@@ -186,13 +203,8 @@ void PrintConfig(
 
     std::cout << "\n- Ciclo limite: " << cfg.cycle_limit;
 
-    // TODO: os rótulos abaixo (op0..op9) são placeholders — a ordem real dos
-    // 10 valores depende do enum/ordem de opcodes definido em Instruction.h.
-    // Trocar por nomes reais assim que essa ordem for confirmada.
     std::cout << "\n- Latências de EX: ";
-    for (size_t i{}; i < cfg.ex_latencies.size(); i++) {
-        std::cout << "op" << i << '=' << cfg.ex_latencies[i] << ' ';
-    }
+    PrintLabeledVector(cfg.ex_latencies, EX_LABELS);
 
     std::cout << "\n- Latências de MEM: ";
     PrintLabeledVector(cfg.mem_latencies, MEM_LABELS);
@@ -221,7 +233,8 @@ void PrintTable(
 
     std::cout << '\n';
 
-    std::cout << std::string(SeparatorWidth(rob), '-') << '\n';
+    for (int i{}; i < SeparatorWidth(rob); i++) std::cout << "─";
+    std::cout << '\n';
 
     for (const auto& l : table) {
         std::cout << std::left

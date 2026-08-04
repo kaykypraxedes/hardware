@@ -10,7 +10,7 @@
 - [x] **ReservationStations: `FindFreeFU()` declarado `const` mas com side effect** — Aloca FU via referência. Remover `const` ou renomear para `FindAndAllocateFreeFU()`.
 - [ ] **Main.cpp: `PrintFU()` acessa campos da struct diretamente** — Quebra padrão de getters usado no resto do projeto. Adicionar getters em `FU` ou usar template.
 - [x] **ReservationStations: FU-group mapping duplicado** — `FindFreeFU()` e `ReleaseFU()` têm switch/if-else idêntico mapeando tipo de instrução → grupo de FU. Extrair para lookup table ou helper `SelectFUGroups()`.
-- [ ] **Main.cpp: nested `while(getline)` no programa** — Bloco `"programa"` lê da mesma `std::cin` que o loop externo; se não for a última seção, chaves seguintes são engolidas. Aceitar `std::istream&` ou extrair leitura para função separada.
+- [x] **Main.cpp: nested `while(getline)` no programa** — Bloco `"programa"` lê da mesma `std::cin` que o loop externo; se não for a última seção, chaves seguintes são engolidas. Aceitar `std::istream&` ou extrair leitura para função separada.
 
 ###   Cosméticas
 - [x] **Thread: type→RS group mapeamento duplicado** — `Issue()` usa `switch`, `WriteBackNormal()` usa `if-else` para o mesmo mapeamento. Extrair `GetGroupForType()`.

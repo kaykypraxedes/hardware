@@ -2,15 +2,15 @@
 ═══ CONFIGURAÇÕES ════════════════════════════════════════
 ══════════════════════════════════════════════════════════
 
-- Tipo: TOMASULO_CLASSIC
+- Tipo: TOMASULO_ESPECULATIVE
 - Numero de Threads: 1
 - Modelo Multi-Threading: NONE
 - Previsor: false
-- Despacho: 1
-- Número de RSs: load=5 store=5 int_basic=5 int_mult_div=5 float_basic=5 float_mult_div=3 
-- Número de UFs: load=2 store=2 int_basic=2 int_mult_div=2 float_basic=1 float_mult_div=1 
+- Despacho: 2
+- Número de RSs: load=5 store=5 int_basic=5 int_mult_div=5 float_basic=5 float_mult_div=5 
+- Número de UFs: load=4 store=4 int_basic=4 int_mult_div=4 float_basic=4 float_mult_div=4 
 - Ciclo limite: 10000
-- Latências de EX: op0=0 op1=1 op2=1 op3=1 op4=1 op5=4 op6=10 op7=5 op8=14 op9=15 
+- Latências de EX: none_exist=0 load=1 store=1 branch=1 int_basic=1 int_mult=5 int_div=5 float_basic=5 float_mult=5 float_div=5 
 - Latências de MEM: load=1 store=1 
 
 Simulando...
@@ -20,24 +20,22 @@ Concluido!
 ═══ TABELA DE RESULTADOS ═════════════════════════════════
 ══════════════════════════════════════════════════════════
 
-Posição   Instrução                   Issue       EX              MEM             WR          
---------------------------------------------------------------------------------------------------
-0         LD     F0, 0(R1)            1           02-02           03-03           4           
-1         ADD.D  F0, F0, F6           2           05-09           --              10          
-2         DIV.D  F2, F2, F0           3           23-37           --              38          
-3         L.D    F0, 8(R1)            4           05-05           06-06           7           
-4         DIV.D  F4, F0, F8           5           08-22           --              23          
-5         S.D    F4, 16(R1)           6           07-07           24-24           --          
-6         DADDIU R1, R1, #24          7           08-08           --              9           
-7         BNEZ   R1, loop             8           10-10           --              --          
-8         LD     F0, 0(R1)            9           11-11           12-12           13          
-9         ADD.D  F0, F0, F6           10          14-18           --              19          
-10        DIV.D  F2, F2, F0           11          53-67           --              68          
-11        L.D    F0, 8(R1)            12          13-13           14-14           15          
-12        DIV.D  F4, F0, F8           23          38-52           --              53          
-13        S.D    F4, 16(R1)           24          25-25           54-54           --          
-14        DADDIU R1, R1, #24          25          26-26           --              27          
-15        BNEZ   R1, loop             26          28-28           --              --          
+Posição   Instrução                   Issue       EX              MEM             WR          Commit      
+───────────────────────────────────────────────────────────────────────────────────────────────────────
+0         L.D    F2, 0(R1)            1           02-02           03-03           4           5           
+1         DIV.D  F4, F2, F0           1           05-09           --              10          11          
+2         ADD.D  F4, F2, F0           2           05-09           --              10          11          
+3         MUL.D  F6, F2, F0           2           05-09           --              10          12          
+4         S.D    F6, 0(R1)            3           04-04           --              --          12          
+5         DADDIU R1, R1, #-8          3           04-04           --              5           13          
+6         BNEZ   R1, loop             4           06-06           --              --          13          
+7         L.D    F2, 0(R1)            5           06-06           07-07           8           14          
+8         DIV.D  F4, F2, F0           5           09-13           --              14          15          
+9         ADD.D  F4, F2, F0           6           09-13           --              14          15          
+10        MUL.D  F6, F2, F0           6           09-13           --              14          16          
+11        S.D    F6, 0(R1)            7           08-08           --              --          16          
+12        DADDIU R1, R1, #-8          7           08-08           --              9           17          
+13        BNEZ   R1, loop             8           10-10           --              --          17          
 
 ══════════════════════════════════════════════════════════
 ═══ RESERVATION STATIONS (RS) ════════════════════════════
@@ -45,48 +43,46 @@ Posição   Instrução                   Issue       EX              MEM       
 
 ─── load ─────────────────────────────────────────────────
 - load0:
-    LD     F0, 0(R1)   - [1-4]
-    L.D    F0, 8(R1)   - [4-7]
-    LD     F0, 0(R1)   - [9-13]
-
-- load1:
-    L.D    F0, 8(R1)   - [12-15]
+    L.D    F2, 0(R1)   - [1-4]
+    L.D    F2, 0(R1)   - [5-8]
 
 
 ─── store ────────────────────────────────────────────────
 - store0:
-    S.D    F4, 16(R1)  - [6-25]
-
-- store1:
-    S.D    F4, 16(R1)  - [24-55]
+    S.D    F6, 0(R1)   - [3-5]
+    S.D    F6, 0(R1)   - [7-9]
 
 
 ─── int_basic ────────────────────────────────────────────
 - int_basic0:
-    DADDIU R1, R1, #24 - [7-9]
-    DADDIU R1, R1, #24 - [25-27]
+    DADDIU R1, R1, #-8 - [3-5]
+    DADDIU R1, R1, #-8 - [7-9]
 
 - int_basic1:
+    BNEZ   R1, loop    - [4-7]
     BNEZ   R1, loop    - [8-11]
-    BNEZ   R1, loop    - [26-29]
 
 
 ─── float_basic ──────────────────────────────────────────
 - float_basic0:
-    ADD.D  F0, F0, F6  - [2-10]
-    ADD.D  F0, F0, F6  - [10-19]
+    ADD.D  F4, F2, F0  - [2-10]
+
+- float_basic1:
+    ADD.D  F4, F2, F0  - [6-14]
 
 
 ─── float_mult_div ───────────────────────────────────────
 - float_mult_div0:
-    DIV.D  F2, F2, F0  - [3-38]
+    DIV.D  F4, F2, F0  - [1-10]
 
 - float_mult_div1:
-    DIV.D  F4, F0, F8  - [5-23]
-    DIV.D  F4, F0, F8  - [23-53]
+    MUL.D  F6, F2, F0  - [2-10]
 
 - float_mult_div2:
-    DIV.D  F2, F2, F0  - [11-68]
+    DIV.D  F4, F2, F0  - [5-14]
+
+- float_mult_div3:
+    MUL.D  F6, F2, F0  - [6-14]
 
 
 ══════════════════════════════════════════════════════════
@@ -94,27 +90,25 @@ Posição   Instrução                   Issue       EX              MEM       
 ══════════════════════════════════════════════════════════
 
 ─── F ────────────────────────────────────────────────────
-- F0:
-    RS_load0           - [1-4]
-    RS_float_basic0    - [2-10]
-    RS_load0           - [4-7]
-    RS_load0           - [9-13]
-    RS_float_basic0    - [10-19]
-    RS_load1           - [12-15]
-
 - F2:
-    RS_float_mult_div0 - [3-38]
-    RS_float_mult_div2 - [11-68]
+    RS_load0           - [1-4]
+    RS_load0           - [5-8]
 
 - F4:
-    RS_float_mult_div1 - [5-23]
-    RS_float_mult_div1 - [23-53]
+    RS_float_mult_div0 - [1-10]
+    RS_float_basic0    - [2-10]
+    RS_float_mult_div2 - [5-14]
+    RS_float_basic1    - [6-14]
+
+- F6:
+    RS_float_mult_div1 - [2-10]
+    RS_float_mult_div3 - [6-14]
 
 
 ─── R ────────────────────────────────────────────────────
 - R1:
+    RS_int_basic0      - [3-5]
     RS_int_basic0      - [7-9]
-    RS_int_basic0      - [25-27]
 
 
 ══════════════════════════════════════════════════════════
@@ -124,38 +118,42 @@ Posição   Instrução                   Issue       EX              MEM       
 ─── memory_access ────────────────────────────────────────
 - memory_access0:
     RS_load0           - [3-3]
-    RS_load0           - [6-6]
-    RS_load0           - [12-12]
-    RS_load1           - [14-14]
-    RS_store0          - [24-24]
-    RS_store1          - [54-54]
+    RS_load0           - [7-7]
 
 
 ─── int_basic_alu ────────────────────────────────────────
 - int_basic_alu0:
     RS_load0           - [2-2]
-    RS_load0           - [5-5]
-    RS_store0          - [7-7]
-    RS_int_basic0      - [8-8]
+    RS_store0          - [4-4]
+    RS_int_basic1      - [6-6]
+    RS_store0          - [8-8]
     RS_int_basic1      - [10-10]
-    RS_load0           - [11-11]
-    RS_load1           - [13-13]
-    RS_store1          - [25-25]
-    RS_int_basic0      - [26-26]
-    RS_int_basic1      - [28-28]
+
+- int_basic_alu1:
+    RS_int_basic0      - [4-4]
+    RS_load0           - [6-6]
+    RS_int_basic0      - [8-8]
 
 
 ─── float_basic_alu ──────────────────────────────────────
 - float_basic_alu0:
     RS_float_basic0    - [5-9]
-    RS_float_basic0    - [14-18]
+
+- float_basic_alu1:
+    RS_float_basic1    - [9-13]
 
 
 ─── float_mult_div_alu ───────────────────────────────────
 - float_mult_div_alu0:
-    RS_float_mult_div1 - [8-22]
-    RS_float_mult_div0 - [23-37]
-    RS_float_mult_div1 - [38-52]
-    RS_float_mult_div2 - [53-67]
+    RS_float_mult_div0 - [5-9]
+
+- float_mult_div_alu1:
+    RS_float_mult_div1 - [5-9]
+
+- float_mult_div_alu2:
+    RS_float_mult_div2 - [9-13]
+
+- float_mult_div_alu3:
+    RS_float_mult_div3 - [9-13]
 
 

@@ -5,8 +5,22 @@
 namespace processor {
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
-std::vector<int> Instruction::base_ex_latencies  = {0,1,1,1,1,4,10,9,14,40};
-std::vector<int> Instruction::base_mem_latencies = {1,1};
+std::vector<int> Instruction::base_ex_latencies  = {
+    0,  // NONEEXISTENT
+    1,  // LOAD
+    1,  // STORE
+    1,  // BRANCH
+    1,  // INT_BASIC
+    4,  // INT_MUL
+    10, // INT_DIV
+    9,  // FLOAT_BASIC
+    14, // FLOAT_MUL
+    40  // FLOAT_DIV
+};
+std::vector<int> Instruction::base_mem_latencies = {
+    1, // LOAD
+    1  // BRANCH
+};
 
 static bool IsRegister(
     const std::string& token
@@ -200,7 +214,7 @@ void Instruction::SetLatencies(){
     } else if(type == INSTRUCTION_TYPE::STORE){
         mem_latency = base_mem_latencies[1];
     }
-    ex_latency = base_ex_latencies[static_cast<int>(type)]; // Enums podem ser convertidos em int ()
+    ex_latency = base_ex_latencies[static_cast<int>(type)]; // Enums podem ser convertidos em int
 }
 
 // Privado:
