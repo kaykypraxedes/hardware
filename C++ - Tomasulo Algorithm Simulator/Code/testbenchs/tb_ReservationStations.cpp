@@ -68,7 +68,7 @@ int main() {
         check("IsBusy() == true",
             rs.IsBusy());
         check("GetInstructionPhase() == ISSUE",
-            rs.GetInstructionPhase() == INSTRUCTION_PHASE::ISSUE);
+            rs.GetInstructionPhase() == INSTRUCTION_PHASE::IS);
         check("GetQj() vazio (R1 livre)",
             rs.GetQj().empty());
         check("GetQk() vazio (R2 livre)",
@@ -202,7 +202,7 @@ int main() {
 
         bool bloqueado = rs.UpdateDependencies(cdb, fu, 3);
         check("STORE não entra em EX com endereço pendente", !bloqueado);
-        check("fase permanece ISSUE",             rs.GetInstructionPhase() == INSTRUCTION_PHASE::ISSUE);
+        check("fase permanece ISSUE",             rs.GetInstructionPhase() == INSTRUCTION_PHASE::IS);
     }
 
     secao("3.5 ResolveDependency() — captura direta de Vj via broadcast simulado");
@@ -432,7 +432,7 @@ int main() {
         bool bloqueado = rs1.UpdateDependencies(cdb, fu, 2);
         check("Segunda RS bloqueada quando FU esgotada", !bloqueado);
         check("rs1 ainda em ISSUE",
-              rs1.GetInstructionPhase() == INSTRUCTION_PHASE::ISSUE);
+              rs1.GetInstructionPhase() == INSTRUCTION_PHASE::IS);
     }
 
     secao("6.2 Grupos de FU são independentes — EX (int_basic_alu) vs MEM (memory_access)");

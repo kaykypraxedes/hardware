@@ -133,7 +133,7 @@ void ReservationStation::SetupNewIssue(
     // RS está sendo usada
     busy                 = true;
     current_instruction  = instruction;
-    phase                = INSTRUCTION_PHASE::ISSUE;
+    phase                = INSTRUCTION_PHASE::IS;
     // Valores default
     allocation_countdown = -1;
     fu_position          = -1;
@@ -250,7 +250,7 @@ bool ReservationStation::AdvancePhaseAllocation(
     // - Para todos os tipos de instrução.
     if (is_load_store) { // LOAD ou STORE:
         // Cálculo de endereço só depende de Qk (Qj é assunto do MEM).
-        if (phase != INSTRUCTION_PHASE::ISSUE || !Qk.first.empty()) return false;
+        if (phase != INSTRUCTION_PHASE::IS || !Qk.first.empty()) return false;
     } // Instrução genérica:
     else {
         // Dependência não resolvida genérica que impede o cálculo em EX.

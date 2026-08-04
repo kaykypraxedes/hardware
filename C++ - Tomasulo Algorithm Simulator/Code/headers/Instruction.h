@@ -4,7 +4,6 @@
 #include "Components.h"
 #include <string>
 #include <vector>
-#include <iomanip>    // para std::setw
 #include <cstdlib>    // para std::abort
 #include <iostream>   // para std::cerr
 
@@ -25,7 +24,7 @@ enum class INSTRUCTION_TYPE {
 };
 enum class INSTRUCTION_PHASE {
     UNUSED,
-    ISSUE,
+    IS,
     EX,
     MEM,
     WR,
