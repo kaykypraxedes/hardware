@@ -20,7 +20,7 @@ int main() {
     {
         Instruction i;
         check("GetPosition() == -1",                   i.GetPosition() == -1);
-        check("GetInstructionType() == NONEXISTENT",   i.GetInstructionType() == INSTRUCTION_TYPE::NONEXISTENT);
+        check("GetInstructionType() == INVALID",       i.GetInstructionType() == INSTRUCTION_TYPE::INVALID);
         check("GetExLatency() == 0",                   i.GetExLatency() == 0);
         check("GetMemLatency() == 0",                  i.GetMemLatency() == 0);
     }
@@ -28,18 +28,18 @@ int main() {
     secao("1.2 Construtor(posição, string) — GetPosition e GetInstructionString");
     {
         Instruction i(7, "ADD R1, R2, R3");
-        check("GetPosition() == 7",                         i.GetPosition() == 7);
+        check("GetPosition() == 7",                            i.GetPosition() == 7);
         check("GetInstructionString() == 'ADD    R1, R2, R3'", i.GetInstructionString() == "ADD    R1, R2, R3");
-    }
-
-    secao("1.3 String vazia — position vira -1");
-    {
-        Instruction i(5, "");
-        check("position vira -1 se string vazia", i.GetPosition() == -1);
     }
 
     /*
     // Teste das flags de segurança do programa (abortam a execução):
+
+    secao("[ABORT] Posição válida e string vazia deve abortar");
+    {
+        Instruction i(5, "");
+        std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
+    }
 
     secao("[ABORT] Instrução desconhecida deve abortar");
     {

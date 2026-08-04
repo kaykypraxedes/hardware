@@ -12,7 +12,7 @@ namespace processor {
 
 // ─── ENUMS ────────────────────────────────────────────────────────
 enum class INSTRUCTION_TYPE {
-    NONEXISTENT,
+    INVALID,
     LOAD,
     STORE,
     BRANCH,
@@ -24,6 +24,7 @@ enum class INSTRUCTION_TYPE {
     FLOAT_DIV
 };
 enum class INSTRUCTION_PHASE {
+    UNUSED,
     ISSUE,
     EX,
     MEM,
@@ -56,10 +57,10 @@ class Instruction {
         const std::string& GetInstructionString() const;
         // Métodos públicos:
         void SetMemLatency(
-            int
+            const int
         );
         void SetExLatency(
-            int
+            const int
         );
     private:
         // Atributos:
@@ -67,7 +68,7 @@ class Instruction {
         std::string      instruction_string;
         int              ex_latency{};
         int              mem_latency{};
-        INSTRUCTION_TYPE type{INSTRUCTION_TYPE::NONEXISTENT};
+        INSTRUCTION_TYPE type{INSTRUCTION_TYPE::INVALID};
         Register         dest_register;
         Register         reg_j;
         Register         reg_k;

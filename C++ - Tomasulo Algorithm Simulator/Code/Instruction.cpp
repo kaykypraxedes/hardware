@@ -66,18 +66,24 @@ const std::string& Instruction::GetInstructionString() const { return instructio
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
 Instruction::Instruction(
-    const int position,
+    const int          position,
     const std::string& instruction_string
 ) {
     // Verifica se é uma posição válida (>= 0).
-    if(position < -1){ // -1 é o valor de instrução não iniciada
+    if(position < -1){ // -1 é o valor de instrução não iniciada.
         std::cerr << "[ERRO] Valor inválido de posição: " << position << "\n";
         std::abort();
     }
+
+    // Só define a instrução se ela for válida (foi passado com posição).
     this->position = position;
-    // Só define a instrução se ela for válida (foi passado com PC)
-    if(position != -1 && !instruction_string.empty()) ParseInstruction(instruction_string);
-    else this->position = -1;
+    if(position != -1){
+        if(!instruction_string.empty()) ParseInstruction(instruction_string);
+        else {
+            std::cerr << "[ERRO] String vazia passada como instrução!\n";
+            std::abort();
+        }
+    }
 }
 
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
@@ -255,14 +261,14 @@ void Instruction::SetAttributes(
 
 // Público:
 void Instruction::SetMemLatency(
-    int latency
+    const int latency
 ){
     mem_latency = latency;
 }
 
 // Público:
 void Instruction::SetExLatency(
-    int latency
+    const int latency
 ){
     ex_latency = latency;
 }

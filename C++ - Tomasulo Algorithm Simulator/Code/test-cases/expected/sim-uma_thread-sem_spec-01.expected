@@ -10,7 +10,7 @@
 - Número de RSs: load=5 store=5 int_basic=5 int_mult_div=4 float_basic=3 float_mult_div=2 
 - Número de UFs: load=1 store=1 int_basic=1 int_mult_div=1 float_basic=1 float_mult_div=2 
 - Ciclo limite: 10000
-- Latências de EX: none_exist=0 load=1 store=1 branch=1 int_basic=1 int_mult=4 int_div=10 float_basic=9 float_mult=14 float_div=40 
+- Latências de EX: invalid=0 load=1 store=1 branch=1 int_basic=1 int_mult=4 int_div=10 float_basic=9 float_mult=14 float_div=40 
 - Latências de MEM: load=1 store=1 
 
 Simulando...

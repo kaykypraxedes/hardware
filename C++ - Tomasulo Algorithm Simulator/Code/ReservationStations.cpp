@@ -367,7 +367,7 @@ void ReservationStation::Release(
     fu_position          = -1;
     Qj = Qk              = {"", -1};
     Vj = Vk              = Register{};
-    phase                = INSTRUCTION_PHASE::ISSUE;
+    phase                = INSTRUCTION_PHASE::UNUSED;
 }
 
 } // namespace processor

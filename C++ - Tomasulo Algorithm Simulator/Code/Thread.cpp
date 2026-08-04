@@ -238,7 +238,7 @@ bool Thread::Issue(
     // Verifica se a instrução é válida.
     Instruction& instruction = instruction_table[current_instruction_position].instruction;
     INSTRUCTION_TYPE type    = instruction.GetInstructionType();
-    if (type == INSTRUCTION_TYPE::NONEXISTENT) {
+    if (type == INSTRUCTION_TYPE::INVALID) {
         std::cerr << "[ERRO] Tentativa de adicionar instrução inválida no issue! \n"
                   << "- Instrução: " << instruction.GetInstructionString() << "\n"
                   << "- Posição: "   << current_instruction_position << "\n";

@@ -35,7 +35,7 @@ static const std::vector<std::string> COMPONENT_LABELS = {
 // Ordem assumida para latencias_mem (load, store). Ajustar se necessário.
 static const std::vector<std::string> MEM_LABELS = { "load", "store" };
 static const std::vector<std::string> EX_LABELS = {
-    "none_exist",
+    "invalid",
     "load",
     "store",
     "branch",

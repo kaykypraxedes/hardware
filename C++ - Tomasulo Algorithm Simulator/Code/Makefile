@@ -39,20 +39,9 @@ $(EXEC): $(OBJS)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # --- Testbenchs (suas regras originais com dependências) ---
-$(OBJDIR)/tb_Components: $(OBJDIR)/Components.o $(TSTDIR)/tb_Components.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) -MMD -MP -MF $(OBJDIR)/tb_Components.d $(TSTDIR)/tb_Components.cpp $(OBJDIR)/Components.o -o $@
-
-$(OBJDIR)/tb_Instruction: $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(TSTDIR)/tb_Instruction.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) -MMD -MP -MF $(OBJDIR)/tb_Instruction.d $(TSTDIR)/tb_Instruction.cpp $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o -o $@
-
-$(OBJDIR)/tb_ReservationStations: $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(OBJDIR)/ReservationStations.o $(TSTDIR)/tb_ReservationStations.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) -MMD -MP -MF $(OBJDIR)/tb_ReservationStations.d $(TSTDIR)/tb_ReservationStations.cpp $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(OBJDIR)/ReservationStations.o -o $@
-
-$(OBJDIR)/tb_Thread: $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(OBJDIR)/ReservationStations.o $(OBJDIR)/Thread.o $(TSTDIR)/tb_Thread.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) -MMD -MP -MF $(OBJDIR)/tb_Thread.d $(TSTDIR)/tb_Thread.cpp $(OBJDIR)/Components.o $(OBJDIR)/Instruction.o $(OBJDIR)/ReservationStations.o $(OBJDIR)/Thread.o -o $@
-
-$(OBJDIR)/tb_Processor: $(filter-out $(MAIN_OBJ),$(OBJS)) $(TSTDIR)/tb_Processor.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) -MMD -MP -MF $(OBJDIR)/tb_Processor.d $(TSTDIR)/tb_Processor.cpp $(filter-out $(MAIN_OBJ),$(OBJS)) -o $@
+# --- Testbenchs (regra genérica com dependências automáticas) ---
+$(OBJDIR)/tb_%: $(TSTDIR)/tb_%.cpp $(OBJS) | $(OBJDIR)
+	$(CXX) $(CXXFLAGS) -MMD -MP -MF $(OBJDIR)/$*.d $< $(filter-out $(MAIN_OBJ),$(OBJS)) -o $@
 
 # Inclui dependências dos testbenchs
 -include $(patsubst $(OBJDIR)/%,$(OBJDIR)/%.d,$(TB_BINS))

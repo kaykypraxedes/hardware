@@ -60,7 +60,7 @@ class ReservationStation {
         int                         fu_position{-1};
         std::string                 id;                     // Nome do RS ("load1", "addInt3", etc.)
         Instruction                 current_instruction;
-        INSTRUCTION_PHASE           phase{INSTRUCTION_PHASE::ISSUE};
+        INSTRUCTION_PHASE           phase{INSTRUCTION_PHASE::UNUSED};
         Register                    Vj;                     // Valor do operando J (se Qj vazio)
         Register                    Vk;                     // Valor do operando K (se Qk vazio)
         std::pair<std::string, int> Qj{"", -1};             // Qj/Qk: {rs_id, start_cycle} — produtor pendente
