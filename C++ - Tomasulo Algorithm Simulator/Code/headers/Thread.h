@@ -1,11 +1,12 @@
 /* headers/Thread.h */
 #ifndef THREAD_H      // Include guard
 #define THREAD_H
-#include "Components.h"
 #include "Instruction.h"
 #include "ReservationStations.h"
+#include "Components.h"
 #include <string>
 #include <vector>
+#include <memory>     // para std::shared_ptr
 #include <tuple>      // para passar e receber as instruções de troca de thread na Granulação Grossa
 #include <algorithm>  // para std::stable_sort
 #include <cstdlib>    // para std::abort
@@ -18,7 +19,8 @@ static const int rob_capacity_default = 32;
 
 // ─── STRUCT ───────────────────────────────────────────────────────
 struct TABLE_ROW {
-    Instruction       instruction;
+    // - A Thread é a "dona" do objeto via shared_ptr; RS e ROB guardam cópias do ponteiro.
+    std::shared_ptr<Instruction> instruction;
     int               issue_cycle{-1};
     std::vector<int>  ex_cycles;
     std::vector<int>  mem_cycles;
@@ -82,8 +84,9 @@ class Thread {
         std::vector<int>         wr_buffer;
         std::vector<int>         pending_wr_buffer;
         std::vector<int>         switch_cycles; // Para processadores com granulação grossa.
-        std::vector<Instruction> rob;
         std::vector<TABLE_ROW>   instruction_table;
+        // ROB: guarda os MESMOS objetos da tabela (ponteiros compartilhados, sem cópia).
+        std::vector<std::shared_ptr<Instruction>> rob;
 
         // Métodos privados:
         void InitializeComponents(

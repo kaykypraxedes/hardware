@@ -1,10 +1,6 @@
-// ──────────────────────────────────────────────────────────
-// Para rodar: ./build/executable < test-cases/inputs/<arquivo>.txt
-// ──────────────────────────────────────────────────────────
-
+/* Main.cpp */
 #include "headers/Processor.h"
 #include "headers/Instruction.h"
-
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -239,10 +235,10 @@ void PrintTable(
     for (const auto& l : table) {
         std::cout << std::left
                   << std::setw(W_POSITION - 2)
-                  << l.instruction.GetPosition()
+                  << l.instruction->GetPosition()
 
                   << std::setw(W_INST - 2)
-                  << l.instruction.GetInstructionString()
+                  << l.instruction->GetInstructionString()
 
                   << std::setw(W_ISSUE)
                   << CycleStr(l.issue_cycle)

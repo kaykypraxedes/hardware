@@ -123,7 +123,7 @@ void Processor::ExecuteIssue() {
         // Issue deu certo.
         if (ok) {
             dispatched++;
-            Instruction i{threads[thread_pointer].GetTable()[threads[thread_pointer].GetCurrentInstructionPosition() - 1].instruction};
+            Instruction& i{*threads[thread_pointer].GetTable()[threads[thread_pointer].GetCurrentInstructionPosition() - 1].instruction};
             // Verifica se a instrução é um Branch:
             // - Precisa interromper a adição de instruções no Issue se não tem previsor.
             if(i.GetInstructionType() == INSTRUCTION_TYPE::BRANCH &&

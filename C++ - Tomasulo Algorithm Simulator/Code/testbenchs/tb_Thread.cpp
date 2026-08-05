@@ -3,7 +3,6 @@
 //  Compile: g++ -o tb_Thread tb_Thread.cpp ../Components.cpp ../Instruction.cpp ../ReservationStations.cpp ../Thread.cpp
 // ──────────────────────────────────────────────────────────────────────────
 #include "../headers/Thread.h"
-#include "../headers/Instruction.h"
 #include "../headers/Components.h"
 #include "tb_helpers.h"
 #include <vector>
@@ -29,8 +28,8 @@ int main() {
 
         check("GetCurrentInstructionPosition() == 0",      t.GetCurrentInstructionPosition() == 0);
         check("GetTable().size() == 2",                    t.GetTable().size() == 2);
-        check("tabela[0].instruction.GetPosition() == 0",  t.GetTable()[0].instruction.GetPosition() == 0);
-        check("tabela[1].instruction.GetPosition() == 1",  t.GetTable()[1].instruction.GetPosition() == 1);
+        check("tabela[0].instruction->GetPosition() == 0",  t.GetTable()[0].instruction->GetPosition() == 0);
+        check("tabela[1].instruction->GetPosition() == 1",  t.GetTable()[1].instruction->GetPosition() == 1);
         check("tabela[0].issue_cycle == -1 (não emitido)", t.GetTable()[0].issue_cycle == -1);
 
         check("GetCDB().R.size() == 32",                   t.GetCDB().R.size() == 32);
@@ -75,16 +74,16 @@ int main() {
         std::vector<std::string> prog = {"L.D F2, 0(R1)"};
 
         Thread t1(prog);  // sem new_latency
-        check("exLat base == 1",  t1.GetTable()[0].instruction.GetExLatency()  == 1);
-        check("memLat base == 1", t1.GetTable()[0].instruction.GetMemLatency() == 1);
+        check("exLat base == 1",  t1.GetTable()[0].instruction->GetExLatency()  == 1);
+        check("memLat base == 1", t1.GetTable()[0].instruction->GetMemLatency() == 1);
 
         Thread t2(prog, {{0, 3, 2}});  // ex=3, mem=2
-        check("exLat == 3",  t2.GetTable()[0].instruction.GetExLatency()  == 3);
-        check("memLat == 2", t2.GetTable()[0].instruction.GetMemLatency() == 2);
+        check("exLat == 3",  t2.GetTable()[0].instruction->GetExLatency()  == 3);
+        check("memLat == 2", t2.GetTable()[0].instruction->GetMemLatency() == 2);
 
         Thread t3(prog, {{0, 5, 0}});  // ex=5, mem=0 → não altera mem
-        check("exLat == 5", t3.GetTable()[0].instruction.GetExLatency()  == 5);
-        check("memLat continua 1 (base)", t3.GetTable()[0].instruction.GetMemLatency() == 1);
+        check("exLat == 5", t3.GetTable()[0].instruction->GetExLatency()  == 5);
+        check("memLat continua 1 (base)", t3.GetTable()[0].instruction->GetMemLatency() == 1);
     }
 
     /*

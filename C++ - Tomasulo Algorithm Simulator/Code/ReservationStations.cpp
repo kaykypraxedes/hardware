@@ -1,6 +1,5 @@
 /* ReservationStations.cpp */
 #include "headers/ReservationStations.h"
-#include "headers/Instruction.h"
 
 namespace processor {
 
@@ -81,16 +80,19 @@ INSTRUCTION_PHASE_TOMASULO ReservationStation::GetInstructionPhase() const { ret
 const std::string& ReservationStation::GetId() const { return id; }
 
 // Público:
-const std::string& ReservationStation::GetQj() const { return Qj.first; }
+// Q do operando 0 (modelo antigo: J). Retorna por valor porque a instrução pode não ter fonte.
+std::string ReservationStation::GetQj() const { return Q.empty() ? "" : Q[0].first; }
 
 // Público:
-const std::string& ReservationStation::GetQk() const { return Qk.first; }
+// Q do operando 1 (modelo antigo: K). Retorna por valor porque a instrução pode não ter fonte.
+std::string ReservationStation::GetQk() const { return Q.size() < 2 ? "" : Q[1].first; }
 
 // Público:
 const std::vector<int>& ReservationStation::GetTimes()                const { return allocation_times; }
 
 // Público:
-const Instruction& ReservationStation::GetCurrentInstruction()        const { return current_instruction; }
+// A instrução é compartilhada com a tabela/ROB (multiarchitecture.md D3) — sempre não-nula quando busy.
+const Instruction& ReservationStation::GetCurrentInstruction()        const { return *current_instruction; }
 
 // Público:
 const std::vector<std::string>& ReservationStation::GetInstructions() const { return allocated_instructions; }
@@ -105,7 +107,7 @@ ReservationStation::ReservationStation(
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Público:
 bool ReservationStation::AddIssue(
-    const Instruction& instruction,
+    const std::shared_ptr<Instruction>& instruction,
     CDB&               cdb,
     const int          cycle
 ){
@@ -113,22 +115,19 @@ bool ReservationStation::AddIssue(
     if (busy) return false;
     // Reseta o RS
     SetupNewIssue(instruction, cycle);
-    // Define Vj, Vk, Qj e Qk:
-    Register dest    = instruction.GetDestRegister();
-    Register regJ    = instruction.GetJ();
-    Register regK    = instruction.GetK();
-    // 1. Marca no RS.
-    ReadSourceOperand('J', regJ, cdb);
-    ReadSourceOperand('K', regK, cdb);
-    // 2. Marca no CDB.
-    AllocateDestInCDB(dest, cdb, cycle);
+    // Define V[i] e Q[i] para cada fonte da instrução (modelo J/K generalizado para N operandos):
+    const std::vector<Register>& sources = instruction->GetSourceRegisters();
+    for (size_t i = 0; i < sources.size(); i++)
+        ReadSourceOperand(i, sources[i], cdb);
+    // 2. Marca no CDB os destinos (pode haver mais de um, ex.: x86 reg + EFLAGS).
+    AllocateDestInCDB(instruction->GetDestRegisters(), cdb, cycle);
     return true;
 }
 
 // Privado:
 // Apenas faz a limpeza e redefinição dos dadospara o novo issue (e marca a nova alocação nos vetores).
 void ReservationStation::SetupNewIssue(
-    const Instruction& instruction,
+    const std::shared_ptr<Instruction>& instruction,
     const int          cycle
 ){
     // RS está sendo usada
@@ -138,21 +137,22 @@ void ReservationStation::SetupNewIssue(
     // Valores default
     allocation_countdown = -1;
     fu_position          = -1;
-    Qj = Qk              = {"", -1};
-    Vj = Vk              = Register{};
+    // Um slot (V, Q) por fonte da instrução — todos pendentes/vazios por padrão.
+    V.assign(current_instruction->GetSourceRegisters().size(), Register{});
+    Q.assign(current_instruction->GetSourceRegisters().size(), {"", -1});
     // Marcação da nova alocação
-    allocated_instructions.push_back(instruction.GetInstructionString());
+    allocated_instructions.push_back(current_instruction->GetInstructionString());
     allocation_times.push_back(cycle);
 }
 
 // Privado:
-// Faz a leitura efetiva dos registradores e verifica se a alocação é em Vn (dado pronto) ou em Qn (dependente).
+// Faz a leitura efetiva do registrador da fonte 'idx' e verifica se a alocação é em V[idx] (dado pronto) ou em Q[idx] (dependente).
 void ReservationStation::ReadSourceOperand(
-    const char      type,
+    const size_t    idx,
     const Register& src,
     const CDB&      cdb
 ){
-    // Não tem J e/ou K.
+    // Não tem essa fonte.
     if (InvalidRegister(src)) return;
 
     // Acessa diretamente o registrador alvo dentro do CDB.
@@ -161,26 +161,29 @@ void ReservationStation::ReadSourceOperand(
         : cdb.R[src.GetId()];
     // Verifica se ele está com uma dependencia atualmente.
     std::string tag = regCDB.GetCurrentRS();
-    Register                    &V = type == 'J' ? Vj : Vk;
-    std::pair<std::string, int> &Q = type == 'J' ? Qj : Qk;
+    Register&                    V_idx = V[idx];
+    std::pair<std::string, int>& Q_idx = Q[idx];
     // Define o V ou o Q a depender do estado da alocação:
     // 1. Sem resultado pendente
-    if (tag.empty()) V = src;
+    if (tag.empty()) V_idx = src;
     // 2. Resultado pendente
-    else Q = {tag, regCDB.GetRSCycleStart(tag)};
+    else Q_idx = {tag, regCDB.GetRSCycleStart(tag)};
 }
 
 // Privado:
+// Marca no CDB todos os registradores de destino da instrução como pendentes desta RS.
 void ReservationStation::AllocateDestInCDB(
-    const Register& dest,
+    const std::vector<Register>& dests,
     CDB&            cdb,
     const int       cycle
 ){
-    // Não tem destino
-    if (InvalidRegister(dest)) return;
+    for (const Register& dest : dests) {
+        // Não tem destino
+        if (InvalidRegister(dest)) continue;
 
-    if (dest.GetType() == 'F') cdb.F[dest.GetId()].AllocateRS(id, cycle);
-    else                       cdb.R[dest.GetId()].AllocateRS(id, cycle);
+        if (dest.GetType() == 'F') cdb.F[dest.GetId()].AllocateRS(id, cycle);
+        else                       cdb.R[dest.GetId()].AllocateRS(id, cycle);
+    }
 }
 
 // Público:
@@ -194,9 +197,9 @@ bool ReservationStation::UpdateDependencies(
     // Se já estiver na fase WR (-1, mas não atualiza mais)
     if (phase == INSTRUCTION_PHASE_TOMASULO::WR) return false;
 
-    // Verifica se os Qj e/ou Qk já desapareceram (se sim, marca o Vj/Vk).
-    CheckDependency('J', cdb);
-    CheckDependency('K', cdb);
+    // Verifica se os Q[i] já desapareceram (se sim, marca o V[i] correspondente).
+    for (size_t i = 0; i < Q.size(); i++)
+        CheckDependency(i, cdb);
 
     // Aloca as FUs a depender da necessidade e fase da instrução.
     return AdvancePhaseAllocation(fu, cycle);
@@ -204,29 +207,27 @@ bool ReservationStation::UpdateDependencies(
 
 // Privado:
 void ReservationStation::CheckDependency(
-    const char type,
+    const size_t idx,
     CDB&       cdb
 ){
     // Define os parâmetros da atualização:
-    bool isJ{type == 'J'};
-    // - Instruction J/K.
-    const Register& reg{isJ ? current_instruction.GetJ() : current_instruction.GetK()};
-    // - Vj/Vk atual
-    Register& V{isJ ? Vj : Vk};
-    // - Qj/Qk atual
-    std::pair<std::string, int>& Q{isJ ? Qj : Qk};
+    // - Registrador fonte da posição 'idx' da instrução.
+    const Register& reg = current_instruction->GetSourceRegisters()[idx];
+    // - V[idx]/Q[idx] atuais
+    Register& V_idx = V[idx];
+    std::pair<std::string, int>& Q_idx = Q[idx];
 
     // Já existe um V ou se Q já foi resolvido
-    if (V.GetType() != 'Z' || Q.first.empty()) return;
+    if (V_idx.GetType() != 'Z' || Q_idx.first.empty()) return;
 
     Register& regCDB = (reg.GetType() == 'F')
         ? cdb.F[reg.GetId()]
         : cdb.R[reg.GetId()];
 
     // Verifica se já resolveu nesse cíclo para atualizar
-    if (regCDB.IsDependencyResolved(Q.first, Q.second)) {
-        V = reg;
-        Q = {"", -1};
+    if (regCDB.IsDependencyResolved(Q_idx.first, Q_idx.second)) {
+        V_idx = reg;
+        Q_idx = {"", -1};
     }
 }
 
@@ -235,30 +236,32 @@ bool ReservationStation::AdvancePhaseAllocation(
     FUNCTIONAL_UNITS& fu,
     const int         cycle
 ){
-    INSTRUCTION_TYPE type = current_instruction.GetInstructionType();
+    INSTRUCTION_TYPE type = current_instruction->GetInstructionType();
     bool is_load_store = (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE);
 
     // EX -> MEM:
     // - Apenas para LOAD e STORE
     if (is_load_store && phase == INSTRUCTION_PHASE_TOMASULO::MEM && allocation_countdown == -1) {
-        // O dado ainda não está pronto
-        if (type == INSTRUCTION_TYPE::STORE && !Qj.first.empty()) return false;
+        // O dado ainda não está pronto (fonte 0 = dado; demais = endereço)
+        if (type == INSTRUCTION_TYPE::STORE && !Q.empty() && !Q[0].first.empty()) return false;
 
-        return TryAllocateFU(fu, INSTRUCTION_PHASE_TOMASULO::MEM, cycle, current_instruction.GetMemLatency());
+        return TryAllocateFU(fu, INSTRUCTION_PHASE_TOMASULO::MEM, cycle, current_instruction->GetMemLatency());
     }
 
     // IS -> EX:
     // - Para todos os tipos de instrução.
     if (is_load_store) { // LOAD ou STORE:
-        // Cálculo de endereço só depende de Qk (Qj é assunto do MEM).
-        if (phase != INSTRUCTION_PHASE_TOMASULO::IS || !Qk.first.empty()) return false;
-    } // Instrução genérica:
-    else {
-        // Dependência não resolvida genérica que impede o cálculo em EX.
-        if (!Qj.first.empty() || !Qk.first.empty()) return false;
+        // Cálculo de endereço depende apenas da ÚLTIMA fonte (base/endereço);
+        // o dado (fonte 0) é assunto do MEM.
+        if (phase != INSTRUCTION_PHASE_TOMASULO::IS) return false;
+        if (!Q.empty() && !Q.back().first.empty()) return false;
+    } else { // Instrução genérica:
+        // Dependências não resolvidas genéricas que impedem o cálculo em EX.
+        for (const auto& q : Q)
+            if (!q.first.empty()) return false;
     }
 
-    return TryAllocateFU(fu, INSTRUCTION_PHASE_TOMASULO::EX, cycle, current_instruction.GetExLatency());
+    return TryAllocateFU(fu, INSTRUCTION_PHASE_TOMASULO::EX, cycle, current_instruction->GetExLatency());
 }
 
 // Privado:
@@ -272,7 +275,7 @@ bool ReservationStation::TryAllocateFU(
     if (latency <= 0) {
         std::cerr <<
         "[ERRO] Latência inválida: " << latency << '\n' <<
-        "- Instrução: " << current_instruction.GetInstructionString() << '\n' <<
+        "- Instrução: " << current_instruction->GetInstructionString() << '\n' <<
         "- RS: " << id << '\n';
         std::abort();
     }
@@ -293,7 +296,7 @@ int ReservationStation::FindFreeFU(
     const INSTRUCTION_PHASE_TOMASULO target_phase,
     const int                        cycle
 ) {
-    std::vector<FU>& fu_group{GetFUGroup(fu, current_instruction.GetInstructionType(), target_phase)};
+    std::vector<FU>& fu_group{GetFUGroup(fu, current_instruction->GetInstructionType(), target_phase)};
     return AllocateFreeFU(fu_group, cycle, id);
 }
 
@@ -310,7 +313,7 @@ bool ReservationStation::UpdateCountdown(
     if (allocation_countdown > 0) return false;
 
     // Instrução acabou de chegar no 0 da sua execução:
-    INSTRUCTION_TYPE type = current_instruction.GetInstructionType();
+    INSTRUCTION_TYPE type = current_instruction->GetInstructionType();
     // Libera a unidade funcional que estava sendo usada.
     ReleaseFU(fu, phase, cycle);
     // Verifica o próximo estágio:
@@ -335,7 +338,7 @@ void ReservationStation::ReleaseFU(
     const int                        cycle
 ){
     if (fu_position == -1) return;
-    std::vector<FU>& fu_group{GetFUGroup(fu, current_instruction.GetInstructionType(),finished_phase)};
+    std::vector<FU>& fu_group{GetFUGroup(fu, current_instruction->GetInstructionType(),finished_phase)};
 
     if (!DeallocateFU(fu_group, fu_position, cycle)) {
         std::cerr <<
@@ -348,14 +351,14 @@ void ReservationStation::ReleaseFU(
 }
 
 // Público:
-// Resolve dependência de Qj/Qk: se esta RS estiver esperando pelo produtor 'rs_id', captura o valor e limpa a pendência.
-// - Escolha de implementação: apenas o rs_id é verificado (não o start_cycle) porque uma RS ocupada sempre tem suas dependências resolvidas antes de ser liberada, não havendo Qj/Qk stale de alocações anteriores.
+// Resolve dependências: se esta RS estiver esperando pelo produtor 'rs_id', captura o valor e limpa a pendência.
+// - Escolha de implementação: apenas o rs_id é verificado (não o start_cycle) porque uma RS ocupada sempre tem suas dependências resolvidas antes de ser liberada, não havendo Q[i] stale de alocações anteriores.
 void ReservationStation::ResolveDependency(
     const std::string& rs_id,
     const Register&    value
 ){
-    if (Qj.first == rs_id) { Vj = value; Qj = {"", -1}; }
-    if (Qk.first == rs_id) { Vk = value; Qk = {"", -1}; }
+    for (size_t i = 0; i < Q.size(); i++)
+        if (Q[i].first == rs_id) { V[i] = value; Q[i] = {"", -1}; }
 }
 
 // Público:
@@ -366,8 +369,8 @@ void ReservationStation::Release(
     busy                 = false;
     allocation_countdown = -1;
     fu_position          = -1;
-    Qj = Qk              = {"", -1};
-    Vj = Vk              = Register{};
+    V.clear();
+    Q.clear();
     phase                = INSTRUCTION_PHASE_TOMASULO::UNUSED;
 }
 

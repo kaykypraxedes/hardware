@@ -1,12 +1,30 @@
 // ──────────────────────────────────────────────────────────────────────────
-//  tb_Instruction.cpp  —  Testbench isolado de Instruction.cpp
-//  Compile: g++ -o tb_Instruction tb_Instruction.cpp ../Components.cpp ../Instruction.cpp
+//  tb_Instruction.cpp  —  Testbench isolado do módulo Instruction
+//  Compile: g++ -o tb_Instruction tb_Instruction.cpp ../Components.cpp ../Instruction.cpp ../Instruction/InstructionMips32.cpp
 // ──────────────────────────────────────────────────────────────────────────
 #include "../headers/Instruction.h"
-#include "../headers/Components.h"
+#include "../Instruction/headers/InstructionMips32.h"
+#include "../headers/InstructionFactory.h"
 #include "tb_helpers.h"
+#include <memory>
+#include <vector>
 
 using namespace processor;
+
+// Público:
+// Helper do testbench: monta uma instrução MIPS32 na posição 'position' via
+// InstructionFactory (MESMO caminho que a Thread usa). As linhas "dummy"
+// anteriores são necessárias porque a Factory atribui a posição pelo índice
+// da linha no arquivo de trace.
+static std::shared_ptr<Instruction> make_inst(const int position, const std::string& line) {
+    std::vector<std::string> linhas;
+    for (int p = 0; p < position; p++)
+        linhas.push_back("ADD R0, R0, R0"); // dummy: apenas ocupa a posição
+    linhas.push_back(line);
+    std::vector<std::unique_ptr<Instruction>> parsed =
+        InstructionFactory::ParseTrace(linhas, Architecture::MIPS_32);
+    return std::shared_ptr<Instruction>(std::move(parsed[position]));
+}
 
 int main() {
 
@@ -16,34 +34,47 @@ int main() {
 
     print_title("1. CONSTRUÇÃO E ESTADO BÁSICO");
 
-    secao("1.1 Instruction() — construtor padrão");
+    secao("1.1 Instruction() — construtor padrão (via InstructionMips32, que é concreta)");
     {
-        Instruction i;
+        InstructionMips32 i;
         check("GetPosition() == -1",                   i.GetPosition() == -1);
         check("GetInstructionType() == INVALID",       i.GetInstructionType() == INSTRUCTION_TYPE::INVALID);
         check("GetExLatency() == 0",                   i.GetExLatency() == 0);
         check("GetMemLatency() == 0",                  i.GetMemLatency() == 0);
     }
 
-    secao("1.2 Construtor(posição, string) — GetPosition e GetInstructionString");
+    secao("1.2 InstructionFactory — posição pelo índice da linha e string");
     {
-        Instruction i(7, "ADD R1, R2, R3");
-        check("GetPosition() == 7",                            i.GetPosition() == 7);
-        check("GetInstructionString() == 'ADD    R1, R2, R3'", i.GetInstructionString() == "ADD    R1, R2, R3");
+        auto i = make_inst(7, "ADD R1, R2, R3");
+        check("GetPosition() == 7",                            i->GetPosition() == 7);
+        check("GetInstructionString() == 'ADD    R1, R2, R3'", i->GetInstructionString() == "ADD    R1, R2, R3");
+    }
+
+    secao("1.3 InstructionFactory — arquitetura de trace (MIPS32 por ora)");
+    {
+        std::vector<std::string> trace = {"ADD R1, R2, R3", "L.D F2, 0(R1)"};
+        auto parsed = InstructionFactory::ParseTrace(trace, Architecture::MIPS_32);
+        check("2 instruções parseadas",            parsed.size() == 2);
+        check("posição 0 == 0",                    parsed[0]->GetPosition() == 0);
+        check("posição 1 == 1",                    parsed[1]->GetPosition() == 1);
+        check("posição 0 é INT_BASIC",             parsed[0]->GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC);
+        check("posição 1 é LOAD",                  parsed[1]->GetInstructionType() == INSTRUCTION_TYPE::LOAD);
     }
 
     /*
     // Teste das flags de segurança do programa (abortam a execução):
 
-    secao("[ABORT] Posição válida e string vazia deve abortar");
+    secao("[ABORT] String vazia deve abortar");
     {
-        Instruction i(5, "");
+        InstructionMips32 i(5);
+        i.Parse("");
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
     }
 
     secao("[ABORT] Instrução desconhecida deve abortar");
     {
-        Instruction i(10, "XPTO R1, R2, R3");
+        InstructionMips32 i(10);
+        i.Parse("XPTO R1, R2, R3");
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
     }
     */
@@ -57,56 +88,57 @@ int main() {
 
     secao("2.1 LOAD (L.D)");
     {
-        Instruction i(0, "L.D F2, 0(R1)");
-        check("L.D: tipo == LOAD",           i.GetInstructionType() == INSTRUCTION_TYPE::LOAD);
-        check("L.D: exLatency  == 1",        i.GetExLatency()  == 1);
-        check("L.D: memLatency == 1",        i.GetMemLatency() == 1);
-        check("L.D: dest tipo='F'",          i.GetDestRegister().GetType() == 'F');
-        check("L.D: dest id=2",              i.GetDestRegister().GetId()   == 2);
-        check("L.D: J tipo='Z' (sem J)",     i.GetJ().GetType() == 'Z');
-        check("L.D: K tipo='R'",             i.GetK().GetType() == 'R');
-        check("L.D: K id=1",                 i.GetK().GetId()   == 1);
+        auto i = make_inst(0, "L.D F2, 0(R1)");
+        check("L.D: tipo == LOAD",           i->GetInstructionType() == INSTRUCTION_TYPE::LOAD);
+        check("L.D: exLatency  == 1",        i->GetExLatency()  == 1);
+        check("L.D: memLatency == 1",        i->GetMemLatency() == 1);
+        check("L.D: dest[0] tipo='F'",       i->GetDestRegisters()[0].GetType() == 'F');
+        check("L.D: dest[0] id=2",           i->GetDestRegisters()[0].GetId()   == 2);
+        check("L.D: 1 destino",              i->GetDestRegisters().size() == 1);
+        check("L.D: source[0] tipo='R'",     i->GetSourceRegisters()[0].GetType() == 'R');
+        check("L.D: source[0] id=1",         i->GetSourceRegisters()[0].GetId()   == 1);
+        check("L.D: 1 fonte",                i->GetSourceRegisters().size() == 1);
     }
 
     secao("2.2 STORE (S.D)");
     {
-        Instruction i(1, "S.D F6, 0(R2)");
-        check("S.D: tipo == STORE",          i.GetInstructionType() == INSTRUCTION_TYPE::STORE);
-        check("S.D: exLatency  == 1",        i.GetExLatency()  == 1);
-        check("S.D: memLatency == 1",        i.GetMemLatency() == 1);
-        check("S.D: dest tipo='Z' (sem dest)", i.GetDestRegister().GetType() == 'Z');
-        check("S.D: J tipo='F'",             i.GetJ().GetType() == 'F');
-        check("S.D: J id=6",                 i.GetJ().GetId()   == 6);
-        check("S.D: K tipo='R'",             i.GetK().GetType() == 'R');
-        check("S.D: K id=2",                 i.GetK().GetId()   == 2);
+        auto i = make_inst(1, "S.D F6, 0(R2)");
+        check("S.D: tipo == STORE",          i->GetInstructionType() == INSTRUCTION_TYPE::STORE);
+        check("S.D: exLatency  == 1",        i->GetExLatency()  == 1);
+        check("S.D: memLatency == 1",        i->GetMemLatency() == 1);
+        check("S.D: sem destino",            i->GetDestRegisters().empty());
+        check("S.D: source[0] tipo='F' (dado)", i->GetSourceRegisters()[0].GetType() == 'F');
+        check("S.D: source[0] id=6",         i->GetSourceRegisters()[0].GetId()   == 6);
+        check("S.D: source[1] tipo='R' (endereço)", i->GetSourceRegisters()[1].GetType() == 'R');
+        check("S.D: source[1] id=2",         i->GetSourceRegisters()[1].GetId()   == 2);
     }
 
     secao("2.3 INT_BASIC (DADDIU, ADD)");
     {
-        Instruction i(2, "DADDIU R1, R1, #8");
-        check("DADDIU: tipo == INT_BASIC",   i.GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC);
-        check("DADDIU: exLatency == 1",      i.GetExLatency() == 1);
-        check("DADDIU: dest tipo='R'",       i.GetDestRegister().GetType() == 'R');
-        check("DADDIU: dest id=1",           i.GetDestRegister().GetId()   == 1);
-        check("DADDIU: J tipo='R'",          i.GetJ().GetType() == 'R');
-        check("DADDIU: J id=1",              i.GetJ().GetId()   == 1);
-        check("DADDIU: K tipo='Z' (imediato)", i.GetK().GetType() == 'Z');
+        auto i = make_inst(2, "DADDIU R1, R1, #8");
+        check("DADDIU: tipo == INT_BASIC",   i->GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC);
+        check("DADDIU: exLatency == 1",      i->GetExLatency() == 1);
+        check("DADDIU: dest[0] tipo='R'",    i->GetDestRegisters()[0].GetType() == 'R');
+        check("DADDIU: dest[0] id=1",        i->GetDestRegisters()[0].GetId()   == 1);
+        check("DADDIU: source[0] tipo='R'",  i->GetSourceRegisters()[0].GetType() == 'R');
+        check("DADDIU: source[0] id=1",      i->GetSourceRegisters()[0].GetId()   == 1);
+        check("DADDIU: imediato não vira fonte", i->GetSourceRegisters().size() == 1);
 
-        Instruction add(3, "ADD R3, R1, R2");
-        check("ADD: dest id=3",  add.GetDestRegister().GetId() == 3);
-        check("ADD: J id=1",     add.GetJ().GetId()          == 1);
-        check("ADD: K id=2",     add.GetK().GetId()          == 2);
+        auto add = make_inst(3, "ADD R3, R1, R2");
+        check("ADD: dest[0] id=3",  add->GetDestRegisters()[0].GetId() == 3);
+        check("ADD: source[0] id=1", add->GetSourceRegisters()[0].GetId() == 1);
+        check("ADD: source[1] id=2", add->GetSourceRegisters()[1].GetId() == 2);
     }
 
     secao("2.4 INT_MUL e INT_DIV (MUL, DIV)");
     {
-        Instruction mul(5, "MUL R3, R1, R2");
-        check("MUL: tipo == INT_MUL",        mul.GetInstructionType() == INSTRUCTION_TYPE::INT_MUL);
-        check("MUL: exLatency == 4",         mul.GetExLatency() == 4);
+        auto mul = make_inst(5, "MUL R3, R1, R2");
+        check("MUL: tipo == INT_MUL",        mul->GetInstructionType() == INSTRUCTION_TYPE::INT_MUL);
+        check("MUL: exLatency == 4",         mul->GetExLatency() == 4);
 
-        Instruction div(6, "DIV R3, R1, R2");
-        check("DIV: tipo == INT_DIV",        div.GetInstructionType() == INSTRUCTION_TYPE::INT_DIV);
-        check("DIV: exLatency == 10",        div.GetExLatency() == 10);
+        auto div = make_inst(6, "DIV R3, R1, R2");
+        check("DIV: tipo == INT_DIV",        div->GetInstructionType() == INSTRUCTION_TYPE::INT_DIV);
+        check("DIV: exLatency == 10",        div->GetExLatency() == 10);
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -118,31 +150,31 @@ int main() {
 
     secao("3.1 BNEZ e BEQ — operandos padrão");
     {
-        Instruction i(4, "BNEZ R3, foo");
-        check("BNEZ: tipo == BRANCH",        i.GetInstructionType() == INSTRUCTION_TYPE::BRANCH);
-        check("BNEZ: exLatency == 1",        i.GetExLatency() == 1);
-        check("BNEZ: dest tipo='Z'",         i.GetDestRegister().GetType() == 'Z');
-        check("BNEZ: J tipo='R'",            i.GetJ().GetType() == 'R');
-        check("BNEZ: J id=3",                i.GetJ().GetId()   == 3);
-        check("BNEZ: K tipo='Z' (label)",    i.GetK().GetType() == 'Z');
+        auto i = make_inst(4, "BNEZ R3, foo");
+        check("BNEZ: tipo == BRANCH",        i->GetInstructionType() == INSTRUCTION_TYPE::BRANCH);
+        check("BNEZ: exLatency == 1",        i->GetExLatency() == 1);
+        check("BNEZ: sem destino",           i->GetDestRegisters().empty());
+        check("BNEZ: source[0] tipo='R'",    i->GetSourceRegisters()[0].GetType() == 'R');
+        check("BNEZ: source[0] id=3",        i->GetSourceRegisters()[0].GetId()   == 3);
+        check("BNEZ: label não vira fonte",  i->GetSourceRegisters().size() == 1);
 
-        Instruction beq(5, "BEQ R1, R2, label");
-        check("BEQ: J tipo='R'", beq.GetJ().GetType() == 'R');
-        check("BEQ: J id=1",     beq.GetJ().GetId()   == 1);
-        check("BEQ: K tipo='R'", beq.GetK().GetType() == 'R');
-        check("BEQ: K id=2",     beq.GetK().GetId()   == 2);
+        auto beq = make_inst(5, "BEQ R1, R2, label");
+        check("BEQ: source[0] tipo='R'", beq->GetSourceRegisters()[0].GetType() == 'R');
+        check("BEQ: source[0] id=1",     beq->GetSourceRegisters()[0].GetId()   == 1);
+        check("BEQ: source[1] tipo='R'", beq->GetSourceRegisters()[1].GetType() == 'R');
+        check("BEQ: source[1] id=2",     beq->GetSourceRegisters()[1].GetId()   == 2);
     }
 
     secao("3.2 Outros opcodes: JR, J, BGTZ");
     {
-        Instruction jr(0, "JR R1");
-        check("JR: J tipo='R'", jr.GetJ().GetType() == 'R');
+        auto jr = make_inst(0, "JR R1");
+        check("JR: source[0] tipo='R'", jr->GetSourceRegisters()[0].GetType() == 'R');
 
-        Instruction j(1, "J loop");
-        check("J: J tipo='Z' (sem registrador)", j.GetJ().GetType() == 'Z');
+        auto j = make_inst(1, "J loop");
+        check("J: sem fontes (só label)", j->GetSourceRegisters().empty());
 
-        Instruction bgtz(2, "BGTZ R4, done");
-        check("BGTZ: J id=4", bgtz.GetJ().GetId() == 4);
+        auto bgtz = make_inst(2, "BGTZ R4, done");
+        check("BGTZ: source[0] id=4", bgtz->GetSourceRegisters()[0].GetId() == 4);
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -154,35 +186,35 @@ int main() {
 
     secao("4.1 FLOAT_BASIC (ADD.D)");
     {
-        Instruction i(7, "ADD.D F6, F4, F6");
-        check("ADD.D: tipo == FLOAT_BASIC", i.GetInstructionType() == INSTRUCTION_TYPE::FLOAT_BASIC);
-        check("ADD.D: exLatency == 9",      i.GetExLatency() == 9);
-        check("ADD.D: dest tipo='F'",        i.GetDestRegister().GetType() == 'F');
-        check("ADD.D: dest id=6",            i.GetDestRegister().GetId()   == 6);
-        check("ADD.D: J tipo='F'",           i.GetJ().GetType() == 'F');
-        check("ADD.D: J id=4",               i.GetJ().GetId()   == 4);
-        check("ADD.D: K tipo='F'",           i.GetK().GetType() == 'F');
-        check("ADD.D: K id=6",               i.GetK().GetId()   == 6);
+        auto i = make_inst(7, "ADD.D F6, F4, F6");
+        check("ADD.D: tipo == FLOAT_BASIC", i->GetInstructionType() == INSTRUCTION_TYPE::FLOAT_BASIC);
+        check("ADD.D: exLatency == 9",      i->GetExLatency() == 9);
+        check("ADD.D: dest[0] tipo='F'",    i->GetDestRegisters()[0].GetType() == 'F');
+        check("ADD.D: dest[0] id=6",        i->GetDestRegisters()[0].GetId()   == 6);
+        check("ADD.D: source[0] tipo='F'",  i->GetSourceRegisters()[0].GetType() == 'F');
+        check("ADD.D: source[0] id=4",      i->GetSourceRegisters()[0].GetId()   == 4);
+        check("ADD.D: source[1] tipo='F'",  i->GetSourceRegisters()[1].GetType() == 'F');
+        check("ADD.D: source[1] id=6",      i->GetSourceRegisters()[1].GetId()   == 6);
     }
 
     secao("4.2 FLOAT_MUL (MUL.D)");
     {
-        Instruction i(8, "MUL.D F4, F2, F0");
-        check("MUL.D: tipo == FLOAT_MUL",    i.GetInstructionType() == INSTRUCTION_TYPE::FLOAT_MUL);
-        check("MUL.D: exLatency == 14",      i.GetExLatency() == 14);
-        check("MUL.D: dest tipo='F'",        i.GetDestRegister().GetType() == 'F');
-        check("MUL.D: dest id=4",            i.GetDestRegister().GetId()   == 4);
-        check("MUL.D: J tipo='F'",           i.GetJ().GetType() == 'F');
-        check("MUL.D: J id=2",               i.GetJ().GetId()   == 2);
-        check("MUL.D: K tipo='F'",           i.GetK().GetType() == 'F');
-        check("MUL.D: K id=0",               i.GetK().GetId()   == 0);
+        auto i = make_inst(8, "MUL.D F4, F2, F0");
+        check("MUL.D: tipo == FLOAT_MUL",    i->GetInstructionType() == INSTRUCTION_TYPE::FLOAT_MUL);
+        check("MUL.D: exLatency == 14",      i->GetExLatency() == 14);
+        check("MUL.D: dest[0] tipo='F'",     i->GetDestRegisters()[0].GetType() == 'F');
+        check("MUL.D: dest[0] id=4",         i->GetDestRegisters()[0].GetId()   == 4);
+        check("MUL.D: source[0] tipo='F'",   i->GetSourceRegisters()[0].GetType() == 'F');
+        check("MUL.D: source[0] id=2",       i->GetSourceRegisters()[0].GetId()   == 2);
+        check("MUL.D: source[1] tipo='F'",   i->GetSourceRegisters()[1].GetType() == 'F');
+        check("MUL.D: source[1] id=0",       i->GetSourceRegisters()[1].GetId()   == 0);
     }
 
     secao("4.3 FLOAT_DIV (DIV.D)");
     {
-        Instruction i(9, "DIV.D F4, F2, F0");
-        check("DIV.D: tipo == FLOAT_DIV",    i.GetInstructionType() == INSTRUCTION_TYPE::FLOAT_DIV);
-        check("DIV.D: exLatency == 40",      i.GetExLatency() == 40);
+        auto i = make_inst(9, "DIV.D F4, F2, F0");
+        check("DIV.D: tipo == FLOAT_DIV",    i->GetInstructionType() == INSTRUCTION_TYPE::FLOAT_DIV);
+        check("DIV.D: exLatency == 40",      i->GetExLatency() == 40);
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -207,13 +239,13 @@ int main() {
 
     secao("5.2 SetExLatency / SetMemLatency");
     {
-        Instruction i(11, "L.D F0, 0(R0)");
-        check("antes: exLat == 1",  i.GetExLatency()  == 1);
-        check("antes: memLat == 1", i.GetMemLatency() == 1);
-        i.SetExLatency(5);
-        i.SetMemLatency(3);
-        check("depois: exLat == 5",  i.GetExLatency()  == 5);
-        check("depois: memLat == 3", i.GetMemLatency() == 3);
+        auto i = make_inst(11, "L.D F0, 0(R0)");
+        check("antes: exLat == 1",  i->GetExLatency()  == 1);
+        check("antes: memLat == 1", i->GetMemLatency() == 1);
+        i->SetExLatency(5);
+        i->SetMemLatency(3);
+        check("depois: exLat == 5",  i->GetExLatency()  == 5);
+        check("depois: memLat == 3", i->GetMemLatency() == 3);
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -225,37 +257,37 @@ int main() {
 
     secao("6.1 NormalizeInstruction — casos variados");
     {
-        Instruction i1(0, "add r1, r2, r3");
-        check("lowercase -> uppercase", i1.GetInstructionString() ==     "ADD    R1, R2, R3");
+        auto i1 = make_inst(0, "add r1, r2, r3");
+        check("lowercase -> uppercase", i1->GetInstructionString() ==     "ADD    R1, R2, R3");
 
-        Instruction i2(1, "   l.d     f2 ,    0(r1)   ");
-        check("espacos extras + tabs", i2.GetInstructionString() ==      "L.D    F2, 0(R1)");
+        auto i2 = make_inst(1, "   l.d     f2 ,    0(r1)   ");
+        check("espacos extras + tabs", i2->GetInstructionString() ==      "L.D    F2, 0(R1)");
 
-        Instruction i3(2, "ADD R1 R2 R3"); // sem vírgulas
-        check("apenas espaços -> vírgulas", i3.GetInstructionString() == "ADD    R1, R2, R3");
+        auto i3 = make_inst(2, "ADD R1 R2 R3"); // sem vírgulas
+        check("apenas espaços -> vírgulas", i3->GetInstructionString() == "ADD    R1, R2, R3");
 
-        Instruction i4(3, "SW R1 4(R2)");
-        check("STORE sem vírgula", i4.GetInstructionString() ==          "SW     R1, 4(R2)");
+        auto i4 = make_inst(3, "SW R1 4(R2)");
+        check("STORE sem vírgula", i4->GetInstructionString() ==          "SW     R1, 4(R2)");
     }
 
     secao("6.2 BRANCH — normalização de labels");
     {
-        Instruction i1(0, "BNEZ r3, LOOP");
-        check("label vira minúsculo", i1.GetInstructionString() ==       "BNEZ   R3, loop");
+        auto i1 = make_inst(0, "BNEZ r3, LOOP");
+        check("label vira minúsculo", i1->GetInstructionString() ==       "BNEZ   R3, loop");
 
-        Instruction i2(1, "J END");
-        check("J label vira minúsculo", i2.GetInstructionString() ==     "J      end");
+        auto i2 = make_inst(1, "J END");
+        check("J label vira minúsculo", i2->GetInstructionString() ==     "J      end");
 
         // Este é o caso que expõe o bug do SetAttributes:
-        Instruction i3(2, "BEQZ R2, retry");
-        check("label 'retry' (começa com R) não vira Register", i3.GetJ().GetType() == 'R');
-        check("label 'retry' não afetou K",                     i3.GetK().GetType() == 'Z');
+        auto i3 = make_inst(2, "BEQZ R2, retry");
+        check("label 'retry' (começa com R) não vira Register", i3->GetSourceRegisters()[0].GetType() == 'R');
+        check("label 'retry' não vira fonte",                   i3->GetSourceRegisters().size() == 1);
     }
 
     secao("6.3 Opcode minúsculo reconhecido (mul.d)");
     {
-        Instruction i(0, "mul.d f4, f2, f0");
-        check("opcode minúsculo é reconhecido", i.GetInstructionType() == INSTRUCTION_TYPE::FLOAT_MUL);
+        auto i = make_inst(0, "mul.d f4, f2, f0");
+        check("opcode minúsculo é reconhecido", i->GetInstructionType() == INSTRUCTION_TYPE::FLOAT_MUL);
     }
 
     std::cout << "\n-----------------------------\n";

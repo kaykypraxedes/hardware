@@ -1,12 +1,13 @@
 /* headers/ReservationStations.h */
 #ifndef RESERVATION_STATIONS_H // Include guard
 #define RESERVATION_STATIONS_H
-#include "Components.h"
 #include "Instruction.h"
+#include "Components.h"
 #include <string>
 #include <vector>
-#include <cstdlib>             // para std::abort
-#include <iostream>            // para std::cerr
+#include <memory>    // para std::shared_ptr
+#include <cstdlib>   // para std::abort
+#include <iostream>  // para std::cerr
 
 namespace processor {
 
@@ -26,14 +27,15 @@ class ReservationStation {
         // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
         const Instruction&              GetCurrentInstruction() const;
         const std::string&              GetId()                 const;
-        const std::string&              GetQj()                 const;
-        const std::string&              GetQk()                 const;
+        // Retornam por valor: com N operandos o Q correspondente pode não existir (Q vazio).
+        std::string                     GetQj()                 const;
+        std::string                     GetQk()                 const;
         const std::vector<int>&         GetTimes()              const;
         const std::vector<std::string>& GetInstructions()       const;
 
         // Métodos públicos:
         bool AddIssue(
-            const Instruction&,
+            const std::shared_ptr<Instruction>&,
             CDB&,
             const int
         );
@@ -55,38 +57,38 @@ class ReservationStation {
         );
     private:
         // Atributos:
-        bool                        busy{false};
-        int                         allocation_countdown{-1};
-        int                         fu_position{-1};
-        std::string                 id;                     // Nome do RS ("load1", "addInt3", etc.)
-        Instruction                 current_instruction;
-        INSTRUCTION_PHASE_TOMASULO  phase{INSTRUCTION_PHASE_TOMASULO::UNUSED};
-        Register                    Vj;                     // Valor do operando J (se Qj vazio)
-        Register                    Vk;                     // Valor do operando K (se Qk vazio)
-        std::pair<std::string, int> Qj{"", -1};             // Qj/Qk: {rs_id, start_cycle} — produtor pendente
-        std::pair<std::string, int> Qk{"", -1};             // par vazio {"", -1} = operando disponível
-        std::vector<int>            allocation_times;       // De 2 em 2, início da alocação e fim da alocação
-        std::vector<std::string>    allocated_instructions; // De 1 em 1, instruções alocadas na RS
+        bool                         busy{false};
+        int                          allocation_countdown{-1};
+        int                          fu_position{-1};
+        std::string                  id;                     // Nome do RS ("load1", "addInt3", etc.)
+        // Instrução compartilhada com a tabela/ROB
+        std::shared_ptr<Instruction> current_instruction;
+        INSTRUCTION_PHASE_TOMASULO   phase{INSTRUCTION_PHASE_TOMASULO::UNUSED};
+        // Operandos (um par por fonte da instrução — modelo J/K antigo generalizado):
+        std::vector<Register>        V;                      // V[i]: valor do operando i (se Q[i] vazio)
+        std::vector<std::pair<std::string,int>> Q;           // Q[i]: {rs_id, start_cycle} — produtor pendente
+        std::vector<int>             allocation_times;       // De 2 em 2, início da alocação e fim da alocação
+        std::vector<std::string>     allocated_instructions; // De 1 em 1, instruções alocadas na RS
 
         // Métodos privados:
         // - AddIssue()
         void SetupNewIssue(
-            const Instruction&,
+            const std::shared_ptr<Instruction>&,
             const int
         );
         void ReadSourceOperand(
-            const char,
+            const size_t,
             const Register&,
             const CDB&
         );
         void AllocateDestInCDB(
-            const Register&,
+            const std::vector<Register>&,
             CDB&,
             const int
         );
         // - UpdateDependencies()
         void CheckDependency(
-            const char,
+            const size_t,
             CDB&
         );
         bool AdvancePhaseAllocation(

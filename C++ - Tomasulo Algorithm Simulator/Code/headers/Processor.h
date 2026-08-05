@@ -1,6 +1,7 @@
 /* headers/Processor.h */
 #ifndef PROCESSOR_H   // Include guard
 #define PROCESSOR_H
+// Módulo multi-arquitetura (ver multiarchitecture.md).
 #include "Instruction.h"
 #include "Thread.h"
 #include <string>

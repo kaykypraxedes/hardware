@@ -1,5 +1,5 @@
 CXX      = g++
-CXXFLAGS = -Wall -Wextra -std=c++17 -g -MMD -MP
+CXXFLAGS = -Wall -Wextra -std=c++17 -g -MMD -MP -I$(SRCDIR)/headers
 LDFLAGS  =
 
 SRCDIR   = .
@@ -8,7 +8,9 @@ OBJDIR   = build
 INPUTDIR = test-cases/inputs
 EXPDIR   = test-cases/expected
 
-SRCS     = $(wildcard $(SRCDIR)/*.cpp)
+# Módulo multi-arquitetura (Code/Instruction/) — mantido em pasta separada
+# para receber as novas arquiteturas (ver multiarchitecture.md).
+SRCS     = $(wildcard $(SRCDIR)/*.cpp) $(wildcard $(SRCDIR)/Instruction/*.cpp)
 OBJS     = $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%.o,$(SRCS))
 MAIN_OBJ = $(OBJDIR)/Main.o
 
@@ -29,7 +31,9 @@ $(OBJDIR):
 	mkdir -p $(OBJDIR)
 
 # --- Compilação dos objetos com dependências automáticas ---
+# - mkdir -p $(dir $@): garante subdiretórios (ex.: build/Instruction/) para o módulo multi-arquitetura.
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
+	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 -include $(DEPS)

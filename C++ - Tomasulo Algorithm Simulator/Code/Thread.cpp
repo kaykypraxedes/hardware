@@ -1,6 +1,6 @@
 /* Thread.cpp */
 #include "headers/Thread.h"
-#include "headers/Instruction.h"
+#include "headers/InstructionFactory.h"
 
 namespace processor {
 
@@ -123,13 +123,20 @@ Thread::Thread(
     }
 
     // Passa as instruções para a tabela.
-    int i{};
-    for (const std::string& instr : assembly)
+    // - O parse é feito pelo InstructionFactory (multiarchitecture.md):
+    //   por enquanto a arquitetura é fixa em MIPS32; a chave de config
+    //   (configuração -> arquitetura) é assunto da Fase 2 (Bloco C).
+    // - A Factory devolve unique_ptr; a Thread converte para shared_ptr ao
+    //   guardar na tabela (D3) para que RS e ROB compartilhem o MESMO objeto.
+    std::vector<std::unique_ptr<Instruction>> parsed =
+        InstructionFactory::ParseTrace(assembly, Architecture::MIPS_32);
+    for (std::unique_ptr<Instruction>& inst : parsed) {
         // Ignora propositalmente os outros valores para que eles recebam o default.
         #pragma GCC diagnostic push
         #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-        instruction_table.push_back({Instruction(i++, instr)}); // Warning ignorado.
+        instruction_table.push_back({std::shared_ptr<Instruction>(std::move(inst))}); // Warning ignorado.
         #pragma GCC diagnostic pop
+    }
 
     // Inicializa os RSs e as FUs.
     InitializeComponents(num_rs, num_fus, dispatch_width);
@@ -137,8 +144,8 @@ Thread::Thread(
     // Passa as novas latências às instruções.
     for (const auto& [position, ex, mem] : new_latency) {
         if (static_cast<size_t>(position) < instruction_table.size()) {
-            instruction_table[position].instruction.SetExLatency(ex);
-            if (mem > 0) instruction_table[position].instruction.SetMemLatency(mem);
+            instruction_table[position].instruction->SetExLatency(ex);
+            if (mem > 0) instruction_table[position].instruction->SetMemLatency(mem);
         }
     }
 }
@@ -236,12 +243,12 @@ bool Thread::Issue(
     // Verifica se tem espaço no ROB para adicionar mais instruções.
     if (rob.size() >= static_cast<size_t>(rob_capacity)) return false;
 
-    // Verifica se a instrução é válida.
-    Instruction& instruction = instruction_table[current_instruction_position].instruction;
-    INSTRUCTION_TYPE type    = instruction.GetInstructionType();
+    // Verifica se a instrução é válida (shared_ptr compartilhado com RS/ROB).
+    const std::shared_ptr<Instruction>& instruction = instruction_table[current_instruction_position].instruction;
+    INSTRUCTION_TYPE type    = instruction->GetInstructionType();
     if (type == INSTRUCTION_TYPE::INVALID) {
         std::cerr << "[ERRO] Tentativa de adicionar instrução inválida no issue! \n"
-                  << "- Instrução: " << instruction.GetInstructionString() << "\n"
+                  << "- Instrução: " << instruction->GetInstructionString() << "\n"
                   << "- Posição: "   << current_instruction_position << "\n";
         std::abort();
     }
@@ -256,8 +263,8 @@ bool Thread::Issue(
             // 1. Marca na tabela o IS da instrução.
             instruction_table[current_instruction_position].issue_cycle = cycle;
             // 2.1. Se tem um ROB:
-            // - Adiciona a instrução no ROB.
-            if (has_rob) rob.push_back(instruction);
+            // - Adiciona a instrução no ROB (MESMO shared_ptr da tabela: sem cópia).
+            if (has_rob) rob.push_back(instruction_table[current_instruction_position].instruction);
             // 2.2. Se não tem ROB (obrigatóriamente sem previsor de desvio) e for um branch:
             // - Marca para as instruções posteriores serem atrasadas.
             else if (type == INSTRUCTION_TYPE::BRANCH)
@@ -365,7 +372,7 @@ void Thread::PerformWriteResult(
     int writes{};
     while (!wr_buffer.empty() && writes < fu.wr) { // Limitado pela capacidade de WR simultâneo.
         int position = wr_buffer.front();
-        INSTRUCTION_TYPE instr_type{instruction_table[position].instruction.GetInstructionType()};
+        INSTRUCTION_TYPE instr_type{instruction_table[position].instruction->GetInstructionType()};
         bool store_with_rob = (instr_type == INSTRUCTION_TYPE::STORE && has_rob);
 
         // O estágio WR do STORE só é marcado se o o processador não possui ROB.
@@ -393,16 +400,19 @@ void Thread::WriteResultOnComponents(
     const int position,
     const int cycle
 ){
-    INSTRUCTION_TYPE type = instruction_table[position].instruction.GetInstructionType();
+    INSTRUCTION_TYPE type = instruction_table[position].instruction->GetInstructionType();
 
     // STORE e BRANCH não escrevem em nenhum registrador.
     if (type != INSTRUCTION_TYPE::STORE && type != INSTRUCTION_TYPE::BRANCH)
         instruction_table[position].wr_cycle = cycle;
 
-    // 1. Propaga o resultado no CDB e libera o registrador.
+    // 1. Propaga o resultado no CDB e libera os registradores.
     // 2. Resolve as dependências nos RSs que estavam esperando.
-    Register dest = instruction_table[position].instruction.GetDestRegister();
-    BroadcastOnRSAndCDB(dest, position, cycle);
+    // - Instrução pode ter mais de um destino (ex.: x86 reg + EFLAGS);
+    //   o broadcast é feito para cada destino, um por um.
+    const std::vector<Register>& dests = instruction_table[position].instruction->GetDestRegisters();
+    for (const Register& dest : dests)
+        BroadcastOnRSAndCDB(dest, position, cycle);
 
     // Libera a célula da RS produtora.
     ReleaseRS(GetRSGroupForType(rs, type), position, cycle);
@@ -518,7 +528,7 @@ void Thread::Commit(
     // Até acabar as instruções ou até o limite de despacho.
     while (!rob.empty() && writes < fu.commit){
         TABLE_ROW& row{instruction_table[commit_pointer]};
-        INSTRUCTION_TYPE type = row.instruction.GetInstructionType();
+        INSTRUCTION_TYPE type = row.instruction->GetInstructionType();
         bool is_store = (type == INSTRUCTION_TYPE::STORE);
         bool pronto = false;
 
@@ -530,7 +540,7 @@ void Thread::Commit(
             }
             // Verifica se a instrução já acabou o MEM.
             if (row.mem_cycles.size() == 1) {
-                int mem_end = row.mem_cycles.back() + row.instruction.GetMemLatency() - 1;
+                int mem_end = row.mem_cycles.back() + row.instruction->GetMemLatency() - 1;
                 if (cycle >= mem_end) {
                     row.mem_cycles.pop_back(); // Tira a marcação temporária da tabela.
                     pronto = true;

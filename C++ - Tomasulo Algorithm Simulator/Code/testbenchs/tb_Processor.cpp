@@ -34,7 +34,7 @@ int main() {
 
         check("GetThreadTable(0).size() == 1", p.GetThreadTable(0).size() == 1);
         check("instrução na posição 0 é ADD (INT_BASIC)",
-              p.GetThreadTable(0)[0].instruction.GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC);
+              p.GetThreadTable(0)[0].instruction->GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC);
     }
 
     secao("1.2 Programa vazio — caso de borda trivial");

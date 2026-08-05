@@ -19,7 +19,7 @@
 
 ## ⏳ Funcionalidades Incompletas (ADIADO)
 
-- [ ] **`PROCESSOR_TYPE::IN_ORDER`** — Pipeline clássico de 5 estágios (sem Tomasulo), stalls estruturais diferenciados, etc.
+- [ ] **`PROCESSOR_TYPE::IN_ORDER`** — Pipeline clássico de 5 estágios (sem Tomasulo), stalls estruturais diferenciados, etc. (ao implementar, criar `INSTRUCTION_PHASE_CLASSIC` — IF→WB — separado do `INSTRUCTION_PHASE_TOMASULO`; ver multiarchitecture.md D15)
 - [x] **`MULTITHREADING_MODEL::COARSE_GRAINED`** — Troca de contexto baseada em `switch_instructions` (contagem de instruções). Atualmente comporta como FINE_GRAINED
 - [ ] **Flush especulativo sem ROB** — Quando BRANCH sem ROB completa, limpar das RSs as instruções emitidas após o BRANCH (thread entra WAITING mas RSs ficam ocupadas)
 - [ ] **Desdobramento de loop simulado** — Identificação do label indicado pelo branch e desenrolamento do caminho completo da instrução (indicando quantas vezes o loop será feito antes de a comparação ser falsa). Nessa mesma alteração será simulado o flush dos RSs e previsores de desvios baseados em máquinas de estados de 1 bit, 2 bits, que o desvio sempre será tomado ou que o desvio nunca será tomado (mais abrangente pra tornar a simulação ainda mais completa).

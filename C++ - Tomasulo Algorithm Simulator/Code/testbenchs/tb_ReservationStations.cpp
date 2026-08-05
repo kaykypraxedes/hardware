@@ -1,14 +1,29 @@
 // ──────────────────────────────────────────────────────────────────────────
 //  tb_ReservationStations.cpp  —  Testbench isolado de ReservationStations.cpp
-//  Compile: g++ -o tb_ReservationStations tb_ReservationStations.cpp ../Components.cpp ../Instruction.cpp ../ReservationStations.cpp
+//  Compile: g++ -o tb_ReservationStations tb_ReservationStations.cpp ../Components.cpp ../Instruction.cpp ../Instruction/InstructionMips32.cpp ../ReservationStations.cpp
 // ──────────────────────────────────────────────────────────────────────────
 #include "../headers/ReservationStations.h"
 #include "../headers/Components.h"
 #include "../headers/Instruction.h"
+#include "../headers/InstructionFactory.h"
 #include "tb_helpers.h"
 #include <vector>
 
 using namespace processor;
+
+// Público:
+// Helper do testbench: monta uma instrução pelo MESMO caminho que a Thread
+// usa (InstructionFactory::ParseTrace -> shared_ptr), pois o construtor
+// legado "Instruction(posição, string)" não existe mais (D14).
+static std::shared_ptr<Instruction> make_inst(const std::string& line) {
+    std::vector<std::string> linhas{line};
+    std::vector<std::unique_ptr<Instruction>> parsed =
+        InstructionFactory::ParseTrace(linhas, Architecture::MIPS_32);
+    // A Factory atribui a posição pelo índice da linha (aqui, sempre 0);
+    // nenhum teste desta suíte depende da posição.
+    return std::shared_ptr<Instruction>(std::move(parsed[0]));
+}
+
 static CDB makeCDB() {
     CDB c;
     for (int i = 0; i < 32; i++) {
@@ -61,7 +76,7 @@ int main() {
     {
         ReservationStation rs("int0");
         CDB cdb = makeCDB();
-        Instruction instr(0, "ADD R3, R1, R2");
+        auto instr = make_inst("ADD R3, R1, R2");
         bool ok = rs.AddIssue(instr, cdb, 1);
         check("AddIssue() retorna true",
             ok);
@@ -85,10 +100,10 @@ int main() {
     {
         ReservationStation rs("int0");
         CDB cdb = makeCDB();
-        Instruction instr(0, "ADD R3, R1, R2");
+        auto instr = make_inst("ADD R3, R1, R2");
         rs.AddIssue(instr, cdb, 1);
 
-        Instruction instr2(1, "SUB R5, R1, R2");
+        auto instr2 = make_inst("SUB R5, R1, R2");
         bool dup = rs.AddIssue(instr2, cdb, 2);
         check("AddIssue em RS ocupada retorna false", !dup);
     }
@@ -100,7 +115,7 @@ int main() {
         std::string prod = "load0";
         cdb.F[2].AllocateRS(prod, 1);
 
-        Instruction instr(1, "MUL.D F4, F2, F0");
+        auto instr = make_inst("MUL.D F4, F2, F0");
         rs.AddIssue(instr, cdb, 2);
         check("Qj == 'load0' (F2 pendente)", rs.GetQj() == "load0");
         check("Qk vazio (F0 livre)",         rs.GetQk().empty());
@@ -111,7 +126,7 @@ int main() {
     {
         ReservationStation rs("int1");
         CDB cdb = makeCDB();
-        Instruction instr(0, "ADD R1, R1, R2");
+        auto instr = make_inst("ADD R1, R1, R2");
         rs.AddIssue(instr, cdb, 1);
         check("Sem auto-dependência: Qj vazio (R1 estava livre)", rs.GetQj().empty());
         check("Sem auto-dependência: Qk vazio (R2 estava livre)", rs.GetQk().empty());
@@ -129,7 +144,7 @@ int main() {
         ReservationStation rs("int2");
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
-        Instruction instr(0, "ADD R3, R1, R2");
+        auto instr = make_inst("ADD R3, R1, R2");
         rs.AddIssue(instr, cdb, 1);
 
         bool iniciou = rs.UpdateDependencies(cdb, fu, 2);
@@ -150,7 +165,7 @@ int main() {
         std::string prod = "load0";
         cdb.F[2].AllocateRS(prod, 1);
 
-        Instruction instr(1, "MUL.D F4, F2, F0");
+        auto instr = make_inst("MUL.D F4, F2, F0");
         rs.AddIssue(instr, cdb, 2);
         check("Qj == 'load0' antes de liberar", rs.GetQj() == "load0");
 
@@ -170,7 +185,7 @@ int main() {
         FUNCTIONAL_UNITS fu = makeFU();
         cdb.F[8].AllocateRS("fmul2", 1); // dado (F8) pendente; endereço (R1) livre
 
-        Instruction instr(0, "S.D F8, 0(R1)");
+        auto instr = make_inst("S.D F8, 0(R1)");
         rs.AddIssue(instr, cdb, 2);
         check("Qk vazio (endereço livre)",        rs.GetQk().empty());
         check("Qj == 'fmul2' (dado pendente)",    rs.GetQj() == "fmul2");
@@ -196,7 +211,7 @@ int main() {
         FUNCTIONAL_UNITS fu = makeFU();
         cdb.R[9].AllocateRS("int5", 1); // endereço pendente
 
-        Instruction instr(0, "S.D F0, 0(R9)");
+        auto instr = make_inst("S.D F0, 0(R9)");
         rs.AddIssue(instr, cdb, 2);
         check("Qk == 'int5' (endereço pendente)", rs.GetQk() == "int5");
 
@@ -211,7 +226,7 @@ int main() {
         CDB cdb = makeCDB();
         cdb.F[2].AllocateRS("load2", 1);
 
-        Instruction instr(0, "MUL.D F4, F2, F0");
+        auto instr = make_inst("MUL.D F4, F2, F0");
         rs.AddIssue(instr, cdb, 2);
         check("Qj == 'load2' antes do broadcast", rs.GetQj() == "load2");
 
@@ -221,7 +236,7 @@ int main() {
         // rs_id que não bate não deve afetar nada
         ReservationStation rs2("fmul4");
         cdb.F[10].AllocateRS("load3", 1);
-        Instruction instr2(1, "MUL.D F12, F10, F0");
+        auto instr2 = make_inst("MUL.D F12, F10, F0");
         rs2.AddIssue(instr2, cdb, 2);
         rs2.ResolveDependency("outro_produtor_qualquer", cdb.F[10]);
         check("ResolveDependency com rs_id que não bate não altera Qj", rs2.GetQj() == "load3");
@@ -235,8 +250,8 @@ int main() {
         ReservationStation rs("int_abort0");
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
-        Instruction instr(0, "ADD R3, R1, R2");
-        instr.SetExLatency(0);
+        auto instr = make_inst("ADD R3, R1, R2");
+        instr->SetExLatency(0);
         rs.AddIssue(instr, cdb, 1);
         rs.UpdateDependencies(cdb, fu, 2); // deve abortar dentro de TryAllocateFU (EX)
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
@@ -247,8 +262,8 @@ int main() {
         ReservationStation rs("load_abort0");
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
-        Instruction instr(0, "L.D F2, 0(R1)");
-        instr.SetMemLatency(0);
+        auto instr = make_inst("L.D F2, 0(R1)");
+        instr->SetMemLatency(0);
         rs.AddIssue(instr, cdb, 1);
         rs.UpdateDependencies(cdb, fu, 2); // EX normal (exLat de LOAD == 1)
         rs.UpdateCountdown(fu, 2);         // fase avança para MEM
@@ -269,7 +284,7 @@ int main() {
         ReservationStation rs("int3");
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
-        Instruction instr(0, "ADD R3, R1, R2");
+        auto instr = make_inst("ADD R3, R1, R2");
         rs.AddIssue(instr, cdb, 1);
         rs.UpdateDependencies(cdb, fu, 2);
 
@@ -284,7 +299,7 @@ int main() {
         ReservationStation rs("load0");
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
-        Instruction instr(0, "L.D F2, 0(R1)");
+        auto instr = make_inst("L.D F2, 0(R1)");
         rs.AddIssue(instr, cdb, 1);
         rs.UpdateDependencies(cdb, fu, 2);
 
@@ -310,7 +325,7 @@ int main() {
         std::string prod = "float_basico0";
         cdb.F[6].AllocateRS(prod, 1);
 
-        Instruction instr(0, "S.D F6, 0(R2)");
+        auto instr = make_inst("S.D F6, 0(R2)");
         rs.AddIssue(instr, cdb, 2);
         rs.UpdateDependencies(cdb, fu, 3);
 
@@ -340,7 +355,7 @@ int main() {
         ReservationStation rs("int4");
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
-        Instruction instr(0, "ADD R3, R1, R2");
+        auto instr = make_inst("ADD R3, R1, R2");
         rs.AddIssue(instr, cdb, 1);
         rs.UpdateDependencies(cdb, fu, 2);
         rs.UpdateCountdown(fu, 2);
@@ -360,7 +375,7 @@ int main() {
         ReservationStation rs("load1");
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
-        Instruction instr(0, "L.D F4, 0(R2)");
+        auto instr = make_inst("L.D F4, 0(R2)");
 
         rs.AddIssue(instr, cdb, 1);
         rs.UpdateDependencies(cdb, fu, 2);
@@ -381,7 +396,7 @@ int main() {
         check("LOAD: GetTimes().size() == 2",        rs.GetTimes().size() == 2);
         check("LOAD: GetTimes()[0] == 1 (issue)",    rs.GetTimes()[0] == 1);
         check("LOAD: GetTimes()[1] == 4 (release)",  rs.GetTimes()[1] == 4);
-        Instruction instr2(1, "L.D F6, 0(R3)");
+        auto instr2 = make_inst("L.D F6, 0(R3)");
         bool reuso = rs.AddIssue(instr2, cdb, 5);
         check("LOAD: RS pode ser reusada após Release",  reuso);
     }
@@ -392,14 +407,14 @@ int main() {
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
 
-        Instruction i1(0, "ADD R7, R1, R2");
+        auto i1 = make_inst("ADD R7, R1, R2");
         rs.AddIssue(i1, cdb, 1);
         rs.UpdateDependencies(cdb, fu, 2);
         rs.UpdateCountdown(fu, 2);           // WR
         cdb.R[7].DeallocateRS("int7", 1, 3); // simula fim do broadcast
         rs.Release(3);
 
-        Instruction i2(1, "ADD R7, R7, R1"); // lê e escreve R7 de novo, mesma RS
+        auto i2 = make_inst("ADD R7, R7, R1"); // lê e escreve R7 de novo, mesma RS
         rs.AddIssue(i2, cdb, 4);
         check("Sem autodependência espúria ao reler R7 já resolvido", rs.GetQj().empty());
     }
@@ -423,8 +438,8 @@ int main() {
 
         CDB cdb = makeCDB();
         ReservationStation rs0("int0"), rs1("int1");
-        Instruction i0(0, "ADD R3, R1, R2");
-        Instruction i1(1, "SUB R5, R3, R4");
+        auto i0 = make_inst("ADD R3, R1, R2");
+        auto i1 = make_inst("SUB R5, R3, R4");
         rs0.AddIssue(i0, cdb, 1);
         rs1.AddIssue(i1, cdb, 1);
 
@@ -441,8 +456,8 @@ int main() {
         CDB cdb = makeCDB();
 
         ReservationStation rsA("load2"), rsB("load3");
-        Instruction ldA(0, "L.D F2, 0(R1)");
-        Instruction ldB(1, "L.D F4, 0(R2)");
+        auto ldA = make_inst("L.D F2, 0(R1)");
+        auto ldB = make_inst("L.D F4, 0(R2)");
         rsA.AddIssue(ldA, cdb, 1);
         rsB.AddIssue(ldB, cdb, 1);
 
@@ -466,9 +481,9 @@ int main() {
         CDB cdb = makeCDB();
 
         ReservationStation rsMul("intmul0"), rsDiv("intdiv0"), rsAdd("intbasic0");
-        Instruction iMul(0, "MULT R3, R1, R2");
-        Instruction iDiv(1, "DIV R5, R1, R2");
-        Instruction iAdd(2, "ADD R6, R1, R2");
+        auto iMul = make_inst("MULT R3, R1, R2");
+        auto iDiv = make_inst("DIV R5, R1, R2");
+        auto iAdd = make_inst("ADD R6, R1, R2");
         rsMul.AddIssue(iMul, cdb, 1);
         rsDiv.AddIssue(iDiv, cdb, 1);
         rsAdd.AddIssue(iAdd, cdb, 1);
@@ -491,9 +506,9 @@ int main() {
         CDB cdb = makeCDB();
 
         ReservationStation rsFadd("fbasic0"), rsFadd2("fbasic1"), rsFmul("fmul5");
-        Instruction iFadd (0, "ADD.D F2, F0, F4");
-        Instruction iFadd2(1, "SUB.D F8, F0, F4");
-        Instruction iFmul (2, "MUL.D F6, F0, F4");
+        auto iFadd = make_inst("ADD.D F2, F0, F4");
+        auto iFadd2 = make_inst("SUB.D F8, F0, F4");
+        auto iFmul = make_inst("MUL.D F6, F0, F4");
         rsFadd.AddIssue(iFadd, cdb, 1);
         rsFadd2.AddIssue(iFadd2, cdb, 1);
         rsFmul.AddIssue(iFmul, cdb, 1);
@@ -516,9 +531,9 @@ int main() {
         CDB cdb = makeCDB();
 
         ReservationStation rsFmul("fmul6"), rsFdiv("fdiv0"), rsFadd("fbasic2");
-        Instruction iFmul(0, "MUL.D F6, F0, F4");
-        Instruction iFdiv(1, "DIV.D F10, F0, F4");
-        Instruction iFadd(2, "ADD.D F12, F0, F4");
+        auto iFmul = make_inst("MUL.D F6, F0, F4");
+        auto iFdiv = make_inst("DIV.D F10, F0, F4");
+        auto iFadd = make_inst("ADD.D F12, F0, F4");
         rsFmul.AddIssue(iFmul, cdb, 1);
         rsFdiv.AddIssue(iFdiv, cdb, 1);
         rsFadd.AddIssue(iFadd, cdb, 1);
@@ -532,7 +547,7 @@ int main() {
 
         bool faddEx = rsFadd.UpdateDependencies(cdb, fu, 2);
         check("FLOAT_BASIC não é afetado pela saturação de float_mult_div_alu", faddEx);
-        check("FLOAT_DIV: exLat esperado == 40 (checado isoladamente)", Instruction(0, "DIV.D F0, F2, F4").GetExLatency() == 40);
+        check("FLOAT_DIV: exLat esperado == 40 (checado isoladamente)", make_inst("DIV.D F0, F2, F4")->GetExLatency() == 40);
     }
 
     std::cout << "\n-----------------------------\n";
