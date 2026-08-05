@@ -1,6 +1,7 @@
 /* Main.cpp */
 #include "headers/Processor.h"
 #include "headers/Instruction.h"
+#include "headers/InstructionFactory.h"
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -19,7 +20,8 @@ static const int W_WR       = 12;
 static const int W_COMMIT   = 12;
 
 // Ordem dos componentes usada tanto nos vetores de config (num_rs/num_fus) quanto nos grupos de RS/FU impressos no final.
-static const std::vector<std::string> COMPONENT_LABELS = {
+static const std::vector<std::string> COMPONENT_LABELS
+{
     "load",
     "store",
     "int_basic",
@@ -29,12 +31,12 @@ static const std::vector<std::string> COMPONENT_LABELS = {
 };
 
 // Ordem assumida para latencias_mem (load, store).
-static const std::vector<std::string> MEM_LABELS =
+static const std::vector<std::string> MEM_LABELS
 {
     "load",
     "store"
 };
-static const std::vector<std::string> EX_LABELS =
+static const std::vector<std::string> EX_LABELS
 {
     "invalid",
     "load",
@@ -50,6 +52,7 @@ static const std::vector<std::string> EX_LABELS =
 
 // ─── STRUCT ───────────────────────────────────────────────────────
 struct CONFIG {
+    ARCHITECTURE         arch          = ARCHITECTURE::MIPS_32;
     PROCESSOR_TYPE       type          = PROCESSOR_TYPE::TOMASULO_CLASSIC;
     int                  num_threads   = 1;
     MULTITHREADING_MODEL model         = MULTITHREADING_MODEL::NONE;
@@ -151,6 +154,13 @@ CONFIG ReadConfig() {
         }
         else if (key == "despacho")     { iss >> cfg.dispatch;       }
         else if (key == "ciclo_limite") { iss >> cfg.cycle_limit;    }
+        else if (key == "arquitetura")  {
+            int aux;
+            iss >> aux;
+            cfg.arch = (aux == 1 ? ARCHITECTURE::X86_INTEL :
+                (aux == 2 ? ARCHITECTURE::ARM_64   :
+                (aux == 3 ? ARCHITECTURE::RISC_V   : ARCHITECTURE::MIPS_32)));
+        }
         else if (key == "num_rs")       { cfg.num_rs       = ReadIntVector(iss, 6, 1);   }
         else if (key == "num_ufs")      { cfg.num_fus      = ReadIntVector(iss, 6, 1);   }
         else if (key == "latencias_ex") { cfg.ex_latencies = ReadIntVector(iss, 10, 1);  }
@@ -188,6 +198,9 @@ void PrintConfig(
     std::cout << "══════════════════════════════════════════════════════════\n" <<
                  "═══ CONFIGURAÇÕES ════════════════════════════════════════\n" <<
                  "══════════════════════════════════════════════════════════\n\n" <<
+        "- Arquitetura: " << (cfg.arch == ARCHITECTURE::MIPS_32   ? "MIPS_32" :
+            (cfg.arch == ARCHITECTURE::X86_INTEL ? "X86_INTEL" :
+            (cfg.arch == ARCHITECTURE::ARM_64    ? "ARM_64"    : "RISC_V"))) << '\n' <<
         "- Tipo: " << (cfg.type == PROCESSOR_TYPE::IN_ORDER ? "IN_ORDER" :
             (cfg.type == PROCESSOR_TYPE::TOMASULO_CLASSIC ? "TOMASULO_CLASSIC" : "TOMASULO_ESPECULATIVE")) << '\n' <<
         "- Numero de Threads: " << cfg.num_threads << '\n' <<
@@ -366,7 +379,10 @@ int main() {
         cfg.model,
         cfg.prog,
         cfg.num_rs,
-        cfg.num_fus
+        cfg.num_fus,
+        {},
+        {},
+        cfg.arch
     );
 
     std::cout << "\nSimulando...\n";
@@ -425,13 +441,17 @@ int main() {
 
     auto cdb = p.GetThread(0).GetCDB();
 
-    processor::PrintComponentGroup("F", cdb.F,
-        [](const auto& r) { return r.GetAllocationTimes(); },
-        [](const auto& r) { return r.GetAllocatedRS(); });
-
-    processor::PrintComponentGroup("R", cdb.R,
-        [](const auto& r) { return r.GetAllocationTimes(); },
-        [](const auto& r) { return r.GetAllocatedRS(); });
+    // Imprime o CDB por faixas de impressão (print_banks) na ordem definida pela arquitetura:
+    // - O índice exibido é relativo ao banco (id − base), preservando o formato original.
+    for (const auto& bank : cdb.print_banks) {
+        std::vector<processor::Register> group(
+            cdb.registers.begin() + bank.base,
+            cdb.registers.begin() + bank.base + bank.count
+        );
+        processor::PrintComponentGroup(std::string(1, bank.classe), group,
+            [](const auto& r) { return r.GetAllocationTimes(); },
+            [](const auto& r) { return r.GetAllocatedRS(); });
+    }
 
     std::cout << "══════════════════════════════════════════════════════════\n";
     std::cout << "═══ FUNCIONAL UNITYS (FU) ════════════════════════════════\n";

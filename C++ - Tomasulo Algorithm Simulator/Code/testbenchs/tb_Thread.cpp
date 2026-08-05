@@ -32,8 +32,7 @@ int main() {
         check("tabela[1].instruction->GetPosition() == 1",  t.GetTable()[1].instruction->GetPosition() == 1);
         check("tabela[0].issue_cycle == -1 (não emitido)", t.GetTable()[0].issue_cycle == -1);
 
-        check("GetCDB().R.size() == 32",                   t.GetCDB().R.size() == 32);
-        check("GetCDB().F.size() == 32",                   t.GetCDB().F.size() == 32);
+        check("GetCDB().registers.size() == 64 (R0-31 + F32-63)", t.GetCDB().registers.size() == 64);
 
         check("GetRS().load.size() == 5",                  t.GetRS().load.size() == 5);
         check("GetRS().store.size() == 5",                 t.GetRS().store.size() == 5);

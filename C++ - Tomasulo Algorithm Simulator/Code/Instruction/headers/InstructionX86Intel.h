@@ -27,7 +27,7 @@ class InstructionX86Intel : public Instruction { // Herança da classe Instructi
             const std::string&
         ) const override;
         bool IdentifyType(
-            const std::string&
+            const std::vector<std::string>&
         ) override;
         void NormalizeInstruction(
             std::vector<std::string>&

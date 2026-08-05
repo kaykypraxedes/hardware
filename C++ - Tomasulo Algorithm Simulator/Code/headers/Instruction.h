@@ -93,7 +93,7 @@ class Instruction {
             const std::string&
         ) const = 0;
         virtual bool IdentifyType(
-            const std::string&
+            const std::vector<std::string>&
         ) = 0;
         virtual void NormalizeInstruction(
             std::vector<std::string>& tokens

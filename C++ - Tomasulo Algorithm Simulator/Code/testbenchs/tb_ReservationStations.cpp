@@ -25,13 +25,15 @@ static std::shared_ptr<Instruction> make_inst(const std::string& line) {
 }
 
 static CDB makeCDB() {
-    CDB c;
-    for (int i = 0; i < 32; i++) {
-        c.R.push_back(Register("R" + std::to_string(i)));
-        c.F.push_back(Register("F" + std::to_string(i)));
-    }
-    return c;
+    // Mesmo caminho da Thread (InstructionFactory::MakeCDB): gera os slots
+    // físicos com os ids corretos (R 0-31, F 32-63).
+    return InstructionFactory::MakeCDB(ARCHITECTURE::MIPS_32);
 }
+
+// Helpers de acesso ao CDB pelo nome arquitetural (F(cdb, 4) == F4 == slot 36).
+// GetReg pesquisa apenas pelo id físico global — F<n> fica em 32 + n (faixa 32-63).
+static Register& R(CDB& c, const int i) { return GetReg(c, Register('R', i)); }
+static Register& F(CDB& c, const int i) { return GetReg(c, Register('F', 32 + i)); }
 
 static FUNCTIONAL_UNITS makeFU(int n = 2) {
     FUNCTIONAL_UNITS fu;
@@ -93,7 +95,7 @@ int main() {
         check("GetTimes()[0] == 1 (ciclo de issue)",
               rs.GetTimes().size() == 1 && rs.GetTimes()[0] == 1);
         check("CDB.R[3].GetCurrentRS() == 'int0'",
-            cdb.R[3].GetCurrentRS() == "int0");
+            R(cdb, 3).GetCurrentRS() == "int0");
     }
 
     secao("2.2 AddIssue() — RS ocupada retorna false");
@@ -113,13 +115,13 @@ int main() {
         ReservationStation rs("fmul0");
         CDB cdb = makeCDB();
         std::string prod = "load0";
-        cdb.F[2].AllocateRS(prod, 1);
+        F(cdb, 2).AllocateRS(prod, 1);
 
         auto instr = make_inst("MUL.D F4, F2, F0");
         rs.AddIssue(instr, cdb, 2);
         check("Qj == 'load0' (F2 pendente)", rs.GetQj() == "load0");
         check("Qk vazio (F0 livre)",         rs.GetQk().empty());
-        check("CDB.F[4] -> 'fmul0'",         cdb.F[4].GetCurrentRS() == "fmul0");
+        check("CDB.F[4] -> 'fmul0'",         F(cdb, 4).GetCurrentRS() == "fmul0");
     }
 
     secao("2.4 AddIssue() — 'ADD R1, R1, R2' sem auto-dependência");
@@ -163,7 +165,7 @@ int main() {
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
         std::string prod = "load0";
-        cdb.F[2].AllocateRS(prod, 1);
+        F(cdb, 2).AllocateRS(prod, 1);
 
         auto instr = make_inst("MUL.D F4, F2, F0");
         rs.AddIssue(instr, cdb, 2);
@@ -172,7 +174,7 @@ int main() {
         bool antes = rs.UpdateDependencies(cdb, fu, 3);
         check("UpdateDependencies retorna false com Qj pendente", !antes);
 
-        cdb.F[2].DeallocateRS("load0", 1, 3);
+        F(cdb, 2).DeallocateRS("load0", 1, 3);
         bool depois = rs.UpdateDependencies(cdb, fu, 4);
         check("UpdateDependencies retorna true após Qj liberado", depois);
         check("fase == EX após Qj liberado", rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::EX);
@@ -183,7 +185,7 @@ int main() {
         ReservationStation rs("store1");
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
-        cdb.F[8].AllocateRS("fmul2", 1); // dado (F8) pendente; endereço (R1) livre
+        F(cdb, 8).AllocateRS("fmul2", 1); // dado (F8) pendente; endereço (R1) livre
 
         auto instr = make_inst("S.D F8, 0(R1)");
         rs.AddIssue(instr, cdb, 2);
@@ -199,7 +201,7 @@ int main() {
         bool bloqueado = rs.UpdateDependencies(cdb, fu, 4);
         check("MEM bloqueado enquanto Qj não resolve", !bloqueado);
 
-        cdb.F[8].DeallocateRS("fmul2", 1, 5);
+        F(cdb, 8).DeallocateRS("fmul2", 1, 5);
         bool mem_ok = rs.UpdateDependencies(cdb, fu, 5);
         check("MEM inicia após dado resolvido",   mem_ok);
     }
@@ -209,7 +211,7 @@ int main() {
         ReservationStation rs("store2");
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
-        cdb.R[9].AllocateRS("int5", 1); // endereço pendente
+        R(cdb, 9).AllocateRS("int5", 1); // endereço pendente
 
         auto instr = make_inst("S.D F0, 0(R9)");
         rs.AddIssue(instr, cdb, 2);
@@ -224,21 +226,21 @@ int main() {
     {
         ReservationStation rs("fmul3");
         CDB cdb = makeCDB();
-        cdb.F[2].AllocateRS("load2", 1);
+        F(cdb, 2).AllocateRS("load2", 1);
 
         auto instr = make_inst("MUL.D F4, F2, F0");
         rs.AddIssue(instr, cdb, 2);
         check("Qj == 'load2' antes do broadcast", rs.GetQj() == "load2");
 
-        rs.ResolveDependency("load2", cdb.F[2]);
+        rs.ResolveDependency("load2", F(cdb, 2));
         check("Qj limpo após ResolveDependency",  rs.GetQj().empty());
 
         // rs_id que não bate não deve afetar nada
         ReservationStation rs2("fmul4");
-        cdb.F[10].AllocateRS("load3", 1);
+        F(cdb, 10).AllocateRS("load3", 1);
         auto instr2 = make_inst("MUL.D F12, F10, F0");
         rs2.AddIssue(instr2, cdb, 2);
-        rs2.ResolveDependency("outro_produtor_qualquer", cdb.F[10]);
+        rs2.ResolveDependency("outro_produtor_qualquer", F(cdb, 10));
         check("ResolveDependency com rs_id que não bate não altera Qj", rs2.GetQj() == "load3");
     }
 
@@ -323,7 +325,7 @@ int main() {
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
         std::string prod = "float_basico0";
-        cdb.F[6].AllocateRS(prod, 1);
+        F(cdb, 6).AllocateRS(prod, 1);
 
         auto instr = make_inst("S.D F6, 0(R2)");
         rs.AddIssue(instr, cdb, 2);
@@ -333,7 +335,7 @@ int main() {
         check("STORE: fim do EX sinalizado", fim_ex);
         check("STORE: countdown == -1 após EX (aguarda dado)", rs.GetCountdown() == -1);
 
-        cdb.F[6].DeallocateRS("float_basico0", 1, 4);
+        F(cdb, 6).DeallocateRS("float_basico0", 1, 4);
         bool mem_ok = rs.UpdateDependencies(cdb, fu, 4);
         check("STORE: UpdateDependencies inicia MEM após dado liberado", mem_ok);
         check("STORE: fase == MEM", rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM);
@@ -411,7 +413,7 @@ int main() {
         rs.AddIssue(i1, cdb, 1);
         rs.UpdateDependencies(cdb, fu, 2);
         rs.UpdateCountdown(fu, 2);           // WR
-        cdb.R[7].DeallocateRS("int7", 1, 3); // simula fim do broadcast
+        R(cdb, 7).DeallocateRS("int7", 1, 3); // simula fim do broadcast
         rs.Release(3);
 
         auto i2 = make_inst("ADD R7, R7, R1"); // lê e escreve R7 de novo, mesma RS

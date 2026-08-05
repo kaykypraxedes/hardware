@@ -1,35 +1,34 @@
 /* Instruction/InstructionX86Intel.cpp */
 #include "headers/InstructionX86Intel.h"
-#include <unordered_map>
 
 namespace processor {
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
-static const std::vector<std::string> LOADS =
-    {"MOV", "MOVSS", "MOVSD", "LEA"};
+static const std::string MOV // Caso especial, já que pode agir como load, store e aritimético (com reg e com imediato).
+    {"MOV"};
 
-static const std::vector<std::string> STORES =
-    {"MOV_STORE"};
+static const std::vector<std::string> LOADS
+    {"MOVSS", "MOVSD", "LEA", "MOVAPS", "MOVUPS", "MOVQ", "MOVD"};
 
-static const std::vector<std::string> INT_BASIC =
-    {"ADD", "SUB", "AND", "OR", "XOR", "INC", "DEC", "CMP", "SHL", "SHR"};
+static const std::vector<std::string> INT_BASIC
+    {"ADD", "SUB", "AND", "OR", "XOR", "INC", "DEC", "CMP", "SHL", "SHR", "NOT", "NEG", "TEST", "ROL", "ROR", "SAR", "SAL", "SBB", "ADC", "MOVSX", "MOVZX"};
 
-static const std::vector<std::string> INT_MUL =
+static const std::vector<std::string> INT_MUL
     {"IMUL", "MUL"};
 
-static const std::vector<std::string> INT_DIV =
+static const std::vector<std::string> INT_DIV
     {"IDIV", "DIV"};
 
-static const std::vector<std::string> BRANCHES =
-    {"JMP", "JE", "JNE", "JG", "JGE", "JL", "JLE", "CALL"};
+static const std::vector<std::string> BRANCHES
+    {"JMP", "JE", "JNE", "JG", "JGE", "JL", "JLE", "CALL", "JBE", "JA", "JAE", "JB", "JS", "JNS", "JP", "JO", "RET"};
 
-static const std::vector<std::string> FLOAT_BASIC =
-    {"ADDSS", "ADDSD", "SUBSS", "SUBSD"};
+static const std::vector<std::string> FLOAT_BASIC
+    {"ADDSS", "ADDSD", "SUBSS", "SUBSD", "SQRTSS", "ADDPS", "SUBPS", "MULPS", "DIVPS", "CVTSI2SS", "CVTTSS2SI", "COMISS", "UCOMISS", "PXOR", "PAND", "POR"};
 
-static const std::vector<std::string> FLOAT_MUL =
+static const std::vector<std::string> FLOAT_MUL
     {"MULSS", "MULSD"};
 
-static const std::vector<std::string> FLOAT_DIV =
+static const std::vector<std::string> FLOAT_DIV
     {"DIVSS", "DIVSD"};
 
 static bool Contains(
@@ -37,6 +36,33 @@ static bool Contains(
     const std::string&              op
 ){
     return std::find(vec.begin(), vec.end(), op) != vec.end();
+}
+
+static INSTRUCTION_TYPE IdentifyMOVType(const std::vector<std::string>& tokens) {
+    if (tokens.size() > 1 && tokens[1].front() == '[') return INSTRUCTION_TYPE::STORE;
+    if (tokens.size() > 2 && tokens[2].front() == '[') return INSTRUCTION_TYPE::LOAD;
+    return INSTRUCTION_TYPE::INT_BASIC;
+}
+
+// Resolve um operando genérico do x86:
+// - Registrador direto ("EBX") -> lookup normal (aborta se nome inválido).
+// - Memória ("[RBX+4]" ou "[RAX+RBX*4+8]") -> usa apenas a base como fonte.
+// - Imediato ("5", "0x10", "-4") -> não vira fonte (retorna false).
+static bool LookupOperand(
+    Register&                  out,
+    const std::string&         token,
+    const std::string&         context
+){
+    std::string name = token;
+    if (!name.empty() && name.front() == '[') {
+        name = name.substr(1, name.size() - 2);         // remove colchetes
+        size_t cut = name.find_first_of("+*");          // mantém só a base
+        if (cut != std::string::npos) name = name.substr(0, cut);
+    } else if (name.empty() || !std::isalpha(static_cast<unsigned char>(name[0]))) {
+        return false;
+    }
+    out = LookupRegister(name, context, RegisterTable());
+    return true;
 }
 
 // Monta o CDB com os registradores físicos:
@@ -102,12 +128,13 @@ InstructionX86Intel::InstructionX86Intel(
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Privado:
 bool InstructionX86Intel::IdentifyType(
-    const std::string& prev_op
+    const std::vector<std::string>& tokens
 ){
-    std::string op = prev_op;
+    std::string op{tokens[0]};
     for (char& c : op) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
-    if (Contains(LOADS, op))            type = INSTRUCTION_TYPE::LOAD;
+    if (op == MOV)                      type = IdentifyMOVType(tokens);
+    else if (Contains(LOADS, op))       type = INSTRUCTION_TYPE::LOAD;
     else if (Contains(INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
     else if (Contains(BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
     else if (Contains(INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
@@ -172,6 +199,20 @@ void InstructionX86Intel::SetAttributes(
     if (type == INSTRUCTION_TYPE::BRANCH) {
         // Desvios condicionais leem EFLAGS
         source_registers.push_back(Register('G', 80));
+    } else if (type == INSTRUCTION_TYPE::LOAD) {
+        // MOV reg, [mem]: destino é o registrador; fonte é a base do endereço.
+        dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+        Register base;
+        if (tokens.size() > 2 && LookupOperand(base, tokens[2], instruction_string))
+            source_registers.push_back(base);
+    } else if (type == INSTRUCTION_TYPE::STORE) {
+        // MOV [mem], reg: fontes são o dado (primeiro) e a base do endereço (depois),
+        // na mesma ordem do MIPS (Qj = dado, Qk = endereço).
+        if (tokens.size() > 2)
+            source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+        Register base;
+        if (LookupOperand(base, tokens[1], instruction_string))
+            source_registers.push_back(base);
     } else if (tokens.size() > 1) {
         dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
         // Operações aritméticas alteram EFLAGS implicitamente e usam o destino como fonte inicial
@@ -179,7 +220,9 @@ void InstructionX86Intel::SetAttributes(
         source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
 
         if (tokens.size() > 2) {
-            source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+            Register op2;
+            if (LookupOperand(op2, tokens[2], instruction_string))
+                source_registers.push_back(op2);
         }
     }
 }

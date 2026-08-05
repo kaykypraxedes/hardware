@@ -25,7 +25,8 @@ Processor::Processor(
     const std::vector<int>&                     num_rs,
     const std::vector<int>&                     num_fus,
     const std::vector<int>&                     switch_instructions,
-    const std::vector<std::tuple<int,int,int>>& new_latency
+    const std::vector<std::tuple<int,int,int>>& new_latency,
+    const ARCHITECTURE                          arch
 ) :
     dispatch_width(dispatch_width),
     has_predictor (has_predictor),
@@ -42,7 +43,7 @@ Processor::Processor(
     mt_model = model;
 
     // Inicializa as threads com o código passado.
-    InitializeThreads(Assembly, num_threads, num_rs, num_fus, switch_instructions, new_latency);
+    InitializeThreads(Assembly, num_threads, num_rs, num_fus, switch_instructions, new_latency, arch);
 }
 
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
@@ -53,7 +54,8 @@ void Processor::InitializeThreads(
     const std::vector<int>&                     num_rs,
     const std::vector<int>&                     num_fus,
     const std::vector<int>&                     switch_cycles,
-    const std::vector<std::tuple<int,int,int>>& new_latency
+    const std::vector<std::tuple<int,int,int>>& new_latency,
+    const ARCHITECTURE                          arch
 ){
     int rob_capacity = (type == PROCESSOR_TYPE::TOMASULO_ESPECULATIVE) ? rob_capacity_default : 0;
     for (int i = 0; i < num_threads; i++){
@@ -66,7 +68,8 @@ void Processor::InitializeThreads(
                 switch_cycles,
                 dispatch_width,
                 rob_capacity,
-                has_predictor
+                has_predictor,
+                arch
             )
         );
     }

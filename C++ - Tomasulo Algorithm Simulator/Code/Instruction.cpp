@@ -4,7 +4,8 @@
 namespace processor {
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
-std::vector<int> Instruction::base_ex_latencies = {
+std::vector<int> Instruction::base_ex_latencies
+{
     0,  // INVALID
     1,  // LOAD
     1,  // STORE
@@ -17,7 +18,8 @@ std::vector<int> Instruction::base_ex_latencies = {
     40  // FLOAT_DIV
 };
 
-std::vector<int> Instruction::base_mem_latencies = {
+std::vector<int> Instruction::base_mem_latencies
+{
     1,  // LOAD
     1   // STORE
 };
@@ -70,7 +72,7 @@ void Instruction::Parse(
 
     // Verifica se a instrução é suportada pela arquitetura.
     std::vector<std::string> tokens = SplitInstruction(str);
-    if (!IdentifyType(tokens[0])) {
+    if (!IdentifyType(tokens)) {
         std::cerr << "[ERRO] Instrução não suportada por essa arquitetura: "
             << tokens[0] << "\n";
         std::abort();

@@ -187,7 +187,7 @@ utilizando o módulo reformulado em `Code/` (base) + `Code/Instruction/` (arquit
   - [x] **validação de nome no parse**: `SetAttributes` faz o lookup na tabela da **própria subclasse** e aborta com mensagem (nome + instrução) se não existir — única validação de nome do sistema (`LookupRegister(tokens[i], instruction_string, RegisterTable())`, ver helpers acima)
   - [x] `static CDB MakeCDB()` por subclasse — preenche `registers` via `fillCDB` (dedup por id físico; classe canônica = 1ª faixa) e `print_banks`; MIPS/RISC-V por loop; x86/ARM64 com faixas sobrepostas para os aliases (D18)
   - [x] flags na mesma tabela: `EFLAGS→('G',80)`, `CPSR→('G',80)` (D6 com classe única de flags)
-  - [ ] x86: `MUL`/`IMUL`/`DIV` com destinos implícitos `{RAX, RDX}` (D19); `MOV` continua decisão pendente (§7)
+  - [ ] x86: `MUL`/`IMUL`/`DIV` com destinos implícitos `{RAX, RDX}` (D19)
 - [x] `InstructionFactory.h` — dispatch estático por arquitetura (D17): `static CDB MakeCDB(ARCHITECTURE)` delegando às subclasses
 - [ ] Substituir acessos diretos `cdb.F/R[...]` pelo `GetReg` universal:
   - [ ] `Thread.cpp:155-156` — criação do banco via `InstructionFactory::MakeCDB(arch)`
@@ -302,7 +302,7 @@ make simtest-update   # regenera .expected (SOMENTE quando a mudança é intenci
 - **x86 `MUL`/`IMUL`/`DIV`**: 2 destinos implícitos (`RDX:RAX` + `EFLAGS`, D19) — conferir o mapeamento no `IdentifyType`/`NormalizeInstruction` do x86.
 - **Cópias de `Thread`**: `std::vector<Thread> threads` usa move na inicialização; com `shared_ptr` no `rob`/tabela/RS, cópias acidentais continuam seguras. O `struct CDB` com `std::vector<Register>` permanece copiável (D20 — sem classe, sem ponteiro).
 - **`Instruction` com `position == -1`**: a RS constrói `current_instruction` default; com `shared_ptr`, usar `nullptr` como "sem instrução" e ajustar guardas (`IsBusy()` já evita acesso).
-- **X86 `MOV`**: hoje é sempre `LOAD` — decisão pendente: detectar memória `[...]` no operando 2 para diferenciar `MOV reg,reg` (INT_BASIC) de `MOV reg,[mem]` (LOAD). Opcode artificial `MOV_STORE` deve ser revisado.
+- **X86 `MOV`** (resolvido): `MOV` é `static const std::string` em `InstructionX86Intel.cpp` e é classificado pelo helper file-static `IdentifyMOVType(tokens)` — `tokens[1]` com `[` → `STORE`, `tokens[2]` com `[` → `LOAD`, senão `INT_BASIC`. O opcode artificial `MOV_STORE` foi removido e `MOV` saiu do vetor `LOADS`. No `SetAttributes`, operandos `[...]` têm a base extraída pelo helper `LookupOperand` (remove colchetes e corta em `+`/`*`; imediatos/labels não viram fonte); STORE resolve o dado (`tokens[2]`) antes do endereço (`tokens[1]`), ordem idêntica ao MIPS.
 - **ARM64 `LDR X0, [X1, #8]`**: `SplitInstruction` já trata `[`, `]` e `#`; validar `SetAttributes` com deslocamento (tokens extras).
 - **RISC-V lowercases tudo** na normalização: output em minúsculo é esperado (diferente do MIPS que é UPPERCASE).
 - **Latências**: `base_ex_latencies`/`base_mem_latencies` estáticos permanecem iguais aos atuais (compatibilidade com config `latencias_ex`/`latencias_mem`).

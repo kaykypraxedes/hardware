@@ -164,13 +164,11 @@ void ReservationStation::ReadSourceOperand(
     if (InvalidRegister(src)) return;
 
     // Acessa diretamente o registrador alvo dentro do CDB.
-    Register regCDB = (src.GetType() == 'F')
-        ? cdb.F[src.GetId()]
-        : cdb.R[src.GetId()];
+    const Register& regCDB = GetReg(cdb, src);
     // Verifica se ele está com uma dependencia atualmente.
     std::string tag = regCDB.GetCurrentRS();
-    Register&                    V_idx = V[idx];
-    std::pair<std::string, int>& Q_idx = Q[idx];
+    Register&                    V_idx{V[idx]};
+    std::pair<std::string, int>& Q_idx{Q[idx]};
     // Define o V ou o Q a depender do estado da alocação:
     // 1. Sem resultado pendente.
     if (tag.empty()) V_idx = src;
@@ -189,8 +187,7 @@ void ReservationStation::AllocateDestInCDB(
         // Não tem destino.
         if (InvalidRegister(dest)) continue;
 
-        if (dest.GetType() == 'F') cdb.F[dest.GetId()].AllocateRS(id, cycle);
-        else                       cdb.R[dest.GetId()].AllocateRS(id, cycle);
+        GetReg(cdb, dest).AllocateRS(id, cycle);
     }
 }
 
@@ -228,9 +225,7 @@ void ReservationStation::CheckDependency(
     // Já existe um V ou se Q já foi resolvido.
     if (V_idx.GetType() != 'Z' || Q_idx.first.empty()) return;
 
-    Register& regCDB = (reg.GetType() == 'F')
-        ? cdb.F[reg.GetId()]
-        : cdb.R[reg.GetId()];
+    Register& regCDB = GetReg(cdb, reg);
 
     // Verifica se já resolveu nesse cíclo para atualizar.
     if (regCDB.IsDependencyResolved(Q_idx.first, Q_idx.second)) {

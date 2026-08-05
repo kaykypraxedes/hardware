@@ -1,35 +1,34 @@
 /* Instruction/InstructionRiscV.cpp */
 #include "headers/InstructionRiscV.h"
-#include <unordered_map>
 
 namespace processor {
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
-static const std::vector<std::string> LOADS =
-    {"LW", "LH", "LB", "LBU", "LHU", "FLD", "FLW"};
+static const std::vector<std::string> LOADS
+    {"LW", "LH", "LB", "LBU", "LHU", "FLD", "FLW", "LD", "LWU"};
 
-static const std::vector<std::string> STORES =
-    {"SW", "SH", "SB", "FSD", "FSW"};
+static const std::vector<std::string> STORES
+    {"SW", "SH", "SB", "FSD", "FSW", "SD"};
 
-static const std::vector<std::string> INT_BASIC =
-    {"ADD", "ADDI", "SUB", "AND", "ANDI", "OR", "ORI", "XOR", "XORI", "SLL", "SRL", "SRA"};
+static const std::vector<std::string> INT_BASIC
+    {"ADD", "ADDI", "SUB", "AND", "ANDI", "OR", "ORI", "XOR", "XORI", "SLL", "SRL", "SRA", "SLLI", "SRLI", "SRAI", "SLT", "SLTU", "SLTI", "SLTIU", "LUI", "AUIPC"};
 
-static const std::vector<std::string> INT_MUL =
+static const std::vector<std::string> INT_MUL
     {"MUL", "MULH", "MULHU"};
 
-static const std::vector<std::string> INT_DIV =
+static const std::vector<std::string> INT_DIV
     {"DIV", "DIVU", "REM", "REMU"};
 
-static const std::vector<std::string> BRANCHES =
+static const std::vector<std::string> BRANCHES
     {"BEQ", "BNE", "BLT", "BGE", "BLTU", "BGEU", "JAL", "JALR"};
 
-static const std::vector<std::string> FLOAT_BASIC =
-    {"FADD.S", "FADD.D", "FSUB.S", "FSUB.D"};
+static const std::vector<std::string> FLOAT_BASIC
+    {"FADD.S", "FADD.D", "FSUB.S", "FSUB.D", "FSQRT.S", "FSQRT.D", "FMIN.S", "FMIN.D", "FMAX.S", "FMAX.D", "FABS.S", "FABS.D", "FNEG.S", "FNEG.D", "FLE.S", "FLT.S", "FEQ.S", "FCVT.S.W", "FCVT.W.S", "FCVT.S.D", "FCVT.D.S", "FCVT.D.W", "FCVT.W.D", "FMV.X.W", "FMV.W.X"};
 
-static const std::vector<std::string> FLOAT_MUL =
-    {"FMUL.S", "FMUL.D"};
+static const std::vector<std::string> FLOAT_MUL
+    {"FMUL.S", "FMUL.D", "FMADD.S", "FMSUB.S", "FNMADD.S", "FNMSUB.S"};
 
-static const std::vector<std::string> FLOAT_DIV =
+static const std::vector<std::string> FLOAT_DIV
     {"FDIV.S", "FDIV.D"};
 
 static bool Contains(
@@ -70,9 +69,9 @@ InstructionRiscV::InstructionRiscV(
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Privado:
 bool InstructionRiscV::IdentifyType(
-    const std::string& prev_op
+    const std::vector<std::string>& tokens
 ){
-    std::string op = prev_op;
+    std::string op{tokens[0]};
     for (char& c : op) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
     if (Contains(LOADS, op))            type = INSTRUCTION_TYPE::LOAD;
@@ -135,19 +134,30 @@ void InstructionRiscV::SetAttributes(
     dest_registers.clear();
     source_registers.clear();
 
+    // Imediatos ("8", "0x10") e labels não viram fonte: só registradores x/f.
+    // (NormalizeInstruction já deixou tudo minúsculo.)
+    auto is_register = [](const std::string& token) {
+        return token.size() > 1 && (token[0] == 'x' || token[0] == 'f');
+    };
+
     if (type == INSTRUCTION_TYPE::LOAD) {
         dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        if (tokens.size() > 2) source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+        for (size_t i = 2; i < tokens.size(); ++i)
+            if (is_register(tokens[i]))
+                source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
     } else if (type == INSTRUCTION_TYPE::STORE) {
-        source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        if (tokens.size() > 2) source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+        for (size_t i = 1; i < tokens.size(); ++i)
+            if (is_register(tokens[i]))
+                source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
     } else if (type == INSTRUCTION_TYPE::BRANCH) {
-        if (tokens.size() > 1) source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        if (tokens.size() > 2) source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+        for (size_t i = 1; i < tokens.size(); ++i)
+            if (is_register(tokens[i]))
+                source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
     } else {
         dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        if (tokens.size() > 2) source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
-        if (tokens.size() > 3) source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
+        for (size_t i = 2; i < tokens.size(); ++i)
+            if (is_register(tokens[i]))
+                source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
     }
 }
 

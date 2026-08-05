@@ -2,6 +2,7 @@
 ═══ CONFIGURAÇÕES ════════════════════════════════════════
 ══════════════════════════════════════════════════════════
 
+- Arquitetura: MIPS_32
 - Tipo: TOMASULO_ESPECULATIVE
 - Numero de Threads: 1
 - Modelo Multi-Threading: NONE
@@ -89,26 +90,26 @@ Posição   Instrução                   Issue       EX              MEM       
 ═══ COMMOM DATA BUS (CDB) ════════════════════════════════
 ══════════════════════════════════════════════════════════
 
-─── F ────────────────────────────────────────────────────
-- F2:
-    RS_load0           - [1-4]
-    RS_load0           - [5-9]
-
-- F4:
-    RS_float_mult_div0 - [1-8]
-    RS_float_basic0    - [2-11]
-    RS_float_mult_div1 - [5-13]
-    RS_float_basic1    - [6-16]
-
-
 ─── R ────────────────────────────────────────────────────
 - R1:
-    RS_int_basic0      - [3-5]
-    RS_int_basic0      - [7-10]
+    int_basic0         - [3-5]
+    int_basic0         - [7-10]
 
 - R2:
-    RS_int_basic1      - [3-6]
-    RS_int_basic1      - [7-12]
+    int_basic1         - [3-6]
+    int_basic1         - [7-12]
+
+
+─── F ────────────────────────────────────────────────────
+- F2:
+    load0              - [1-4]
+    load0              - [5-9]
+
+- F4:
+    float_mult_div0    - [1-8]
+    float_basic0       - [2-11]
+    float_mult_div1    - [5-13]
+    float_basic1       - [6-16]
 
 
 ══════════════════════════════════════════════════════════
@@ -117,35 +118,35 @@ Posição   Instrução                   Issue       EX              MEM       
 
 ─── memory_access ────────────────────────────────────────
 - memory_access0:
-    RS_load0           - [3-3]
-    RS_load0           - [7-7]
+    load0              - [3-3]
+    load0              - [7-7]
 
 
 ─── int_basic_alu ────────────────────────────────────────
 - int_basic_alu0:
-    RS_load0           - [2-2]
-    RS_store0          - [3-3]
-    RS_int_basic0      - [4-4]
-    RS_load0           - [6-6]
-    RS_int_basic2      - [7-7]
-    RS_int_basic0      - [8-8]
-    RS_int_basic3      - [13-13]
+    load0              - [2-2]
+    store0             - [3-3]
+    int_basic0         - [4-4]
+    load0              - [6-6]
+    int_basic2         - [7-7]
+    int_basic0         - [8-8]
+    int_basic3         - [13-13]
 
 - int_basic_alu1:
-    RS_int_basic1      - [4-4]
-    RS_store0          - [7-7]
-    RS_int_basic1      - [8-8]
+    int_basic1         - [4-4]
+    store0             - [7-7]
+    int_basic1         - [8-8]
 
 
 ─── float_basic_alu ──────────────────────────────────────
 - float_basic_alu0:
-    RS_float_basic0    - [9-10]
-    RS_float_basic1    - [14-15]
+    float_basic0       - [9-10]
+    float_basic1       - [14-15]
 
 
 ─── float_mult_div_alu ───────────────────────────────────
 - float_mult_div_alu0:
-    RS_float_mult_div0 - [5-7]
-    RS_float_mult_div1 - [10-12]
+    float_mult_div0    - [5-7]
+    float_mult_div1    - [10-12]
 
 

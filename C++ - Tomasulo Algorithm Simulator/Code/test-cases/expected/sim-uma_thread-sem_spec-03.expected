@@ -2,6 +2,7 @@
 ═══ CONFIGURAÇÕES ════════════════════════════════════════
 ══════════════════════════════════════════════════════════
 
+- Arquitetura: MIPS_32
 - Tipo: TOMASULO_CLASSIC
 - Numero de Threads: 1
 - Modelo Multi-Threading: NONE
@@ -71,25 +72,25 @@ Posição   Instrução                   Issue       EX              MEM       
 
 ─── F ────────────────────────────────────────────────────
 - F1:
-    RS_float_basic0    - [3-8]
-    RS_float_mult_div0 - [6-24]
-    RS_float_mult_div1 - [15-29]
+    float_basic0       - [3-8]
+    float_mult_div0    - [6-24]
+    float_mult_div1    - [15-29]
 
 - F2:
-    RS_float_mult_div0 - [1-6]
-    RS_float_basic1    - [4-10]
+    float_mult_div0    - [1-6]
+    float_basic1       - [4-10]
 
 - F3:
-    RS_float_basic0    - [8-26]
-    RS_float_basic1    - [16-28]
+    float_basic0       - [8-26]
+    float_basic1       - [16-28]
 
 - F4:
-    RS_float_mult_div1 - [2-15]
-    RS_float_basic2    - [7-17]
-    RS_float_basic2    - [17-19]
+    float_mult_div1    - [2-15]
+    float_basic2       - [7-17]
+    float_basic2       - [17-19]
 
 - F6:
-    RS_float_basic3    - [18-31]
+    float_basic3       - [18-31]
 
 
 ══════════════════════════════════════════════════════════
@@ -98,20 +99,20 @@ Posição   Instrução                   Issue       EX              MEM       
 
 ─── float_basic_alu ──────────────────────────────────────
 - float_basic_alu0:
-    RS_float_basic0    - [7-7]
-    RS_float_basic1    - [9-9]
-    RS_float_basic2    - [16-16]
-    RS_float_basic2    - [18-18]
-    RS_float_basic0    - [25-25]
-    RS_float_basic1    - [27-27]
-    RS_float_basic3    - [30-30]
+    float_basic0       - [7-7]
+    float_basic1       - [9-9]
+    float_basic2       - [16-16]
+    float_basic2       - [18-18]
+    float_basic0       - [25-25]
+    float_basic1       - [27-27]
+    float_basic3       - [30-30]
 
 
 ─── float_mult_div_alu ───────────────────────────────────
 - float_mult_div_alu0:
-    RS_float_mult_div0 - [2-5]
-    RS_float_mult_div1 - [7-14]
-    RS_float_mult_div0 - [16-23]
-    RS_float_mult_div1 - [25-28]
+    float_mult_div0    - [2-5]
+    float_mult_div1    - [7-14]
+    float_mult_div0    - [16-23]
+    float_mult_div1    - [25-28]
 
 

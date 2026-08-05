@@ -5,8 +5,8 @@
 namespace processor {
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
-static const int NUM_RS_GROUPS = 6;
-static const int NUM_FU_GROUPS = 6;
+static const int NUM_RS_GROUPS{6};
+static const int NUM_FU_GROUPS{6};
 
 // Retorna a referência para o vetor do grupo de RS correto da instrução.
 static std::vector<ReservationStation>& GetRSGroupForType(
@@ -109,7 +109,8 @@ Thread::Thread(
     const std::vector<int>&                     switch_cycles,
     const int                                   dispatch_width,
     const int                                   rob_capacity,
-    const bool                                  has_predictor
+    const bool                                  has_predictor,
+    const ARCHITECTURE                          arch
 ) :
     has_rob        (rob_capacity > 0),
     rob_capacity   (rob_capacity > 0 ? rob_capacity : 1),
@@ -122,8 +123,8 @@ Thread::Thread(
         std::abort();
     }
 
-    // Passa as instruções para a tabela.
-    std::vector<std::unique_ptr<Instruction>> parsed{InstructionFactory::ParseTrace(assembly, ARCHITECTURE::MIPS_32)};
+    // Passa as instruções para a tabela:
+    std::vector<std::unique_ptr<Instruction>> parsed{InstructionFactory::ParseTrace(assembly, arch)};
     for (std::unique_ptr<Instruction>& inst : parsed) {
         // Ignora propositalmente os outros valores de instruction_table para que eles recebam o default.
         // - Gera warning (por passar menos elementos do que deve na struct) ignorado pela diretiva.
@@ -135,7 +136,7 @@ Thread::Thread(
     }
 
     // Inicializa os RSs e as FUs.
-    InitializeComponents(num_rs, num_fus, dispatch_width);
+    InitializeComponents(num_rs, num_fus, dispatch_width, arch);
 
     // Passa as novas latências às instruções.
     for (const auto& [position, ex, mem] : new_latency) {
@@ -151,13 +152,11 @@ Thread::Thread(
 void Thread::InitializeComponents(
     const std::vector<int>& num_rs,
     const std::vector<int>& num_fus,
-    const int               dispatch_width
+    const int               dispatch_width,
+    const ARCHITECTURE      arch
 ){
-    // Declara os registradores do banco:
-    for(int i{}; i < num_registers; i++){
-        cdb.R.push_back(Register("R" + std::to_string(i))); // R: R0, R1, ..., R31
-        cdb.F.push_back(Register("F" + std::to_string(i))); // F: F0, F1, ..., F31
-    }
+    // Declara os registradores do banco (CDB montado por arquitetura):
+    cdb = InstructionFactory::MakeCDB(arch);
 
     // Declara os componententes da RS:
     // Verifica se foram passados valores para RSs.
@@ -170,7 +169,7 @@ void Thread::InitializeComponents(
     int i{};
     std::vector<std::string> rs_names{"load", "store", "int_basic", "int_mult_div", "float_basic", "float_mult_div"};
     for (std::vector<ReservationStation>* group : GetAllRSGroups()) {
-        for(int j{}; j < aux[i]; j++) group->push_back(ReservationStation("RS_" + rs_names[i] + std::to_string(j)));
+        for(int j{}; j < aux[i]; j++) group->push_back(ReservationStation(rs_names[i] + std::to_string(j)));
         i++;
     }
 
@@ -429,7 +428,7 @@ void Thread::BroadcastOnCDBAndRS(
     // Nos componentes:
     // 1. Desaloca no CDB registradores travados das instruções que finalizaram o WR.
     // 2. Atualiza em todos os grupos de RS as dependências das instruções que dependiam desse resultado.
-    std::vector<Register>& regs = (dest.GetType() == 'F') ? cdb.F : cdb.R;
+    Register& reg = GetReg(cdb, dest);
     for (std::vector<ReservationStation>* group : GetAllRSGroups()) {
         for (ReservationStation& r : *group) {
 
@@ -440,8 +439,8 @@ void Thread::BroadcastOnCDBAndRS(
 
             // Tenta desalocar a célula da RS do registrador de destino no CDB.
             std::string rs_id       = r.GetId();
-            int         start_cycle = regs[dest.GetId()].GetRSCycleStart(rs_id);
-            if (!regs[dest.GetId()].DeallocateRS(rs_id, start_cycle, cycle)) {
+            int         start_cycle = reg.GetRSCycleStart(rs_id);
+            if (!reg.DeallocateRS(rs_id, start_cycle, cycle)) {
                 std::cerr << "[ERRO] Falha na desalocação da célula da RS!"
                 "- RS: " << rs_id << '\n' <<
                 "- [start-end]: [" << start_cycle << "-" << cycle << "]\n";

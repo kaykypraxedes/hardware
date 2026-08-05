@@ -2,6 +2,7 @@
 #ifndef THREAD_H      // Include guard
 #define THREAD_H
 #include "Instruction.h"
+#include "InstructionFactory.h"
 #include "ReservationStations.h"
 #include "Components.h"
 #include <string>
@@ -40,7 +41,8 @@ class Thread {
             const std::vector<int>& = {},
             const int               = 1,
             const int               = 0,
-            const bool              = false
+            const bool              = false,
+            const ARCHITECTURE      = ARCHITECTURE::MIPS_32
         );
 
         // Getters:
@@ -91,7 +93,8 @@ class Thread {
         void InitializeComponents(
             const std::vector<int>&,
             const std::vector<int>&,
-            const int
+            const int,
+            const ARCHITECTURE
         );
         std::vector<std::vector<ReservationStation>*> GetAllRSGroups();
         std::vector<std::vector<FU>*> GetAllFUGroups();

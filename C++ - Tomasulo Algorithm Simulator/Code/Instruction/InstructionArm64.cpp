@@ -4,31 +4,31 @@
 namespace processor {
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
-static const std::vector<std::string> LOADS =
-    {"LDR", "LDUR", "LDP"};
+static const std::vector<std::string> LOADS
+    {"LDR", "LDUR", "LDP", "LDRB", "LDRH", "LDRSB", "LDRSH", "LDURB", "LDURH", "LDURSB", "LDURSH"};
 
-static const std::vector<std::string> STORES =
-    {"STR", "STUR", "STP"};
+static const std::vector<std::string> STORES
+    {"STR", "STUR", "STP", "STRB", "STRH", "STURB", "STURH"};
 
-static const std::vector<std::string> INT_BASIC =
-    {"ADD", "ADDS", "SUB", "SUBS", "AND", "ORR", "EOR", "LSL", "LSR"};
+static const std::vector<std::string> INT_BASIC
+    {"ADD", "ADDS", "SUB", "SUBS", "AND", "ORR", "EOR", "LSL", "LSR", "MOV", "MOVZ", "MOVK", "MOVN", "MVN", "BIC", "EON", "ORN", "CMP", "CMN", "TST", "NEG", "ADC", "SBC", "ASR", "ROR"};
 
-static const std::vector<std::string> INT_MUL =
-    {"MUL", "SMULL", "UMULL"};
+static const std::vector<std::string> INT_MUL
+    {"MUL", "SMULL", "UMULL", "MADD", "MSUB", "SMADDL", "UMADDL"};
 
-static const std::vector<std::string> INT_DIV =
+static const std::vector<std::string> INT_DIV
     {"SDIV", "UDIV"};
 
-static const std::vector<std::string> BRANCHES =
-    {"B", "B.EQ", "B.NE", "BL", "RET", "CBZ", "CBNZ"};
+static const std::vector<std::string> BRANCHES
+    {"B", "B.EQ", "B.NE", "BL", "RET", "CBZ", "CBNZ", "B.LT", "B.GT", "B.LE", "B.GE", "B.HS", "B.HI", "B.LS", "B.LO", "TBZ", "TBNZ", "BR"};
 
-static const std::vector<std::string> FLOAT_BASIC =
-    {"FADD", "FSUB"};
+static const std::vector<std::string> FLOAT_BASIC
+    {"FADD", "FSUB", "FSQRT", "FCVT", "SCVTF", "UCVTF", "FCVTZS", "FCVTZU", "FABS", "FNEG", "FMIN", "FMAX", "FMLA", "FCMP"};
 
-static const std::vector<std::string> FLOAT_MUL =
-    {"FMUL"};
+static const std::vector<std::string> FLOAT_MUL
+    {"FMUL", "FMADD", "FMSUB", "FNMADD", "FNMSUB"};
 
-static const std::vector<std::string> FLOAT_DIV =
+static const std::vector<std::string> FLOAT_DIV
     {"FDIV"};
 
 static bool Contains(
@@ -77,9 +77,9 @@ InstructionArm64::InstructionArm64(
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Privado:
 bool InstructionArm64::IdentifyType(
-    const std::string& prev_op
+    const std::vector<std::string>& tokens
 ){
-    std::string op{prev_op};
+    std::string op{tokens[0]};
     for (char& c : op) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
     if (Contains(LOADS, op))            type = INSTRUCTION_TYPE::LOAD;
@@ -139,6 +139,14 @@ void InstructionArm64::SetAttributes(
     dest_registers.clear();
     source_registers.clear();
 
+    // Imediatos ("5", "0x10") não viram fonte: só registradores X/W/D/S.
+    // (NormalizeInstruction já deixou tudo maiúsculo.)
+    auto is_register = [](const std::string& token) {
+        if (token.empty()) return false;
+        char first = token[0];
+        return first == 'X' || first == 'W' || first == 'D' || first == 'S';
+    };
+
     if (type == INSTRUCTION_TYPE::LOAD) {
         dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
         if (tokens.size() > 2) source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
@@ -149,11 +157,18 @@ void InstructionArm64::SetAttributes(
         if (tokens[0].find(".EQ") != std::string::npos || tokens[0].find(".NE") != std::string::npos) {
             source_registers.push_back(Register('G', 80));
         }
+    } else if (tokens[0] == "CMP" || tokens[0] == "CMN" || tokens[0] == "TST" || tokens[0] == "FCMP") {
+        // Comparadores não escrevem registrador de dados: apenas CPSR.
+        dest_registers.push_back(Register('G', 80));
+        for (size_t i = 1; i < tokens.size(); ++i)
+            if (is_register(tokens[i]))
+                source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
     } else {
         dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
         if (tokens[0].back() == 'S') dest_registers.push_back(Register('G', 80)); // ADDS atualiza CPSR.
-        if (tokens.size() > 2) source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
-        if (tokens.size() > 3) source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
+        for (size_t i = 2; i < tokens.size(); ++i)
+            if (is_register(tokens[i]))
+                source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
     }
 }
 
