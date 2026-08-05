@@ -3,22 +3,20 @@
 #define COMPONENTS_H
 #include <string>
 #include <vector>
-#include <cctype>     // para std::isdigit
 #include <cstdlib>    // para std::abort
 #include <iostream>   // para std::cerr
 
 
 namespace processor {
 
-// ─── ELEMENTO STATIC ──────────────────────────────────────────────
-static const int num_registers = 32;
-
 // ─── CLASSE ───────────────────────────────────────────────────────
 class Register {
     public:
-        // Construtor:
+        // Construtores:
+        Register() = default;
         Register(
-            const std::string& = ""
+            const char,
+            const int
         );
 
         // Getters:
@@ -59,19 +57,21 @@ class Register {
         std::vector<std::string> allocated_rs;
 
         // Métodos privados:
-        bool ParseType(
-            const std::string&
-        );
-        bool ParseId(
-            const std::string&
-        );
         bool HasPendingProducer() const;
 };
 
 // ─── STRUCTS ──────────────────────────────────────────────────────
+struct CDB_BANK {
+    char classe;   // Classe de registrador (B, W, R, L, F, S, V, G).
+    int  base;     // Primeiro id físico da faixa.
+    int  count;    // Quantidade de registradores da faixa.
+};
 struct CDB {
-    std::vector<Register> R;
-    std::vector<Register> F;
+    // Um slot por registrador físico.
+    // - Aliases (RAX/EAX/AX...) compartilham o mesmo id -> mesmo slot.
+    std::vector<Register> registers;
+    // Faixas de impressão na ordem F, R, S, L, V, W, B, G (índice exibido = id - base).
+    std::vector<CDB_BANK> print_banks;
 };
 struct FU {
     bool                     busy{false};
@@ -88,6 +88,17 @@ struct FUNCTIONAL_UNITS {
     int             wr{1};
     int             commit{0};
 };
+
+// ─── HELPERS ──────────────────────────────────────────────────────
+// Não são static para não forçar uma reimplementação em cada .cpp
+Register& GetReg(
+    CDB&,
+    const Register&
+);
+const Register& GetReg(
+    const CDB&,
+    const Register&
+);
 
 } // namespace processor
 

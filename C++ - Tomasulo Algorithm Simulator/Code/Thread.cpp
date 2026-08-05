@@ -126,7 +126,7 @@ Thread::Thread(
     std::vector<std::unique_ptr<Instruction>> parsed{InstructionFactory::ParseTrace(assembly, ARCHITECTURE::MIPS_32)};
     for (std::unique_ptr<Instruction>& inst : parsed) {
         // Ignora propositalmente os outros valores de instruction_table para que eles recebam o default.
-        // - Gera warning ignorado pela diretiva.
+        // - Gera warning (por passar menos elementos do que deve na struct) ignorado pela diretiva.
         #pragma GCC diagnostic push
         #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
         // Converte de unique_ptr para shared_ptr ao guardar na tabela para que RS e ROB compartilhem o MESMO objeto.

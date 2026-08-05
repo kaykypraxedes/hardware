@@ -5,6 +5,7 @@
 #include "Components.h"
 #include <string>
 #include <vector>
+#include <utility>   // para std::pair
 #include <memory>    // para std::shared_ptr
 #include <cstdlib>   // para std::abort
 #include <iostream>  // para std::cerr

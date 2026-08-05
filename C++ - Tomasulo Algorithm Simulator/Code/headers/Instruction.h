@@ -4,10 +4,19 @@
 #include "Components.h"
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include <cstdlib>    // para std::abort
 #include <iostream>   // para std::cerr
 
 namespace processor {
+
+// ─── ELEMENTO STATIC ──────────────────────────────────────────────
+// ATENÇÃO: Deve ser declarado uma versão própria em cada uma das subclasses de Instruction.
+// - Gera warning (por não ser definido em Instruction.cpp) ignorado pela diretiva.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+static const std::unordered_map<std::string, Register>& RegisterTable();
+#pragma GCC diagnostic pop
 
 // ─── ENUMS ────────────────────────────────────────────────────────
 enum class INSTRUCTION_TYPE {
@@ -76,7 +85,7 @@ class Instruction {
         int ex_latency{};
         int mem_latency{};
         INSTRUCTION_TYPE type{INSTRUCTION_TYPE::INVALID};
-        std::vector<Register> dest_registers;  // [0] destino direto; [1] flag (se tiver).
+        std::vector<Register> dest_registers;   // X86 pode ter múltiplos destinos (como aliases e flags).
         std::vector<Register> source_registers;
 
         // Métodos virtuais (cada arquitetura deve implementar sua versão):
@@ -95,6 +104,20 @@ class Instruction {
         // Método igual para todos.
         void SetLatencies();
 };
+// ─── HELPERS ──────────────────────────────────────────────────────
+// Não são static para não forçar uma reimplementação em cada .cpp
+void fillCDB(
+    CDB&,
+    const char,
+    const int,
+    const int
+);
+Register LookupRegister(
+    const std::string&,
+    const std::string&,
+    const std::unordered_map<std::string, Register>& table
+);
+
 } // namespace processor
 
 #endif

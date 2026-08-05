@@ -68,6 +68,21 @@ class InstructionFactory {
 
             return instructions;
         }
+
+        // Elemento static:
+        // Monta o CDB com os registradores físicos da arquitetura (D20).
+        // - Cada subclasse define os slots, as classes canônicas e as faixas de impressão.
+        static CDB MakeCDB(const ARCHITECTURE arch) {
+            switch (arch) {
+                case ARCHITECTURE::MIPS_32:   return InstructionMips32::MakeCDB();
+                case ARCHITECTURE::X86_INTEL: return InstructionX86Intel::MakeCDB();
+                case ARCHITECTURE::ARM_64:    return InstructionArm64::MakeCDB();
+                case ARCHITECTURE::RISC_V:    return InstructionRiscV::MakeCDB();
+                default:
+                    std::cerr << "[ERRO] Arquitetura não suportada!\n";
+                    std::abort();
+            }
+        }
 };
 } // namespace processor
 

@@ -1,5 +1,6 @@
 /* Instruction/InstructionX86Intel.cpp */
 #include "headers/InstructionX86Intel.h"
+#include <unordered_map>
 
 namespace processor {
 
@@ -36,6 +37,60 @@ static bool Contains(
     const std::string&              op
 ){
     return std::find(vec.begin(), vec.end(), op) != vec.end();
+}
+
+// Monta o CDB com os registradores físicos:
+// - Slots 0-15 inteiros ('R', 'L', 'W' e 'B' compartilhando), 64-79 vetorial ('V') e 80 flags ('G').
+CDB InstructionX86Intel::MakeCDB() {
+    CDB cdb;
+    cdb.registers.resize(81);
+    fillCDB(cdb, 'L', 0, 16);   // Faixas inteiras: L, R, W, B compartilham os slots 0-15.
+    fillCDB(cdb, 'R', 0, 16);
+    fillCDB(cdb, 'W', 0, 16);
+    fillCDB(cdb, 'B', 0, 16);
+    fillCDB(cdb, 'V', 64, 16);
+    fillCDB(cdb, 'G', 80, 1);
+    cdb.print_banks = {{'R', 0, 16}, {'L', 0, 16}, {'V', 64, 16}, {'W', 0, 16}, {'B', 0, 16}, {'G', 80, 1}};
+    return cdb;
+}
+
+// Tabela nome -> (classe, id físico global).
+// Aliases compartilham o mesmo id:
+// - ids 0-15:  RAX..R15 ('L') = EAX..R15D ('R') = AX..R15W ('W') = AL/AH..R15B ('B').
+// - ids 64-79: XMM0-15 ('V').
+// - id 80:     EFLAGS ('G').
+const std::unordered_map<std::string, Register>& RegisterTable() {
+    static std::unordered_map<std::string, Register> t;
+    // 64-bit (L, 0-15):
+    const char* l64[] = {"RAX", "RBX", "RCX", "RDX", "RSI", "RDI", "RSP", "RBP"};
+    for (int i = 0; i < 8;  i++) t.emplace(l64[i], Register('L', i));
+    for (int i = 8; i < 16; i++) t.emplace("R" + std::to_string(i), Register('L', i));
+
+    // 32-bit (R, 0-15):
+    const char* r32[] = {"EAX", "EBX", "ECX", "EDX", "ESI", "EDI", "ESP", "EBP"};
+    for (int i = 0; i < 8;  i++) t.emplace(r32[i], Register('R', i));
+    for (int i = 8; i < 16; i++) t.emplace("R" + std::to_string(i) + "D", Register('R', i));
+
+    // 16-bit (W, 0-15):
+    const char* w16[] = {"AX", "BX", "CX", "DX", "SI", "DI", "SP", "BP"};
+    for (int i = 0; i < 8;  i++) t.emplace(w16[i], Register('W', i));
+    for (int i = 8; i < 16; i++) t.emplace("R" + std::to_string(i) + "W", Register('W', i));
+
+    // 8-bit (B, 0-15) — AL/AH, BL/BH, ... compartilham o id do grupo.
+    const char* b8[] = {"AL", "AH", "BL", "BH", "CL", "CH", "DL", "DH"};
+    for (int i = 0; i < 8; i++) t.emplace(b8[i], Register('B', i / 2));
+    t.emplace("SIL", Register('B', 4));
+    t.emplace("DIL", Register('B', 5));
+    t.emplace("SPL", Register('B', 6));
+    t.emplace("BPL", Register('B', 7));
+    for (int i = 8; i < 16; i++) t.emplace("R" + std::to_string(i) + "B", Register('B', i));
+
+    // Vetorial (V, 64-79)
+    for (int i = 0; i < 16; i++) t.emplace("XMM" + std::to_string(i), Register('V', 64 + i));
+
+    // Flags (G, 80):
+    t.emplace("EFLAGS", Register('G', 80));
+    return t;
 }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
@@ -116,15 +171,15 @@ void InstructionX86Intel::SetAttributes(
     // No x86 Intel, o primeiro operando costuma ser o Destino/Fonte (ex: ADD EAX, EBX -> EAX = EAX + EBX)
     if (type == INSTRUCTION_TYPE::BRANCH) {
         // Desvios condicionais leem EFLAGS
-        source_registers.push_back(Register("EFLAGS"));
+        source_registers.push_back(Register('G', 80));
     } else if (tokens.size() > 1) {
-        dest_registers.push_back(Register(tokens[1]));
+        dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
         // Operações aritméticas alteram EFLAGS implicitamente e usam o destino como fonte inicial
-        dest_registers.push_back(Register("EFLAGS"));
-        source_registers.push_back(Register(tokens[1]));
+        dest_registers.push_back(Register('G', 80));
+        source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
 
         if (tokens.size() > 2) {
-            source_registers.push_back(Register(tokens[2]));
+            source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
         }
     }
 }

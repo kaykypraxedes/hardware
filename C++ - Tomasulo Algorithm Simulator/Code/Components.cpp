@@ -19,50 +19,11 @@ const std::vector<std::string>& Register::GetAllocatedRS() const { return alloca
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
 Register::Register(
-    const std::string& register_string
-){
-    // Tenta traduzir as informações da string para os atributos.
-    if (!ParseType(register_string) || !ParseId(register_string)){
-        std::cerr << "[ERRO] Register string inválida: " << register_string << "\n";
-        std::abort();
-    }
-}
+    const char type,
+    const int  id
+) : type(type), id(id) {}
 
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
-// Privado:
-bool Register::ParseType(
-    const std::string& s
-){
-    // Casos válidos:
-    // 1. Input vazio.
-    if (s.empty()) { type = 'Z'; return true; }
-    // 2. Input[0] == 'F' || Input[0] == 'R'.
-    char c = static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
-    if (c == 'F' || c == 'R') { type = c; return true; }
-    // Casos inválidos:
-    // - Input[0] = "1", "A", "#", etc.
-    return false;
-}
-
-// Privado:
-bool Register::ParseId(
-    const std::string& s
-){
-    // Casos válidos:
-    // 1. Input vazio.
-    if (s.empty()) { id = -1; return true; }
-    try{
-        size_t pos{};
-        // 2. Input[1-n] está no intervalo dos registradores.
-        int id_aux{std::stoi(s.substr(1), &pos)}; // pode lançar invalid_argument / out_of_range.
-        // pega lixo à direita que seria ignorado pelo std::string::stoi ("55A" -> "55").
-        if(pos != s.size() - 1) return false;
-        if(id_aux >= 0 && id_aux < num_registers) { id = id_aux; return true; }
-    } catch (...) { return false; } // Casos não suportados pelo std::stoi ou pelo std::string::substr/stoi
-    // Casos inválidos:
-    // - Input[1-n] = "-1", "1236", "#", etc.
-    return false;
-}
 
 // Público:
 // Inverte o estado do registrador.
@@ -154,6 +115,28 @@ bool Register::DeallocateRS( // O for pode não achar correspondente (por isso b
         }
     }
     return false;
+}
+
+// ─── HELPERS ──────────────────────────────────────────────────────
+// Público:
+const Register& GetReg(
+    const CDB&      cdb,
+    const Register& reg
+){
+    // Pesquisa apenas pelo id físico global; a classe não é validada aqui.
+    if (reg.GetId() < 0 || static_cast<size_t>(reg.GetId()) >= cdb.registers.size()) {
+        std::cerr << "[ERRO] Registrador fora do banco: " << reg.GetType() << reg.GetId() << "\n";
+        std::abort();
+    }
+    return cdb.registers[reg.GetId()];
+}
+
+// Público:
+Register& GetReg(
+    CDB&            cdb,
+    const Register& reg
+){
+    return const_cast<Register&>(GetReg(static_cast<const CDB&>(cdb), reg));
 }
 
 } // namespace processor

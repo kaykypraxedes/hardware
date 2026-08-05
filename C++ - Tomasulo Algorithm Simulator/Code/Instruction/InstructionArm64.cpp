@@ -38,6 +38,36 @@ static bool Contains(
     return std::find(vec.begin(), vec.end(), op) != vec.end();
 }
 
+// Monta o CDB com os registradores físicos:
+// - ids 0-30:  X0..30 ('L') = W0..30 ('R').
+// - ids 32-63: D0..31 ('S') = S0..31 ('F').
+// - id 80:     CPSR ('G').
+CDB InstructionArm64::MakeCDB() {
+    CDB cdb;
+    cdb.registers.resize(81);
+    fillCDB(cdb, 'L', 0,  31);  // Faixas inteiras: L e R compartilham os slots 0-30.
+    fillCDB(cdb, 'R', 0,  31);
+    fillCDB(cdb, 'S', 32, 32);  // Faixas de float: S e F compartilham os slots 32-63.
+    fillCDB(cdb, 'F', 32, 32);
+    fillCDB(cdb, 'G', 80, 1);
+    cdb.print_banks = {{'L', 0, 31}, {'R', 0, 31}, {'S', 32, 32}, {'F', 32, 32}, {'G', 80, 1}};
+    return cdb;
+}
+
+// Tabela nome -> (classe, id físico global). Aliases compartilham o mesmo id:
+// - ids 0-30:  X0-30 ('L') = W0-30 ('R').
+// - ids 32-63: D0-31 ('S') = S0-31 ('F').
+// - id 80:     CPSR ('G').
+const std::unordered_map<std::string, Register>& RegisterTable() {
+    static std::unordered_map<std::string, Register> t;
+    for (int i = 0; i < 31; i++) t.emplace("X" + std::to_string(i), Register('L', i));
+    for (int i = 0; i < 31; i++) t.emplace("W" + std::to_string(i), Register('R', i));
+    for (int i = 0; i < 32; i++) t.emplace("D" + std::to_string(i), Register('S', 32 + i));
+    for (int i = 0; i < 32; i++) t.emplace("S" + std::to_string(i), Register('F', 32 + i));
+    t.emplace("CPSR", Register('G', 80));
+    return t;
+}
+
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
 InstructionArm64::InstructionArm64(
@@ -110,20 +140,20 @@ void InstructionArm64::SetAttributes(
     source_registers.clear();
 
     if (type == INSTRUCTION_TYPE::LOAD) {
-        dest_registers.push_back(Register(tokens[1]));
-        if (tokens.size() > 2) source_registers.push_back(Register(tokens[2]));
+        dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+        if (tokens.size() > 2) source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
     } else if (type == INSTRUCTION_TYPE::STORE) {
-        source_registers.push_back(Register(tokens[1]));
-        if (tokens.size() > 2) source_registers.push_back(Register(tokens[2]));
+        source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+        if (tokens.size() > 2) source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
     } else if (type == INSTRUCTION_TYPE::BRANCH) {
         if (tokens[0].find(".EQ") != std::string::npos || tokens[0].find(".NE") != std::string::npos) {
-            source_registers.push_back(Register("CPSR"));
+            source_registers.push_back(Register('G', 80));
         }
     } else {
-        dest_registers.push_back(Register(tokens[1]));
-        if (tokens[0].back() == 'S') dest_registers.push_back(Register("CPSR")); // ADDS atualiza CPSR.
-        if (tokens.size() > 2) source_registers.push_back(Register(tokens[2]));
-        if (tokens.size() > 3) source_registers.push_back(Register(tokens[3]));
+        dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+        if (tokens[0].back() == 'S') dest_registers.push_back(Register('G', 80)); // ADDS atualiza CPSR.
+        if (tokens.size() > 2) source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+        if (tokens.size() > 3) source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
     }
 }
 

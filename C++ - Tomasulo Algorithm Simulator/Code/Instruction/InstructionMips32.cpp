@@ -1,5 +1,6 @@
 /* Instruction/InstructionMips32.cpp */
 #include "headers/InstructionMips32.h"
+#include <unordered_map>
 
 namespace processor {
 
@@ -47,6 +48,30 @@ static bool IsRegister(
     for (size_t i = 1; i < token.size(); ++i)
         if (!std::isdigit(static_cast<unsigned char>(token[i]))) return false;
     return true;
+}
+
+// Monta o CDB com os registradores físicos:
+// - ids 0-31:  R0..31 ('R').
+// - ids 32-63: F0..31 ('F').
+CDB InstructionMips32::MakeCDB() {
+    CDB cdb;
+    cdb.registers.resize(64);
+    fillCDB(cdb, 'R', 0,  32);
+    fillCDB(cdb, 'F', 32, 32);
+    cdb.print_banks = {{'R', 0, 32}, {'F', 32, 32}};
+    return cdb;
+}
+
+// Tabela nome -> (classe, id físico global):
+// - ids 0-31:  R0..31 ('R').
+// - ids 32-63: F0..31 ('F').
+const std::unordered_map<std::string, Register>& RegisterTable() {
+    static std::unordered_map<std::string, Register> t;
+    for (int i = 0; i < 32; i++) {
+        t.emplace("R" + std::to_string(i), Register('R', i));
+        t.emplace("F" + std::to_string(i), Register('F', 32 + i));
+    }
+    return t;
 }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
@@ -131,22 +156,22 @@ void InstructionMips32::SetAttributes(
     source_registers.clear();
 
     if (type == INSTRUCTION_TYPE::LOAD) {
-        dest_registers.push_back(Register(tokens[1]));
-        source_registers.push_back(Register(tokens[3]));
+        dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+        source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
     } else if (type == INSTRUCTION_TYPE::STORE) {
-        source_registers.push_back(Register(tokens[1]));
-        source_registers.push_back(Register(tokens[3]));
+        source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+        source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
     } else if (type == INSTRUCTION_TYPE::BRANCH) {
         if (tokens.size() > 1 && (tokens[1][0] == 'R' || tokens[1][0] == 'F'))
-            source_registers.push_back(Register(tokens[1]));
+            source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
         if (tokens.size() > 2 && (tokens[2][0] == 'R' || tokens[2][0] == 'F'))
-            source_registers.push_back(Register(tokens[2]));
+            source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
     } else {
-        dest_registers.push_back(Register(tokens[1]));
+        dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
         if (tokens.size() > 2 && (tokens[2][0] == 'R' || tokens[2][0] == 'F'))
-            source_registers.push_back(Register(tokens[2]));
+            source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
         if (tokens.size() > 3 && (tokens[3][0] == 'R' || tokens[3][0] == 'F'))
-            source_registers.push_back(Register(tokens[3]));
+            source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
     }
 }
 

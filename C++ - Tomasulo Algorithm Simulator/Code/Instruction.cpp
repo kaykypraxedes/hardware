@@ -109,4 +109,26 @@ void Instruction::SetMemLatency(
     mem_latency = latency;
 }
 
+// ─── HELPERS ───────────────────────────────────────────────────────
+
+void fillCDB(CDB& cdb, char classe, int base, int count){
+    for (int i = 0; i < count; i++)
+        if (cdb.registers[base + i].GetId() == -1)
+            cdb.registers[base + i] = Register(classe, base + i);
+}
+
+// Única validação de nome do sistema: aborta com o nome e a instrução que o gerou.
+Register LookupRegister(
+    const std::string& name,
+    const std::string& context, // Puramente para debugging, mas não é obrigatório
+    const std::unordered_map<std::string, Register>& table
+){
+    auto it = table.find(name);
+    if (it == table.end()) {
+        std::cerr << "[ERRO] Registrador inválido: '" << name << "' (instrução: " << context << ")\n";
+        std::abort();
+    }
+    return it->second;
+}
+
 } // namespace processor

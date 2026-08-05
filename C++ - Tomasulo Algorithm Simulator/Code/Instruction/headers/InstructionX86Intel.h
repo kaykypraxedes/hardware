@@ -10,6 +10,10 @@ namespace processor {
 // ─── CLASSE ───────────────────────────────────────────────────────
 class InstructionX86Intel : public Instruction { // Herança da classe Instruction.
     public:
+        // Método estático:
+        // Monta o CDB (vetor de registradores físicos) da arquitetura.
+        static CDB MakeCDB();
+
         // Construtor:
         // - explicit para impedir o cast implícito.
         explicit InstructionX86Intel(

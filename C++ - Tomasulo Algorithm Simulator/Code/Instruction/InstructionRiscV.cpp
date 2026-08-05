@@ -1,5 +1,6 @@
 /* Instruction/InstructionRiscV.cpp */
 #include "headers/InstructionRiscV.h"
+#include <unordered_map>
 
 namespace processor {
 
@@ -36,6 +37,28 @@ static bool Contains(
     const std::string&              op
 ){
     return std::find(vec.begin(), vec.end(), op) != vec.end();
+}
+
+// Monta o CDB com os registradores físicos:
+// - ids 0-31:  x0..31 ('L').
+// - ids 32-63: f0..31 ('F').
+CDB InstructionRiscV::MakeCDB() {
+    CDB cdb;
+    cdb.registers.resize(64);
+    fillCDB(cdb, 'L', 0, 32);
+    fillCDB(cdb, 'F', 32, 32);
+    cdb.print_banks = {{'F', 32, 32}, {'L', 0, 32}};
+    return cdb;
+}
+
+// Tabela nome -> (classe, id físico global):
+// - ids 0-31:  x0..31 ('L').
+// - ids 32-63: f0..31 ('F').
+const std::unordered_map<std::string, Register>& RegisterTable() {
+    static std::unordered_map<std::string, Register> t;
+    for (int i = 0; i < 32; i++) t.emplace("x" + std::to_string(i), Register('L', i));
+    for (int i = 0; i < 32; i++) t.emplace("f" + std::to_string(i), Register('F', 32 + i));
+    return t;
 }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
@@ -113,18 +136,18 @@ void InstructionRiscV::SetAttributes(
     source_registers.clear();
 
     if (type == INSTRUCTION_TYPE::LOAD) {
-        dest_registers.push_back(Register(tokens[1]));
-        source_registers.push_back(Register(tokens[3]));
+        dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+        if (tokens.size() > 2) source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
     } else if (type == INSTRUCTION_TYPE::STORE) {
-        source_registers.push_back(Register(tokens[1]));
-        source_registers.push_back(Register(tokens[3]));
+        source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+        if (tokens.size() > 2) source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
     } else if (type == INSTRUCTION_TYPE::BRANCH) {
-        source_registers.push_back(Register(tokens[1]));
-        source_registers.push_back(Register(tokens[2]));
+        if (tokens.size() > 1) source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+        if (tokens.size() > 2) source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
     } else {
-        dest_registers.push_back(Register(tokens[1]));
-        if (tokens.size() > 2) source_registers.push_back(Register(tokens[2]));
-        if (tokens.size() > 3) source_registers.push_back(Register(tokens[3]));
+        dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+        if (tokens.size() > 2) source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+        if (tokens.size() > 3) source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
     }
 }
 
