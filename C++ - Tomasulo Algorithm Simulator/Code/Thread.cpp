@@ -123,18 +123,14 @@ Thread::Thread(
     }
 
     // Passa as instruções para a tabela.
-    // - O parse é feito pelo InstructionFactory (multiarchitecture.md):
-    //   por enquanto a arquitetura é fixa em MIPS32; a chave de config
-    //   (configuração -> arquitetura) é assunto da Fase 2 (Bloco C).
-    // - A Factory devolve unique_ptr; a Thread converte para shared_ptr ao
-    //   guardar na tabela (D3) para que RS e ROB compartilhem o MESMO objeto.
-    std::vector<std::unique_ptr<Instruction>> parsed =
-        InstructionFactory::ParseTrace(assembly, Architecture::MIPS_32);
+    std::vector<std::unique_ptr<Instruction>> parsed{InstructionFactory::ParseTrace(assembly, ARCHITECTURE::MIPS_32)};
     for (std::unique_ptr<Instruction>& inst : parsed) {
-        // Ignora propositalmente os outros valores para que eles recebam o default.
+        // Ignora propositalmente os outros valores de instruction_table para que eles recebam o default.
+        // - Gera warning ignorado pela diretiva.
         #pragma GCC diagnostic push
         #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-        instruction_table.push_back({std::shared_ptr<Instruction>(std::move(inst))}); // Warning ignorado.
+        // Converte de unique_ptr para shared_ptr ao guardar na tabela para que RS e ROB compartilhem o MESMO objeto.
+        instruction_table.push_back({std::shared_ptr<Instruction>(std::move(inst))});
         #pragma GCC diagnostic pop
     }
 
@@ -164,10 +160,9 @@ void Thread::InitializeComponents(
     }
 
     // Declara os componententes da RS:
-    // Verifica se foram passados valores para RSs:
-    std::vector<int> aux;
-    aux = num_rs.empty() ? std::vector<int>{5,5,5,4,3,2} : num_rs; // Valores arbitrários de default.
-    // Verifica se a quantidade de valores para RSs passados é válido:
+    // Verifica se foram passados valores para RSs.
+    std::vector<int> aux{num_rs.empty() ? std::vector<int>{5,5,5,4,3,2} : num_rs}; // Valores arbitrários de default.
+    // Verifica se a quantidade de valores para RSs passados é válido.
     if(aux.size() != NUM_RS_GROUPS){
         std::cerr << "[ERRO] Quantidade inválida de RSs: " << num_rs.size() << "\n";
         std::abort();
@@ -180,9 +175,9 @@ void Thread::InitializeComponents(
     }
 
     // Declara os componententes do FU:
-    // Verifica se foram passados valores para FUs:
+    // Verifica se foram passados valores para FUs.
     aux = num_fus.empty() ? std::vector<int>{1,1,1,1,1,2} : num_fus; // Valores arbitrários de default.
-    // Verifica se a quantidade de valores para FUs passados é válido:
+    // Verifica se a quantidade de valores para FUs passados é válido.
     if(aux.size() != NUM_FU_GROUPS){
         std::cerr << "[ERRO] Quantidade inválida de FUs: " << num_fus.size() << "\n";
         std::abort();
@@ -192,9 +187,9 @@ void Thread::InitializeComponents(
         for(int j{}; j < aux[i]; j++) group->push_back(FU{});
         i++;
     }
-    // Valores int.
+    // Valores int:
     fu.wr     = aux[5];
-    if(has_rob) fu.commit = dispatch_width; // Só inicializa commit se tem ROB
+    if(has_rob) fu.commit = dispatch_width; // Só inicializa commit se tem ROB.
 }
 
 // Privado:
@@ -280,7 +275,7 @@ bool Thread::Issue(
 
 // ─── EX/MEM ───────────────────────────────────────────────────────
 // Público:
-// Verifica se as instruções já foram devidamente já estão aptas a começar a fase EX/MEM.
+// Verifica se as instruções já estão aptas a começar a fase EX/MEM.
 bool Thread::ExMem(
     const int cycle
 ){
@@ -301,15 +296,16 @@ void Thread::StartExOrMemPhase(
     const int cycle
 ){
     // Procura em todos os grupos de RS com instruções aptas a mudar de fase:
-    // IS  -> EX
-    // EX  -> MEM
+    // IS -> EX
+    // EX -> MEM
     std::vector<ReservationStation*> candidates;
     for (std::vector<ReservationStation>* group : GetAllRSGroups()) {
         for (ReservationStation& r : *group) {
             // Célula da RS vazia.
             if (!r.IsBusy()) continue;
-            // Filtro que garante selecionar apenas as instruções em IS ou MEM (que vai começar), já que são as únicas que podem ter o countdown = -1.
-            // - Redundante em lógica, já que o ReservationStations::UpdateDependencies() já faz esse filtro, mas diminui o sort.
+            // Filtro que garante selecionar apenas as instruções em IS ou MEM (que vai começar)
+            // - São as únicas que podem ter o countdown = -1.
+            // - Redundante em lógica, já que o ReservationStations::UpdateDependencies() já faz esse filtro, mas diminui overhead do sort.
             if (r.GetCountdown() != -1 || r.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR) continue;
 
             // Instrução observada foi adicionada após um branch não resolvido:
@@ -359,6 +355,7 @@ void Thread::Wr(
 
     // Escreve os resultados prontos.
     PerformWriteResult(cycle);
+
     // Detecta novas transições de fase.
     DetectPhaseTransitions(cycle);
 }
@@ -408,11 +405,11 @@ void Thread::WriteResultOnComponents(
 
     // 1. Propaga o resultado no CDB e libera os registradores.
     // 2. Resolve as dependências nos RSs que estavam esperando.
-    // - Instrução pode ter mais de um destino (ex.: x86 reg + EFLAGS);
-    //   o broadcast é feito para cada destino, um por um.
+    // - Instrução pode ter mais de um destino (ex.: x86 reg + EFLAGS).
+    // - O broadcast é feito para cada destino, um por um.
     const std::vector<Register>& dests = instruction_table[position].instruction->GetDestRegisters();
     for (const Register& dest : dests)
-        BroadcastOnRSAndCDB(dest, position, cycle);
+        BroadcastOnCDBAndRS(dest, position, cycle);
 
     // Libera a célula da RS produtora.
     ReleaseRS(GetRSGroupForType(rs, type), position, cycle);
@@ -421,7 +418,7 @@ void Thread::WriteResultOnComponents(
 // Privado:
 // Transmite no CDB na RS as instruções que chegaram ao ciclo de WR.
 // - Elimina as dependências em Qj/Qk para que a instrução possa começar o EX ou o MEM.
-void Thread::BroadcastOnRSAndCDB(
+void Thread::BroadcastOnCDBAndRS(
     const Register& dest,
     const int       position,
     const int       cycle
@@ -508,7 +505,7 @@ void Thread::DetectPhaseTransitions(
                     r.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR)
                     unresolved_branch_position = -1; // Valor default.
 
-                // Coloca a instrução na fila de WR
+                // Coloca a instrução na fila de WR.
                 pending_wr_buffer.push_back(position);
             }
         }
@@ -546,10 +543,12 @@ void Thread::Commit(
                     pronto = true;
                 }
             }
-        } // Verifica se é um Branch (sem WR também, dependendo do EX completo).
+        }
+        // Verifica se é um Branch (sem WR também, dependendo do EX completo).
         else if (type == INSTRUCTION_TYPE::BRANCH) {
             pronto = (row.ex_cycles.size() == 2);
-        } // Demais instruções.
+        }
+        // Demais instruções.
         else {
             pronto = (row.wr_cycle > 0 && row.wr_cycle < cycle);
         }

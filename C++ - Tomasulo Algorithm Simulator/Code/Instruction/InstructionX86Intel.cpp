@@ -3,40 +3,72 @@
 
 namespace processor {
 
-static const std::vector<std::string> X86_LOADS = {"MOV", "MOVSS", "MOVSD", "LEA"};
-static const std::vector<std::string> X86_STORES = {"MOV_STORE"};
-static const std::vector<std::string> X86_INT_BASIC = {"ADD", "SUB", "AND", "OR", "XOR", "INC", "DEC", "CMP", "SHL", "SHR"};
-static const std::vector<std::string> X86_INT_MUL = {"IMUL", "MUL"};
-static const std::vector<std::string> X86_INT_DIV = {"IDIV", "DIV"};
-static const std::vector<std::string> X86_BRANCHES = {"JMP", "JE", "JNE", "JG", "JGE", "JL", "JLE", "CALL"};
-static const std::vector<std::string> X86_FLOAT_BASIC = {"ADDSS", "ADDSD", "SUBSS", "SUBSD"};
-static const std::vector<std::string> X86_FLOAT_MUL = {"MULSS", "MULSD"};
-static const std::vector<std::string> X86_FLOAT_DIV = {"DIVSS", "DIVSD"};
+// ─── ELEMENTOS STATIC ─────────────────────────────────────────────
+static const std::vector<std::string> LOADS =
+    {"MOV", "MOVSS", "MOVSD", "LEA"};
 
-static bool Contains(const std::vector<std::string>& vec, const std::string& op) {
+static const std::vector<std::string> STORES =
+    {"MOV_STORE"};
+
+static const std::vector<std::string> INT_BASIC =
+    {"ADD", "SUB", "AND", "OR", "XOR", "INC", "DEC", "CMP", "SHL", "SHR"};
+
+static const std::vector<std::string> INT_MUL =
+    {"IMUL", "MUL"};
+
+static const std::vector<std::string> INT_DIV =
+    {"IDIV", "DIV"};
+
+static const std::vector<std::string> BRANCHES =
+    {"JMP", "JE", "JNE", "JG", "JGE", "JL", "JLE", "CALL"};
+
+static const std::vector<std::string> FLOAT_BASIC =
+    {"ADDSS", "ADDSD", "SUBSS", "SUBSD"};
+
+static const std::vector<std::string> FLOAT_MUL =
+    {"MULSS", "MULSD"};
+
+static const std::vector<std::string> FLOAT_DIV =
+    {"DIVSS", "DIVSD"};
+
+static bool Contains(
+    const std::vector<std::string>& vec,
+    const std::string&              op
+){
     return std::find(vec.begin(), vec.end(), op) != vec.end();
 }
 
-InstructionX86Intel::InstructionX86Intel(const int position) : Instruction(position) {}
+// ─── CONSTRUTOR ───────────────────────────────────────────────────
+// Público:
+InstructionX86Intel::InstructionX86Intel(
+    const int position
+) : Instruction(position) {}
 
-bool InstructionX86Intel::IdentifyType(const std::string& prev_op) {
+// ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
+// Privado:
+bool InstructionX86Intel::IdentifyType(
+    const std::string& prev_op
+){
     std::string op = prev_op;
     for (char& c : op) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
-    if (Contains(X86_LOADS, op))           type = INSTRUCTION_TYPE::LOAD;
-    else if (Contains(X86_INT_BASIC, op))  type = INSTRUCTION_TYPE::INT_BASIC;
-    else if (Contains(X86_BRANCHES, op))   type = INSTRUCTION_TYPE::BRANCH;
-    else if (Contains(X86_INT_MUL, op))    type = INSTRUCTION_TYPE::INT_MUL;
-    else if (Contains(X86_INT_DIV, op))    type = INSTRUCTION_TYPE::INT_DIV;
-    else if (Contains(X86_FLOAT_BASIC, op))type = INSTRUCTION_TYPE::FLOAT_BASIC;
-    else if (Contains(X86_FLOAT_MUL, op))  type = INSTRUCTION_TYPE::FLOAT_MUL;
-    else if (Contains(X86_FLOAT_DIV, op))  type = INSTRUCTION_TYPE::FLOAT_DIV;
+    if (Contains(LOADS, op))            type = INSTRUCTION_TYPE::LOAD;
+    else if (Contains(INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
+    else if (Contains(BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
+    else if (Contains(INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
+    else if (Contains(INT_DIV, op))     type = INSTRUCTION_TYPE::INT_DIV;
+    else if (Contains(FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
+    else if (Contains(FLOAT_MUL, op))   type = INSTRUCTION_TYPE::FLOAT_MUL;
+    else if (Contains(FLOAT_DIV, op))   type = INSTRUCTION_TYPE::FLOAT_DIV;
     else return false;
 
     return true;
 }
 
-std::vector<std::string> InstructionX86Intel::SplitInstruction(const std::string& str) const {
+// Privado:
+std::vector<std::string> InstructionX86Intel::SplitInstruction(
+    const std::string& str
+) const {
     std::vector<std::string> tokens;
     std::string current;
     bool in_bracket = false;
@@ -58,7 +90,10 @@ std::vector<std::string> InstructionX86Intel::SplitInstruction(const std::string
     return tokens;
 }
 
-void InstructionX86Intel::NormalizeInstruction(std::vector<std::string>& tokens) {
+// Privado:
+void InstructionX86Intel::NormalizeInstruction(
+    std::vector<std::string>& tokens
+){
     for (std::string& token : tokens)
         for (char& c : token) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
@@ -71,7 +106,10 @@ void InstructionX86Intel::NormalizeInstruction(std::vector<std::string>& tokens)
     instruction_string = normalized;
 }
 
-void InstructionX86Intel::SetAttributes(const std::vector<std::string>& tokens) {
+// Privado:
+void InstructionX86Intel::SetAttributes(
+    const std::vector<std::string>& tokens
+){
     dest_registers.clear();
     source_registers.clear();
 

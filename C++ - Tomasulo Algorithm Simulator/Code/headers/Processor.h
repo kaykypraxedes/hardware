@@ -43,7 +43,7 @@ class Processor {
 
         // Getters:
         PROCESSOR_TYPE GetType() const;
-        // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
+        // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno).
         const Thread& GetThread(
             int
         ) const;
@@ -63,6 +63,7 @@ class Processor {
         PROCESSOR_TYPE       type;
         MULTITHREADING_MODEL mt_model;
         std::vector<Thread>  threads;
+
         // Métodos privados:
         void InitializeThreads(
             const std::vector<std::string>&,

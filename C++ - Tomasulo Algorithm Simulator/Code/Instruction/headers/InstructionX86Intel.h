@@ -1,23 +1,37 @@
 /* Instruction/headers/InstructionX86Intel.h */
-#ifndef INSTRUCTION_X86INTEL_H
+#ifndef INSTRUCTION_X86INTEL_H // Include guard
 #define INSTRUCTION_X86INTEL_H
-
 #include "../../headers/Instruction.h"
-#include <algorithm>
-#include <cctype>
+#include <algorithm>           // para std::find
+#include <cctype>              // para std::toupper
 
 namespace processor {
 
-class InstructionX86Intel : public Instruction {
-public:
-    explicit InstructionX86Intel(const int position = -1);
+// ─── CLASSE ───────────────────────────────────────────────────────
+class InstructionX86Intel : public Instruction { // Herança da classe Instruction.
+    public:
+        // Construtor:
+        // - explicit para impedir o cast implícito.
+        explicit InstructionX86Intel(
+            const int = -1
+        );
 
-protected:
-    std::vector<std::string> SplitInstruction(const std::string& str) const override;
-    bool IdentifyType(const std::string& op) override;
-    void NormalizeInstruction(std::vector<std::string>& tokens) override;
-    void SetAttributes(const std::vector<std::string>& tokens) override;
-};
+    protected:
+        // Métodos "privados":
+        // - override para implementar sua versão específica.
+        std::vector<std::string> SplitInstruction(
+            const std::string&
+        ) const override;
+        bool IdentifyType(
+            const std::string&
+        ) override;
+        void NormalizeInstruction(
+            std::vector<std::string>&
+        ) override;
+        void SetAttributes(
+            const std::vector<std::string>&
+        ) override;
+    };
 
 } // namespace processor
 

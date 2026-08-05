@@ -3,38 +3,44 @@
 
 namespace processor {
 
-static const std::vector<std::string> MIPS_LOADS =
+// ─── ELEMENTOS STATIC ─────────────────────────────────────────────
+static const std::vector<std::string> LOADS =
     {"LOAD", "LW", "LB", "LH", "LBU", "LHU", "L.D", "L.S", "LD", "LWU", "LL"};
 
-static const std::vector<std::string> MIPS_STORES =
+static const std::vector<std::string> STORES =
     {"STORE", "SW", "SB", "SH", "S.D", "S.S", "SD", "SC"};
 
-static const std::vector<std::string> MIPS_INT_BASIC =
+static const std::vector<std::string> INT_BASIC =
     {"ADD", "ADDI", "ADDU", "ADDIU", "DADDU", "DADDIU", "SUB", "SUBI", "SUBU", "DSUBU", "AND", "ANDI", "OR", "ORI", "XOR", "XORI", "NOR", "LUI", "SLL", "SRL", "SRA", "SLLV", "SRLV", "SRAV", "DSLL", "DSRL", "DSRA", "SLT", "SLTI", "SLTU", "SLTIU", "DSLT", "DSLTI", "DSLTU", "DSLTIU"};
 
-static const std::vector<std::string> MIPS_BRANCHES =
+static const std::vector<std::string> BRANCHES =
     {"BEQ", "BNE", "BNEZ", "BEQZ", "BGTZ", "BLTZ", "BGEZ", "BLEZ", "BLTZAL", "BGEZAL", "J", "JAL", "JR", "JALR"};
 
-static const std::vector<std::string> MIPS_INT_MUL =
+static const std::vector<std::string> INT_MUL =
     {"MULT", "MULTU", "MUL", "DMULT", "DMULTU"};
 
-static const std::vector<std::string> MIPS_INT_DIV =
+static const std::vector<std::string> INT_DIV =
     {"DIV", "DIVU", "DDIV", "DDIVU"};
 
-static const std::vector<std::string> MIPS_FLOAT_BASIC =
+static const std::vector<std::string> FLOAT_BASIC =
     {"ADD.D", "ADD.S", "SUB.D", "SUB.S"};
 
-static const std::vector<std::string> MIPS_FLOAT_MUL =
+static const std::vector<std::string> FLOAT_MUL =
     {"MUL.D", "MUL.S"};
 
-static const std::vector<std::string> MIPS_FLOAT_DIV =
+static const std::vector<std::string> FLOAT_DIV =
     {"DIV.D", "DIV.S"};
 
-static bool Contains(const std::vector<std::string>& vec, const std::string& op) {
+static bool Contains(
+    const std::vector<std::string>& vec,
+    const std::string& op
+){
     return std::find(vec.begin(), vec.end(), op) != vec.end();
 }
 
-static bool IsRegister(const std::string& token) {
+static bool IsRegister(
+    const std::string& token
+){
     if (token.size() < 2) return false;
     char first = static_cast<char>(std::toupper(static_cast<unsigned char>(token[0])));
     if (first != 'R' && first != 'F') return false;
@@ -43,27 +49,38 @@ static bool IsRegister(const std::string& token) {
     return true;
 }
 
-InstructionMips32::InstructionMips32(const int position) : Instruction(position) {}
+// ─── CONSTRUTOR ───────────────────────────────────────────────────
+// Público:
+InstructionMips32::InstructionMips32(
+    const int position
+) : Instruction(position) {}
 
-bool InstructionMips32::IdentifyType(const std::string& prev_op) {
-    std::string op = prev_op;
+// ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
+// Privado:
+bool InstructionMips32::IdentifyType(
+    const std::string& prev_op
+){
+    std::string op{prev_op};
     for (char& c : op) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
-    if (Contains(MIPS_LOADS, op))         type = INSTRUCTION_TYPE::LOAD;
-    else if (Contains(MIPS_STORES, op))      type = INSTRUCTION_TYPE::STORE;
-    else if (Contains(MIPS_INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
-    else if (Contains(MIPS_BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
-    else if (Contains(MIPS_INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
-    else if (Contains(MIPS_INT_DIV, op))     type = INSTRUCTION_TYPE::INT_DIV;
-    else if (Contains(MIPS_FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
-    else if (Contains(MIPS_FLOAT_MUL, op))   type = INSTRUCTION_TYPE::FLOAT_MUL;
-    else if (Contains(MIPS_FLOAT_DIV, op))   type = INSTRUCTION_TYPE::FLOAT_DIV;
+    if (Contains(LOADS, op))            type = INSTRUCTION_TYPE::LOAD;
+    else if (Contains(STORES, op))      type = INSTRUCTION_TYPE::STORE;
+    else if (Contains(INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
+    else if (Contains(BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
+    else if (Contains(INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
+    else if (Contains(INT_DIV, op))     type = INSTRUCTION_TYPE::INT_DIV;
+    else if (Contains(FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
+    else if (Contains(FLOAT_MUL, op))   type = INSTRUCTION_TYPE::FLOAT_MUL;
+    else if (Contains(FLOAT_DIV, op))   type = INSTRUCTION_TYPE::FLOAT_DIV;
     else return false;
 
     return true;
 }
 
-std::vector<std::string> InstructionMips32::SplitInstruction(const std::string& str) const {
+// Privado:
+std::vector<std::string> InstructionMips32::SplitInstruction(
+    const std::string& str
+) const {
     std::vector<std::string> tokens;
     std::string current;
     for (char c : str) {
@@ -80,7 +97,10 @@ std::vector<std::string> InstructionMips32::SplitInstruction(const std::string& 
     return tokens;
 }
 
-void InstructionMips32::NormalizeInstruction(std::vector<std::string>& tokens) {
+// Privado:
+void InstructionMips32::NormalizeInstruction(
+    std::vector<std::string>& tokens
+){
     for (std::string& token : tokens)
         for (char& c : token) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
@@ -103,7 +123,10 @@ void InstructionMips32::NormalizeInstruction(std::vector<std::string>& tokens) {
     instruction_string = normalized;
 }
 
-void InstructionMips32::SetAttributes(const std::vector<std::string>& tokens) {
+// Privado:
+void InstructionMips32::SetAttributes(
+    const std::vector<std::string>& tokens
+){
     dest_registers.clear();
     source_registers.clear();
 

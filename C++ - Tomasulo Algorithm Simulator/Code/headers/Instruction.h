@@ -1,12 +1,11 @@
 /* headers/Instruction.h */
-#ifndef INSTRUCTION_H
+#ifndef INSTRUCTION_H // Include guard
 #define INSTRUCTION_H
-
 #include "Components.h"
 #include <string>
 #include <vector>
-#include <cstdlib>
-#include <iostream>
+#include <cstdlib>    // para std::abort
+#include <iostream>   // para std::cerr
 
 namespace processor {
 
@@ -23,7 +22,6 @@ enum class INSTRUCTION_TYPE {
     FLOAT_MUL,
     FLOAT_DIV
 };
-
 enum class INSTRUCTION_PHASE_TOMASULO {
     UNUSED,
     IS,
@@ -36,15 +34,18 @@ enum class INSTRUCTION_PHASE_TOMASULO {
 // ─── CLASSE ───────────────────────────────────────────────────────
 class Instruction {
     public:
+        // Elementos static:
         static std::vector<int> base_ex_latencies;
         static std::vector<int> base_mem_latencies;
 
         // Construtor:
+        // - explicit para impedir o cast implícito.
         explicit Instruction(
             const int = -1
         );
 
-        // Destrutor: (importante em se tratando de um vetor de ponteiros compartilhados)
+        // Destrutor (importante em se tratando de um vetor de ponteiros compartilhados):
+        // - virtual para permitir override das suas sub-classes.
         virtual ~Instruction() = default;
 
         /// Getters:
@@ -52,20 +53,20 @@ class Instruction {
         int GetExLatency()  const;
         int GetMemLatency() const;
         INSTRUCTION_TYPE GetInstructionType() const;
-        // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
+        // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno).
         const std::vector<Register>& GetDestRegisters()   const;
         const std::vector<Register>& GetSourceRegisters() const;
         const std::string& GetInstructionString()         const;
 
         // Métodos públicos:
+        void Parse(
+            const std::string&
+        );
         void SetMemLatency(
             const int
         );
         void SetExLatency(
             const int
-        );
-        void Parse(
-            const std::string&
         );
 
     protected:
@@ -78,7 +79,7 @@ class Instruction {
         std::vector<Register> dest_registers;  // [0] destino direto; [1] flag (se tiver).
         std::vector<Register> source_registers;
 
-        // Métodos virtuais puros (cada arquitetura deve implementar sua versão)
+        // Métodos virtuais (cada arquitetura deve implementar sua versão):
         virtual std::vector<std::string> SplitInstruction(
             const std::string&
         ) const = 0;
@@ -91,6 +92,7 @@ class Instruction {
         virtual void SetAttributes(
             const std::vector<std::string>& tokens
         ) = 0;
+        // Método igual para todos.
         void SetLatencies();
 };
 } // namespace processor

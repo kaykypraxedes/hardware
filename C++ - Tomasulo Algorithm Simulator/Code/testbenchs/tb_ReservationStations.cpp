@@ -18,7 +18,7 @@ using namespace processor;
 static std::shared_ptr<Instruction> make_inst(const std::string& line) {
     std::vector<std::string> linhas{line};
     std::vector<std::unique_ptr<Instruction>> parsed =
-        InstructionFactory::ParseTrace(linhas, Architecture::MIPS_32);
+        InstructionFactory::ParseTrace(linhas, ARCHITECTURE::MIPS_32);
     // A Factory atribui a posição pelo índice da linha (aqui, sempre 0);
     // nenhum teste desta suíte depende da posição.
     return std::shared_ptr<Instruction>(std::move(parsed[0]));

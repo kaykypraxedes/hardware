@@ -5,21 +5,21 @@ namespace processor {
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
 std::vector<int> Instruction::base_ex_latencies = {
-    0,   // INVALID / NONE
-    1,   // LOAD
-    1,   // STORE
-    1,   // BRANCH
-    1,   // INT_BASIC
-    4,   // INT_MUL
-    10,  // INT_DIV
-    9,   // FLOAT_BASIC
-    14,  // FLOAT_MUL
-    40   // FLOAT_DIV
+    0,  // INVALID
+    1,  // LOAD
+    1,  // STORE
+    1,  // BRANCH
+    1,  // INT_BASIC
+    4,  // INT_MUL
+    10, // INT_DIV
+    9,  // FLOAT_BASIC
+    14, // FLOAT_MUL
+    40  // FLOAT_DIV
 };
 
 std::vector<int> Instruction::base_mem_latencies = {
     1,  // LOAD
-    1   // STORE / BRANCH
+    1   // STORE
 };
 
 // ─── GETTERS ──────────────────────────────────────────────────────
@@ -58,22 +58,25 @@ Instruction::Instruction(
 }
 
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
-// Privado:
+// Público:
 void Instruction::Parse(
     const std::string& str
 ){
+    // Verifica se foi passado uma string vazia.
     if (str.empty()) {
         std::cerr << "[ERRO] String vazia passada como instrução!\n";
         std::abort();
     }
 
+    // Verifica se a instrução é suportada pela arquitetura.
     std::vector<std::string> tokens = SplitInstruction(str);
-
-    if (tokens.empty() || !IdentifyType(tokens[0])) {
-        std::cerr << "[ERRO] Instrução não suportada: " << (tokens.empty() ? "" : tokens[0]) << "\n";
+    if (!IdentifyType(tokens[0])) {
+        std::cerr << "[ERRO] Instrução não suportada por essa arquitetura: "
+            << tokens[0] << "\n";
         std::abort();
     }
 
+    // Termina de salvar suas informações.
     NormalizeInstruction(tokens);
     SetAttributes(tokens);
     SetLatencies();
@@ -88,6 +91,9 @@ void Instruction::SetLatencies() {
     }
     ex_latency = base_ex_latencies[static_cast<int>(type)];
 }
+
+// Métodos utilizados para settar um valor diferente do padrão de latência.
+// - Simular um cache miss, por exemplo.
 
 // Público:
 void Instruction::SetExLatency(

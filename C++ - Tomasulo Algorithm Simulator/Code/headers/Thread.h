@@ -6,7 +6,7 @@
 #include "Components.h"
 #include <string>
 #include <vector>
-#include <memory>     // para std::shared_ptr
+#include <memory>     // para std::unique_ptr e std::shared_ptr
 #include <tuple>      // para passar e receber as instruções de troca de thread na Granulação Grossa
 #include <algorithm>  // para std::stable_sort
 #include <cstdlib>    // para std::abort
@@ -15,17 +15,17 @@
 namespace processor {
 
 // ─── ELEMENTO STATIC ──────────────────────────────────────────────
-static const int rob_capacity_default = 32;
+static const int rob_capacity_default{32};
 
 // ─── STRUCT ───────────────────────────────────────────────────────
 struct TABLE_ROW {
-    // - A Thread é a "dona" do objeto via shared_ptr; RS e ROB guardam cópias do ponteiro.
+    // - Thread é a "dona" do objeto via shared_ptr (RS e ROB guardam cópias do ponteiro).
     std::shared_ptr<Instruction> instruction;
-    int               issue_cycle{-1};
-    std::vector<int>  ex_cycles;
-    std::vector<int>  mem_cycles;
-    int               wr_cycle{-1};
-    int               commit_cycle{-1};
+    int                          issue_cycle{-1};
+    std::vector<int>             ex_cycles;
+    std::vector<int>             mem_cycles;
+    int                          wr_cycle{-1};
+    int                          commit_cycle{-1};
 };
 
 // ─── CLASSE ───────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ class Thread {
 
         // Getters:
         int GetCurrentInstructionPosition() const;
-        // "const &" para evitar cópia (para tipos básicos e enums o ganho é marginal)
+        // "const &" para evitar cópia (para tipos básicos e enums o ganho é marginal).
         const CDB&                    GetCDB()   const;
         const RESERVATION_STATIONS&   GetRS()    const;
         const FUNCTIONAL_UNITS&       GetFU()    const;
@@ -83,10 +83,9 @@ class Thread {
         FUNCTIONAL_UNITS         fu;
         std::vector<int>         wr_buffer;
         std::vector<int>         pending_wr_buffer;
-        std::vector<int>         switch_cycles; // Para processadores com granulação grossa.
+        std::vector<int>         switch_cycles;        // Para processadores com granulação grossa.
         std::vector<TABLE_ROW>   instruction_table;
-        // ROB: guarda os MESMOS objetos da tabela (ponteiros compartilhados, sem cópia).
-        std::vector<std::shared_ptr<Instruction>> rob;
+        std::vector<std::shared_ptr<Instruction>> rob; // guarda ponteiros compartilhados.
 
         // Métodos privados:
         void InitializeComponents(
@@ -97,12 +96,12 @@ class Thread {
         std::vector<std::vector<ReservationStation>*> GetAllRSGroups();
         std::vector<std::vector<FU>*> GetAllFUGroups();
 
-        // EX/MEM
+        // - EX/MEM
         void StartExOrMemPhase(
             const int
         );
 
-        // WR (Write Result)
+        // - WR (Write Result)
         void PerformWriteResult(
             const int
         );
@@ -110,7 +109,7 @@ class Thread {
             const int,
             const int
         );
-        void BroadcastOnRSAndCDB(
+        void BroadcastOnCDBAndRS(
             const Register&,
             const int,
             const int

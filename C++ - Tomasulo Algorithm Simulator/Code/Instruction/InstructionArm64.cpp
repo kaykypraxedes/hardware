@@ -4,60 +4,72 @@
 namespace processor {
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
-static const std::vector<std::string> ARM_LOADS =
+static const std::vector<std::string> LOADS =
     {"LDR", "LDUR", "LDP"};
 
-static const std::vector<std::string> ARM_STORES =
+static const std::vector<std::string> STORES =
     {"STR", "STUR", "STP"};
 
-static const std::vector<std::string> ARM_INT_BASIC =
+static const std::vector<std::string> INT_BASIC =
     {"ADD", "ADDS", "SUB", "SUBS", "AND", "ORR", "EOR", "LSL", "LSR"};
 
-static const std::vector<std::string> ARM_INT_MUL =
+static const std::vector<std::string> INT_MUL =
     {"MUL", "SMULL", "UMULL"};
 
-static const std::vector<std::string> ARM_INT_DIV =
+static const std::vector<std::string> INT_DIV =
     {"SDIV", "UDIV"};
 
-static const std::vector<std::string> ARM_BRANCHES =
+static const std::vector<std::string> BRANCHES =
     {"B", "B.EQ", "B.NE", "BL", "RET", "CBZ", "CBNZ"};
 
-static const std::vector<std::string> ARM_FLOAT_BASIC =
+static const std::vector<std::string> FLOAT_BASIC =
     {"FADD", "FSUB"};
 
-static const std::vector<std::string> ARM_FLOAT_MUL =
+static const std::vector<std::string> FLOAT_MUL =
     {"FMUL"};
 
-static const std::vector<std::string> ARM_FLOAT_DIV =
+static const std::vector<std::string> FLOAT_DIV =
     {"FDIV"};
 
-static bool Contains(const std::vector<std::string>& vec, const std::string& op) {
+static bool Contains(
+    const std::vector<std::string>& vec,
+    const std::string&              op
+){
     return std::find(vec.begin(), vec.end(), op) != vec.end();
 }
 
+// ─── CONSTRUTOR ───────────────────────────────────────────────────
+// Público:
 InstructionArm64::InstructionArm64(
     const int position
 ) : Instruction(position) {}
 
-bool InstructionArm64::IdentifyType(const std::string& prev_op) {
-    std::string op = prev_op;
+// ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
+// Privado:
+bool InstructionArm64::IdentifyType(
+    const std::string& prev_op
+){
+    std::string op{prev_op};
     for (char& c : op) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
-    if (Contains(ARM_LOADS, op))         type = INSTRUCTION_TYPE::LOAD;
-    else if (Contains(ARM_STORES, op))      type = INSTRUCTION_TYPE::STORE;
-    else if (Contains(ARM_INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
-    else if (Contains(ARM_BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
-    else if (Contains(ARM_INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
-    else if (Contains(ARM_INT_DIV, op))     type = INSTRUCTION_TYPE::INT_DIV;
-    else if (Contains(ARM_FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
-    else if (Contains(ARM_FLOAT_MUL, op))   type = INSTRUCTION_TYPE::FLOAT_MUL;
-    else if (Contains(ARM_FLOAT_DIV, op))   type = INSTRUCTION_TYPE::FLOAT_DIV;
+    if (Contains(LOADS, op))            type = INSTRUCTION_TYPE::LOAD;
+    else if (Contains(STORES, op))      type = INSTRUCTION_TYPE::STORE;
+    else if (Contains(INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
+    else if (Contains(BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
+    else if (Contains(INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
+    else if (Contains(INT_DIV, op))     type = INSTRUCTION_TYPE::INT_DIV;
+    else if (Contains(FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
+    else if (Contains(FLOAT_MUL, op))   type = INSTRUCTION_TYPE::FLOAT_MUL;
+    else if (Contains(FLOAT_DIV, op))   type = INSTRUCTION_TYPE::FLOAT_DIV;
     else return false;
 
     return true;
 }
 
-std::vector<std::string> InstructionArm64::SplitInstruction(const std::string& str) const {
+// Privado:
+std::vector<std::string> InstructionArm64::SplitInstruction(
+    const std::string& str
+) const {
     std::vector<std::string> tokens;
     std::string current;
     for (char c : str) {
@@ -74,7 +86,10 @@ std::vector<std::string> InstructionArm64::SplitInstruction(const std::string& s
     return tokens;
 }
 
-void InstructionArm64::NormalizeInstruction(std::vector<std::string>& tokens) {
+// Privado:
+void InstructionArm64::NormalizeInstruction(
+    std::vector<std::string>& tokens
+){
     for (std::string& token : tokens)
         for (char& c : token) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
@@ -87,7 +102,10 @@ void InstructionArm64::NormalizeInstruction(std::vector<std::string>& tokens) {
     instruction_string = normalized;
 }
 
-void InstructionArm64::SetAttributes(const std::vector<std::string>& tokens) {
+// Privado:
+void InstructionArm64::SetAttributes(
+    const std::vector<std::string>& tokens
+){
     dest_registers.clear();
     source_registers.clear();
 
@@ -103,7 +121,7 @@ void InstructionArm64::SetAttributes(const std::vector<std::string>& tokens) {
         }
     } else {
         dest_registers.push_back(Register(tokens[1]));
-        if (tokens[0].back() == 'S') dest_registers.push_back(Register("CPSR")); // ADDS atualiza CPSR
+        if (tokens[0].back() == 'S') dest_registers.push_back(Register("CPSR")); // ADDS atualiza CPSR.
         if (tokens.size() > 2) source_registers.push_back(Register(tokens[2]));
         if (tokens.size() > 3) source_registers.push_back(Register(tokens[3]));
     }

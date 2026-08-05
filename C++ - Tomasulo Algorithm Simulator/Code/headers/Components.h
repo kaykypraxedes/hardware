@@ -25,11 +25,12 @@ class Register {
         char GetType() const;
         int  GetId()   const;
         bool GetBusy() const;
-        // Não são "const &" pois podem enviar dados de variáveis locais (apagados ao final da função)
+        // Não são "const &" pois enviam dados de variáveis locais (apagados ao final da função).
         std::vector<int> GetAllocationTimes() const;
-        std::string      GetCurrentRS()       const; // retorna o produtor mais recente (último de allocated_rs com end_times == -1)
-        // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
+        std::string      GetCurrentRS()       const; // Produtor mais recente (último de allocated_rs com end_times == -1).
+        // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno).
         const std::vector<std::string>& GetAllocatedRS() const;
+
         // Métodos públicos:
         void ToggleBusy();
         bool IsDependencyResolved(
@@ -38,7 +39,7 @@ class Register {
         ) const;
         int GetRSCycleStart(
             const std::string&
-        ) const; // start_cycle do produtor pendente mais recente com esse nome
+        ) const; // start_cycle do produtor pendente mais recente com esse nome.
         void AllocateRS(
             const std::string&,
             const int
@@ -54,8 +55,9 @@ class Register {
         int                      id{-1};
         bool                     busy{false};
         std::vector<int>         start_times;
-        std::vector<int>         end_times;    // Pares (inicio[n] - fim[n]); fim == -1 enquanto pendente
+        std::vector<int>         end_times;    // Pares (inicio[n] - fim[n]); fim == -1 enquanto pendente.
         std::vector<std::string> allocated_rs;
+
         // Métodos privados:
         bool ParseType(
             const std::string&

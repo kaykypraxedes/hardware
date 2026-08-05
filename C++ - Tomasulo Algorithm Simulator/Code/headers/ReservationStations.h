@@ -24,12 +24,12 @@ class ReservationStation {
         int                        GetCountdown()        const;
         int                        GetFUPosition()       const;
         INSTRUCTION_PHASE_TOMASULO GetInstructionPhase() const;
-        // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
-        const Instruction&              GetCurrentInstruction() const;
-        const std::string&              GetId()                 const;
-        // Retornam por valor: com N operandos o Q correspondente pode não existir (Q vazio).
+        // Não são "const &" pois podem não achar o Q (sendo enviada uma string vazia que é local).
         std::string                     GetQj()                 const;
         std::string                     GetQk()                 const;
+        // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno).
+        const Instruction&              GetCurrentInstruction() const;
+        const std::string&              GetId()                 const;
         const std::vector<int>&         GetTimes()              const;
         const std::vector<std::string>& GetInstructions()       const;
 
@@ -60,15 +60,13 @@ class ReservationStation {
         bool                         busy{false};
         int                          allocation_countdown{-1};
         int                          fu_position{-1};
-        std::string                  id;                     // Nome do RS ("load1", "addInt3", etc.)
-        // Instrução compartilhada com a tabela/ROB
-        std::shared_ptr<Instruction> current_instruction;
+        std::string                  id;                     // Nome do RS ("load1", "addInt3", etc.).
+        std::shared_ptr<Instruction> current_instruction;    // Instrução (compartilhada com a tabela/ROB).
         INSTRUCTION_PHASE_TOMASULO   phase{INSTRUCTION_PHASE_TOMASULO::UNUSED};
-        // Operandos (um par por fonte da instrução — modelo J/K antigo generalizado):
-        std::vector<Register>        V;                      // V[i]: valor do operando i (se Q[i] vazio)
-        std::vector<std::pair<std::string,int>> Q;           // Q[i]: {rs_id, start_cycle} — produtor pendente
-        std::vector<int>             allocation_times;       // De 2 em 2, início da alocação e fim da alocação
-        std::vector<std::string>     allocated_instructions; // De 1 em 1, instruções alocadas na RS
+        std::vector<int>             allocation_times;       // De 2 em 2, início da alocação e fim da alocação.
+        std::vector<std::string>     allocated_instructions; // De 1 em 1, instruções alocadas na RS.
+        std::vector<Register>                   V;           // Vj e Vk.
+        std::vector<std::pair<std::string,int>> Q;           // Qj e Qk (rs_id, start_cycle).
 
         // Métodos privados:
         // - AddIssue()

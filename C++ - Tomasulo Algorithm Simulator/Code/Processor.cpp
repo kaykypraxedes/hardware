@@ -37,7 +37,7 @@ Processor::Processor(
         "- Número de threads: " << num_threads << '\n';
         std::abort();
     }
-    // Não precisa verificar se (num_threads == 1 && model != MULTITHREADING_MODEL::NONE):
+    // Não precisa verificar se (num_threads == 1 && model != MULTITHREADING_MODEL::NONE).
     // - Todos os modelos teriam o mesmo resultado com uma thread.
     mt_model = model;
 

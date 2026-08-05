@@ -9,6 +9,7 @@
 
 namespace processor {
 
+// ─── ELEMENTOS STATIC ─────────────────────────────────────────────
 static const int W_POSITION = 12;
 static const int W_INST     = 30;
 static const int W_ISSUE    = 12;
@@ -17,8 +18,7 @@ static const int W_MEM      = 16;
 static const int W_WR       = 12;
 static const int W_COMMIT   = 12;
 
-// Ordem dos componentes usada tanto nos vetores de config (num_rs/num_fus)
-// quanto nos grupos de RS/FU impressos no final.
+// Ordem dos componentes usada tanto nos vetores de config (num_rs/num_fus) quanto nos grupos de RS/FU impressos no final.
 static const std::vector<std::string> COMPONENT_LABELS = {
     "load",
     "store",
@@ -28,9 +28,14 @@ static const std::vector<std::string> COMPONENT_LABELS = {
     "float_mult_div"
 };
 
-// Ordem assumida para latencias_mem (load, store). Ajustar se necessário.
-static const std::vector<std::string> MEM_LABELS = { "load", "store" };
-static const std::vector<std::string> EX_LABELS = {
+// Ordem assumida para latencias_mem (load, store).
+static const std::vector<std::string> MEM_LABELS =
+{
+    "load",
+    "store"
+};
+static const std::vector<std::string> EX_LABELS =
+{
     "invalid",
     "load",
     "store",
@@ -43,6 +48,22 @@ static const std::vector<std::string> EX_LABELS = {
     "float_div"
 };
 
+// ─── STRUCT ───────────────────────────────────────────────────────
+struct CONFIG {
+    PROCESSOR_TYPE       type          = PROCESSOR_TYPE::TOMASULO_CLASSIC;
+    int                  num_threads   = 1;
+    MULTITHREADING_MODEL model         = MULTITHREADING_MODEL::NONE;
+    bool                 predictor     = false;
+    int                  dispatch      = 2;
+    std::vector<int>     num_rs        = {5, 5, 5, 4, 3, 2};
+    std::vector<int>     num_fus       = {1, 1, 1, 1, 1, 2};
+    std::vector<int>     ex_latencies  = Instruction::base_ex_latencies;
+    std::vector<int>     mem_latencies = Instruction::base_mem_latencies;
+    int                  cycle_limit   = 10000;
+    std::vector<std::string> prog;
+};
+
+// ─── FUNÇÕES ──────────────────────────────────────────────────────
 std::string CycleStr(
     int c
 ){
@@ -96,20 +117,6 @@ std::vector<int> ReadIntVector(
     return v;
 }
 
-struct CONFIG {
-    PROCESSOR_TYPE       type          = PROCESSOR_TYPE::TOMASULO_CLASSIC;
-    int                  num_threads   = 1;
-    MULTITHREADING_MODEL model         = MULTITHREADING_MODEL::NONE;
-    bool                 predictor     = false;
-    int                  dispatch      = 2;
-    std::vector<int>     num_rs        = {5, 5, 5, 4, 3, 2};
-    std::vector<int>     num_fus       = {1, 1, 1, 1, 1, 2};
-    std::vector<int>     ex_latencies  = Instruction::base_ex_latencies;
-    std::vector<int>     mem_latencies = Instruction::base_mem_latencies;
-    int                  cycle_limit   = 10000;
-    std::vector<std::string> prog;
-};
-
 CONFIG ReadConfig() {
     CONFIG cfg;
     std::string line;
@@ -162,7 +169,7 @@ CONFIG ReadConfig() {
 }
 
 // Imprime um vetor de inteiros como "rotulo=valor rotulo=valor ...".
-// Se faltar rótulo para alguma posição, imprime só o valor.
+// - Se faltar rótulo para alguma posição, imprime só o valor.
 void PrintLabeledVector(
     const std::vector<int>&         values,
     const std::vector<std::string>& labels
@@ -263,20 +270,13 @@ void PrintTable(
     std::cout << '\n';
 }
 
-// ──────────────────────────────────────────────────────────
+// ─── TEMPLATES ────────────────────────────────────────────────────
 // Impressão unificada de "grupos de componentes" (RS, FU e CDB).
+// - Um grupo (ex.: "load") é composto por N unidades (load0, load1, ...).
+// - Cada unidade tem uma linha do tempo de pares (rótulo, início-fim).
 //
-// Um grupo (ex.: "load") é composto por N unidades (load0, load1, ...).
-// Cada unidade tem uma linha do tempo de pares (rótulo, início-fim).
-//
-// get_times/get_labels são extractors (lambdas) que sabem como pegar,
-// de cada unidade, o vetor de tempos e o vetor de rótulos — isso permite
-// reaproveitar a mesma função para RS (métodos GetTimes/GetInstructions),
-// FU (membros allocation_times/allocated_rs) e Registradores da CDB
-// (métodos GetAllocationTimes/GetAllocatedRS), sem duplicar a lógica de
-// impressão em três funções quase idênticas.
-// ──────────────────────────────────────────────────────────
-
+// - get_times/get_labels são extractors (lambdas) que sabem como pegar, de cada unidade, o vetor de tempos e o vetor de rótulos.
+// - Isso permite reaproveitar a mesma função para RS, FU e Registradores da CDB, sem duplicar a lógica de impressão (quase idênticas).
 template<typename LabelT>
 struct TimelineEntry {
     LabelT label;
@@ -348,6 +348,7 @@ void PrintComponentGroup(
 
 } // namespace processor
 
+// ─── MAIN ─────────────────────────────────────────────────────────
 int main() {
 
     processor::CONFIG cfg = processor::ReadConfig();
