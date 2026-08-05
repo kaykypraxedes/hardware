@@ -26,7 +26,7 @@ Processor::Processor(
     const std::vector<int>&                     num_fus,
     const std::vector<int>&                     switch_instructions,
     const std::vector<std::tuple<int,int,int>>& new_latency
-):
+) :
     dispatch_width(dispatch_width),
     has_predictor (has_predictor),
     type          (type)

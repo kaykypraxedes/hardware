@@ -10,10 +10,7 @@ static const std::vector<std::string> MIPS_STORES =
     {"STORE", "SW", "SB", "SH", "S.D", "S.S", "SD", "SC"};
 
 static const std::vector<std::string> MIPS_INT_BASIC =
-    {"ADD", "ADDI", "ADDU", "ADDIU", "DADDU", "DADDIU", "SUB", "SUBI", "SUBU", "DSUBU",
-     "AND", "ANDI", "OR", "ORI", "XOR", "XORI", "NOR", "LUI",
-     "SLL", "SRL", "SRA", "SLLV", "SRLV", "SRAV", "DSLL", "DSRL", "DSRA",
-     "SLT", "SLTI", "SLTU", "SLTIU", "DSLT", "DSLTI", "DSLTU", "DSLTIU"};
+    {"ADD", "ADDI", "ADDU", "ADDIU", "DADDU", "DADDIU", "SUB", "SUBI", "SUBU", "DSUBU", "AND", "ANDI", "OR", "ORI", "XOR", "XORI", "NOR", "LUI", "SLL", "SRL", "SRA", "SLLV", "SRLV", "SRAV", "DSLL", "DSRL", "DSRA", "SLT", "SLTI", "SLTU", "SLTIU", "DSLT", "DSLTI", "DSLTU", "DSLTIU"};
 
 static const std::vector<std::string> MIPS_BRANCHES =
     {"BEQ", "BNE", "BNEZ", "BEQZ", "BGTZ", "BLTZ", "BGEZ", "BLEZ", "BLTZAL", "BGEZAL", "J", "JAL", "JR", "JALR"};

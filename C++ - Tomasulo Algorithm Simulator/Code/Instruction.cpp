@@ -3,6 +3,7 @@
 
 namespace processor {
 
+// ─── ELEMENTOS STATIC ─────────────────────────────────────────────
 std::vector<int> Instruction::base_ex_latencies = {
     0,   // INVALID / NONE
     1,   // LOAD
@@ -21,14 +22,46 @@ std::vector<int> Instruction::base_mem_latencies = {
     1   // STORE / BRANCH
 };
 
-Instruction::Instruction(const int position) : position(position) {
+// ─── GETTERS ──────────────────────────────────────────────────────
+// Público:
+int Instruction::GetPosition()   const { return position; }
+
+// Público:
+int Instruction::GetExLatency()  const { return ex_latency; }
+
+// Público:
+int Instruction::GetMemLatency() const { return mem_latency; }
+
+// Público:
+INSTRUCTION_TYPE Instruction::GetInstructionType() const { return type; }
+
+// Público:
+const std::vector<Register>& Instruction::GetDestRegisters()   const { return dest_registers; }
+
+// Público:
+const std::vector<Register>& Instruction::GetSourceRegisters() const { return source_registers; }
+
+// Público:
+const std::string& Instruction::GetInstructionString()         const { return instruction_string; }
+
+// ─── CONSTRUTOR ───────────────────────────────────────────────────
+// Público:
+Instruction::Instruction(
+    const int position
+) :
+    position(position)
+{
     if (position < -1) {
         std::cerr << "[ERRO] Valor inválido de posição: " << position << "\n";
         std::abort();
     }
 }
 
-void Instruction::Parse(const std::string& str) {
+// ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
+// Privado:
+void Instruction::Parse(
+    const std::string& str
+){
     if (str.empty()) {
         std::cerr << "[ERRO] String vazia passada como instrução!\n";
         std::abort();
@@ -46,17 +79,7 @@ void Instruction::Parse(const std::string& str) {
     SetLatencies();
 }
 
-int Instruction::GetPosition() const { return position; }
-int Instruction::GetExLatency() const { return ex_latency; }
-int Instruction::GetMemLatency() const { return mem_latency; }
-INSTRUCTION_TYPE Instruction::GetInstructionType() const { return type; }
-const std::string& Instruction::GetInstructionString() const { return instruction_string; }
-const std::vector<Register>& Instruction::GetDestRegisters() const { return dest_registers; }
-const std::vector<Register>& Instruction::GetSourceRegisters() const { return source_registers; }
-
-void Instruction::SetMemLatency(const int latency) { mem_latency = latency; }
-void Instruction::SetExLatency(const int latency) { ex_latency = latency; }
-
+// Privado:
 void Instruction::SetLatencies() {
     if (type == INSTRUCTION_TYPE::LOAD) {
         mem_latency = base_mem_latencies[0];
@@ -64,6 +87,20 @@ void Instruction::SetLatencies() {
         mem_latency = base_mem_latencies[1];
     }
     ex_latency = base_ex_latencies[static_cast<int>(type)];
+}
+
+// Público:
+void Instruction::SetExLatency(
+    const int latency
+){
+    ex_latency = latency;
+}
+
+// Público:
+void Instruction::SetMemLatency(
+    const int latency
+){
+    mem_latency = latency;
 }
 
 } // namespace processor

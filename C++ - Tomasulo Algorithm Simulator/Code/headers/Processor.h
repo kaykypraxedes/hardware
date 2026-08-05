@@ -1,9 +1,8 @@
 /* headers/Processor.h */
 #ifndef PROCESSOR_H   // Include guard
 #define PROCESSOR_H
-// Módulo multi-arquitetura (ver multiarchitecture.md).
-#include "Instruction.h"
 #include "Thread.h"
+#include "Instruction.h"
 #include <string>
 #include <vector>
 #include <tuple>      // para passar e receber as instruções de troca de thread na Granulação Grossa

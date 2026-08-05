@@ -10,6 +10,7 @@
 
 namespace processor {
 
+// ─── ENUMS ────────────────────────────────────────────────────────
 enum class INSTRUCTION_TYPE {
     INVALID,
     LOAD,
@@ -23,7 +24,6 @@ enum class INSTRUCTION_TYPE {
     FLOAT_DIV
 };
 
-// Fases da pipeline do processador Tomasulo.
 enum class INSTRUCTION_PHASE_TOMASULO {
     UNUSED,
     IS,
@@ -33,49 +33,66 @@ enum class INSTRUCTION_PHASE_TOMASULO {
     COMMIT
 };
 
+// ─── CLASSE ───────────────────────────────────────────────────────
 class Instruction {
-public:
-    static std::vector<int> base_ex_latencies;
-    static std::vector<int> base_mem_latencies;
+    public:
+        static std::vector<int> base_ex_latencies;
+        static std::vector<int> base_mem_latencies;
 
-    explicit Instruction(const int position = -1);
-    virtual ~Instruction() = default;
+        // Construtor:
+        explicit Instruction(
+            const int = -1
+        );
 
-    // Getters públicos
-    int GetPosition() const;
-    int GetExLatency() const;
-    int GetMemLatency() const;
-    INSTRUCTION_TYPE GetInstructionType() const;
-    const std::string& GetInstructionString() const;
-    const std::vector<Register>& GetDestRegisters() const;
-    const std::vector<Register>& GetSourceRegisters() const;
+        // Destrutor: (importante em se tratando de um vetor de ponteiros compartilhados)
+        virtual ~Instruction() = default;
 
-    // Setters públicos
-    void SetMemLatency(const int latency);
-    void SetExLatency(const int latency);
+        /// Getters:
+        int GetPosition()   const;
+        int GetExLatency()  const;
+        int GetMemLatency() const;
+        INSTRUCTION_TYPE GetInstructionType() const;
+        // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno)
+        const std::vector<Register>& GetDestRegisters()   const;
+        const std::vector<Register>& GetSourceRegisters() const;
+        const std::string& GetInstructionString()         const;
 
-    // Template method público de parseamento
-    void Parse(const std::string& instruction_string);
+        // Métodos públicos:
+        void SetMemLatency(
+            const int
+        );
+        void SetExLatency(
+            const int
+        );
+        void Parse(
+            const std::string&
+        );
 
-protected:
-    int position{-1};
-    std::string instruction_string;
-    int ex_latency{};
-    int mem_latency{};
-    INSTRUCTION_TYPE type{INSTRUCTION_TYPE::INVALID};
+    protected:
+        // Atributos:
+        int position{-1};
+        std::string instruction_string;
+        int ex_latency{};
+        int mem_latency{};
+        INSTRUCTION_TYPE type{INSTRUCTION_TYPE::INVALID};
+        std::vector<Register> dest_registers;  // [0] destino direto; [1] flag (se tiver).
+        std::vector<Register> source_registers;
 
-    std::vector<Register> dest_registers;
-    std::vector<Register> source_registers;
-
-    // Métodos virtuais puros que cada arquitetura deve implementar
-    virtual std::vector<std::string> SplitInstruction(const std::string& str) const = 0;
-    virtual bool IdentifyType(const std::string& op) = 0;
-    virtual void NormalizeInstruction(std::vector<std::string>& tokens) = 0;
-    virtual void SetAttributes(const std::vector<std::string>& tokens) = 0;
-
-    void SetLatencies();
+        // Métodos virtuais puros (cada arquitetura deve implementar sua versão)
+        virtual std::vector<std::string> SplitInstruction(
+            const std::string&
+        ) const = 0;
+        virtual bool IdentifyType(
+            const std::string&
+        ) = 0;
+        virtual void NormalizeInstruction(
+            std::vector<std::string>& tokens
+        ) = 0;
+        virtual void SetAttributes(
+            const std::vector<std::string>& tokens
+        ) = 0;
+        void SetLatencies();
 };
-
 } // namespace processor
 
 #endif

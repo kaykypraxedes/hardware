@@ -20,8 +20,7 @@ const std::vector<std::string>& Register::GetAllocatedRS() const { return alloca
 // Público:
 Register::Register(
     const std::string& register_string
-)
-{
+){
     // Tenta traduzir as informações da string para os atributos.
     if (!ParseType(register_string) || !ParseId(register_string)){
         std::cerr << "[ERRO] Register string inválida: " << register_string << "\n";

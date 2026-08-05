@@ -110,7 +110,7 @@ Thread::Thread(
     const int                                   dispatch_width,
     const int                                   rob_capacity,
     const bool                                  has_predictor
-):
+) :
     has_rob        (rob_capacity > 0),
     rob_capacity   (rob_capacity > 0 ? rob_capacity : 1),
     has_predictor  (has_predictor),

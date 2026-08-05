@@ -23,7 +23,7 @@ bool InstructionX86Intel::IdentifyType(const std::string& prev_op) {
     std::string op = prev_op;
     for (char& c : op) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
-    if (Contains(X86_LOADS, op))         type = INSTRUCTION_TYPE::LOAD;
+    if (Contains(X86_LOADS, op))           type = INSTRUCTION_TYPE::LOAD;
     else if (Contains(X86_INT_BASIC, op))  type = INSTRUCTION_TYPE::INT_BASIC;
     else if (Contains(X86_BRANCHES, op))   type = INSTRUCTION_TYPE::BRANCH;
     else if (Contains(X86_INT_MUL, op))    type = INSTRUCTION_TYPE::INT_MUL;

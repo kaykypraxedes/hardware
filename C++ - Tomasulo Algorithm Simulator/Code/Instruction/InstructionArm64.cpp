@@ -3,21 +3,41 @@
 
 namespace processor {
 
-static const std::vector<std::string> ARM_LOADS = {"LDR", "LDUR", "LDP"};
-static const std::vector<std::string> ARM_STORES = {"STR", "STUR", "STP"};
-static const std::vector<std::string> ARM_INT_BASIC = {"ADD", "ADDS", "SUB", "SUBS", "AND", "ORR", "EOR", "LSL", "LSR"};
-static const std::vector<std::string> ARM_INT_MUL = {"MUL", "SMULL", "UMULL"};
-static const std::vector<std::string> ARM_INT_DIV = {"SDIV", "UDIV"};
-static const std::vector<std::string> ARM_BRANCHES = {"B", "B.EQ", "B.NE", "BL", "RET", "CBZ", "CBNZ"};
-static const std::vector<std::string> ARM_FLOAT_BASIC = {"FADD", "FSUB"};
-static const std::vector<std::string> ARM_FLOAT_MUL = {"FMUL"};
-static const std::vector<std::string> ARM_FLOAT_DIV = {"FDIV"};
+// ─── ELEMENTOS STATIC ─────────────────────────────────────────────
+static const std::vector<std::string> ARM_LOADS =
+    {"LDR", "LDUR", "LDP"};
+
+static const std::vector<std::string> ARM_STORES =
+    {"STR", "STUR", "STP"};
+
+static const std::vector<std::string> ARM_INT_BASIC =
+    {"ADD", "ADDS", "SUB", "SUBS", "AND", "ORR", "EOR", "LSL", "LSR"};
+
+static const std::vector<std::string> ARM_INT_MUL =
+    {"MUL", "SMULL", "UMULL"};
+
+static const std::vector<std::string> ARM_INT_DIV =
+    {"SDIV", "UDIV"};
+
+static const std::vector<std::string> ARM_BRANCHES =
+    {"B", "B.EQ", "B.NE", "BL", "RET", "CBZ", "CBNZ"};
+
+static const std::vector<std::string> ARM_FLOAT_BASIC =
+    {"FADD", "FSUB"};
+
+static const std::vector<std::string> ARM_FLOAT_MUL =
+    {"FMUL"};
+
+static const std::vector<std::string> ARM_FLOAT_DIV =
+    {"FDIV"};
 
 static bool Contains(const std::vector<std::string>& vec, const std::string& op) {
     return std::find(vec.begin(), vec.end(), op) != vec.end();
 }
 
-InstructionArm64::InstructionArm64(const int position) : Instruction(position) {}
+InstructionArm64::InstructionArm64(
+    const int position
+) : Instruction(position) {}
 
 bool InstructionArm64::IdentifyType(const std::string& prev_op) {
     std::string op = prev_op;

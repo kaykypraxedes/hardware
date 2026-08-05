@@ -3,15 +3,32 @@
 
 namespace processor {
 
-static const std::vector<std::string> RISCV_LOADS = {"LW", "LH", "LB", "LBU", "LHU", "FLD", "FLW"};
-static const std::vector<std::string> RISCV_STORES = {"SW", "SH", "SB", "FSD", "FSW"};
-static const std::vector<std::string> RISCV_INT_BASIC = {"ADD", "ADDI", "SUB", "AND", "ANDI", "OR", "ORI", "XOR", "XORI", "SLL", "SRL", "SRA"};
-static const std::vector<std::string> RISCV_INT_MUL = {"MUL", "MULH", "MULHU"};
-static const std::vector<std::string> RISCV_INT_DIV = {"DIV", "DIVU", "REM", "REMU"};
-static const std::vector<std::string> RISCV_BRANCHES = {"BEQ", "BNE", "BLT", "BGE", "BLTU", "BGEU", "JAL", "JALR"};
-static const std::vector<std::string> RISCV_FLOAT_BASIC = {"FADD.S", "FADD.D", "FSUB.S", "FSUB.D"};
-static const std::vector<std::string> RISCV_FLOAT_MUL = {"FMUL.S", "FMUL.D"};
-static const std::vector<std::string> RISCV_FLOAT_DIV = {"FDIV.S", "FDIV.D"};
+static const std::vector<std::string> RISCV_LOADS =
+    {"LW", "LH", "LB", "LBU", "LHU", "FLD", "FLW"};
+
+static const std::vector<std::string> RISCV_STORES =
+    {"SW", "SH", "SB", "FSD", "FSW"};
+
+static const std::vector<std::string> RISCV_INT_BASIC =
+    {"ADD", "ADDI", "SUB", "AND", "ANDI", "OR", "ORI", "XOR", "XORI", "SLL", "SRL", "SRA"};
+
+static const std::vector<std::string> RISCV_INT_MUL =
+    {"MUL", "MULH", "MULHU"};
+
+static const std::vector<std::string> RISCV_INT_DIV =
+    {"DIV", "DIVU", "REM", "REMU"};
+
+static const std::vector<std::string> RISCV_BRANCHES =
+    {"BEQ", "BNE", "BLT", "BGE", "BLTU", "BGEU", "JAL", "JALR"};
+
+static const std::vector<std::string> RISCV_FLOAT_BASIC =
+    {"FADD.S", "FADD.D", "FSUB.S", "FSUB.D"};
+
+static const std::vector<std::string> RISCV_FLOAT_MUL =
+    {"FMUL.S", "FMUL.D"};
+
+static const std::vector<std::string> RISCV_FLOAT_DIV =
+    {"FDIV.S", "FDIV.D"};
 
 static bool Contains(const std::vector<std::string>& vec, const std::string& op) {
     return std::find(vec.begin(), vec.end(), op) != vec.end();
