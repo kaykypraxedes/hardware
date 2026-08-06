@@ -11,8 +11,8 @@
 namespace processor {
 
 // ─── ELEMENTO STATIC ──────────────────────────────────────────────
-// ATENÇÃO: Deve ser declarado uma versão própria em cada uma das subclasses de Instruction.
-// - Gera warning (por não ser definido em Instruction.cpp) ignorado pela diretiva.
+// ATENÇÃO: A função deve ser declaradaa em cada uma das subclasses de Instruction (versão própria).
+// - Gera warning (por não ser definido em Instruction.cpp), que é ignorado pela diretiva.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 static const std::unordered_map<std::string, Register>& RegisterTable();

@@ -4,33 +4,37 @@
 namespace processor {
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
+static const int biggest_instruction{6};
+
+// Opcodes da arquitetura:
 static const std::vector<std::string> LOADS
-    {"LDR", "LDUR", "LDP", "LDRB", "LDRH", "LDRSB", "LDRSH", "LDURB", "LDURH", "LDURSB", "LDURSH"};
+    {"ldr", "ldur", "ldp", "ldrb", "ldrh", "ldrsb", "ldrsh", "ldurb", "ldurh", "ldursb", "ldursh"};
 
 static const std::vector<std::string> STORES
-    {"STR", "STUR", "STP", "STRB", "STRH", "STURB", "STURH"};
+    {"str", "stur", "stp", "strb", "strh", "sturb", "sturh"};
 
 static const std::vector<std::string> INT_BASIC
-    {"ADD", "ADDS", "SUB", "SUBS", "AND", "ORR", "EOR", "LSL", "LSR", "MOV", "MOVZ", "MOVK", "MOVN", "MVN", "BIC", "EON", "ORN", "CMP", "CMN", "TST", "NEG", "ADC", "SBC", "ASR", "ROR"};
+    {"add", "adds", "sub", "subs", "and", "orr", "eor", "lsl", "lsr", "mov", "movz", "movk", "movn", "mvn", "bic", "eon", "orn", "cmp", "cmn", "tst", "neg", "adc", "sbc", "asr", "ror"};
 
 static const std::vector<std::string> INT_MUL
-    {"MUL", "SMULL", "UMULL", "MADD", "MSUB", "SMADDL", "UMADDL"};
+    {"mul", "smull", "umull", "madd", "msub", "smaddl", "umaddl"};
 
 static const std::vector<std::string> INT_DIV
-    {"SDIV", "UDIV"};
+    {"sdiv", "udiv"};
 
 static const std::vector<std::string> BRANCHES
-    {"B", "B.EQ", "B.NE", "BL", "RET", "CBZ", "CBNZ", "B.LT", "B.GT", "B.LE", "B.GE", "B.HS", "B.HI", "B.LS", "B.LO", "TBZ", "TBNZ", "BR"};
+    {"b", "b.eq", "b.ne", "bl", "ret", "cbz", "cbnz", "b.lt", "b.gt", "b.le", "b.ge", "b.hs", "b.hi", "b.ls", "b.lo", "tbz", "tbnz", "br"};
 
 static const std::vector<std::string> FLOAT_BASIC
-    {"FADD", "FSUB", "FSQRT", "FCVT", "SCVTF", "UCVTF", "FCVTZS", "FCVTZU", "FABS", "FNEG", "FMIN", "FMAX", "FMLA", "FCMP"};
+    {"fadd", "fsub", "fsqrt", "fcvt", "scvtf", "ucvtf", "fcvtzs", "fcvtzu", "fabs", "fneg", "fmin", "fmax", "fmla", "fcmp"};
 
 static const std::vector<std::string> FLOAT_MUL
-    {"FMUL", "FMADD", "FMSUB", "FNMADD", "FNMSUB"};
+    {"fmul", "fmadd", "fmsub", "fnmadd", "fnmsub"};
 
 static const std::vector<std::string> FLOAT_DIV
-    {"FDIV"};
+    {"fdiv"};
 
+// Verifica se o opcode existe (está na tabela).
 static bool Contains(
     const std::vector<std::string>& vec,
     const std::string&              op
@@ -38,12 +42,24 @@ static bool Contains(
     return std::find(vec.begin(), vec.end(), op) != vec.end();
 }
 
+// Verifica se o dado é um registrador ou um dado que não precisa ser armazenado (labels, imediatos, etc.)
+static bool IsRegister(
+    const std::string& token
+){
+    if (token.size() < 2) return false;
+    char first = static_cast<char>(std::toupper(static_cast<unsigned char>(token[0])));
+    if (first != 'X' && first != 'W' && first != 'D' && first != 'S') return false;
+    for (size_t i = 1; i < token.size(); ++i)
+        if (!std::isdigit(static_cast<unsigned char>(token[i]))) return false;
+    return true;
+}
+
 // Monta o CDB com os registradores físicos:
 CDB InstructionArm64::MakeCDB() {
     // Aliases compartilham o mesmo id:
-    // - ids 0-30:  X0..30 ('L') = W0..30 ('R').
-    // - ids 32-63: D0..31 ('S') = S0..31 ('F').
-    // - id 80:     CPSR ('G').
+    // - ids 0-30:  'L' = 'R'.
+    // - ids 32-63: 'S' = 'F'.
+    // - id 80:     'G'.
     CDB cdb;
     cdb.registers.resize(81);
     fillCDB(cdb, 'L', 0,  31);  // Faixas de int: L e R compartilham os slots 0-30.
@@ -55,28 +71,29 @@ CDB InstructionArm64::MakeCDB() {
     return cdb;
 }
 
-// Tabela: (classe, id físico global).
-// - ids 0-30:  X0-30 ('L') = W0-30 ('R').
-// - ids 32-63: D0-31 ('S') = S0-31 ('F').
-// - id 80:     CPSR ('G').
+// Tabela: (nome, registrador físico).
 const std::unordered_map<std::string, Register>& RegisterTable() {
+    // Aliases compartilham o mesmo id:
+    // - ids 0-30:  X0-30 ('L') = W0-30 ('R').
+    // - ids 32-63: D0-31 ('S') = S0-31 ('F').
+    // - id 80:     CPSR ('G').
     static std::unordered_map<std::string, Register> t;
 
     if (t.empty()){ // Evita refazer os emplaces a cada chamada da função (já que t é static).
 
         // Int (0-30):
         for (int i = 0; i < 31; i++){
-            t.emplace("X" + std::to_string(i), Register('L', i));
-            t.emplace("W" + std::to_string(i), Register('R', i));
+            t.emplace("x" + std::to_string(i), Register('L', i));
+            t.emplace("w" + std::to_string(i), Register('R', i));
         }
 
         // Float (32-63):
-        for (int i = 32; i < 64; i++) {
-            t.emplace("D" + std::to_string(i), Register('S', i));
-            t.emplace("S" + std::to_string(i), Register('F', i));
+        for (int i = 0; i < 32; i++) {
+            t.emplace("d" + std::to_string(i), Register('S', 32 + i));
+            t.emplace("s" + std::to_string(i), Register('F', 32 + i));
         }
 
-        t.emplace("CPSR", Register('G', 80));
+        t.emplace("cpsr", Register('G', 80));
     }
 
     return t;
@@ -94,7 +111,7 @@ bool InstructionArm64::IdentifyType(
     const std::vector<std::string>& tokens
 ){
     std::string op{tokens[0]};
-    for (char& c : op) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    for (char& c : op) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
     if (Contains(LOADS, op))            type = INSTRUCTION_TYPE::LOAD;
     else if (Contains(STORES, op))      type = INSTRUCTION_TYPE::STORE;
@@ -116,6 +133,7 @@ std::vector<std::string> InstructionArm64::SplitInstruction(
 ) const {
     std::vector<std::string> tokens;
     std::string current;
+
     for (char c : str) {
         if (c == ',' || c == ' ' || c == '[' || c == ']' || c == '#' || c == '\t') {
             if (!current.empty()) {
@@ -126,19 +144,24 @@ std::vector<std::string> InstructionArm64::SplitInstruction(
             current += c;
         }
     }
+    // Evita perda de informação do último caracter.
     if (!current.empty()) tokens.push_back(current);
     return tokens;
 }
 
 // Privado:
+// Padroniza os opcodes e registradores em minúsculo, coloca as devidas vírgulas e realiza a tabulação.
 void InstructionArm64::NormalizeInstruction(
     std::vector<std::string>& tokens
 ){
-    for (std::string& token : tokens)
-        for (char& c : token) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        // Labels de desvio são case-sensitive: só opcode e registradores viram minúsculo.
+        if (type == INSTRUCTION_TYPE::BRANCH && i > 0 && !IsRegister(tokens[i])) continue;
+        for (char& c : tokens[i]) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
 
     std::string normalized = tokens[0];
-    while (normalized.length() < 7) normalized += ' ';
+    while (normalized.length() < biggest_instruction) normalized += ' ';
 
     for (size_t i = 1; i < tokens.size(); ++i)
         normalized += (i == 1 ? "" : ", ") + tokens[i];
@@ -153,14 +176,7 @@ void InstructionArm64::SetAttributes(
     dest_registers.clear();
     source_registers.clear();
 
-    // Imediatos ("5", "0x10") não viram fonte: só registradores X/W/D/S.
-    // (NormalizeInstruction já deixou tudo maiúsculo.)
-    auto is_register = [](const std::string& token) {
-        if (token.empty()) return false;
-        char first = token[0];
-        return first == 'X' || first == 'W' || first == 'D' || first == 'S';
-    };
-
+    // Imediatos ("#5", "#0x10") e labels não viram fonte (só registradores).
     if (type == INSTRUCTION_TYPE::LOAD) {
         dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
         if (tokens.size() > 2) source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
@@ -168,20 +184,20 @@ void InstructionArm64::SetAttributes(
         source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
         if (tokens.size() > 2) source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
     } else if (type == INSTRUCTION_TYPE::BRANCH) {
-        if (tokens[0].find(".EQ") != std::string::npos || tokens[0].find(".NE") != std::string::npos) {
+        if (tokens[0].find(".eq") != std::string::npos || tokens[0].find(".ne") != std::string::npos) {
             source_registers.push_back(Register('G', 80));
         }
-    } else if (tokens[0] == "CMP" || tokens[0] == "CMN" || tokens[0] == "TST" || tokens[0] == "FCMP") {
+    } else if (tokens[0] == "cmp" || tokens[0] == "cmn" || tokens[0] == "tst" || tokens[0] == "fcmp") {
         // Comparadores não escrevem registrador de dados: apenas CPSR.
         dest_registers.push_back(Register('G', 80));
         for (size_t i = 1; i < tokens.size(); ++i)
-            if (is_register(tokens[i]))
+            if (IsRegister(tokens[i]))
                 source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
     } else {
         dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        if (tokens[0].back() == 'S') dest_registers.push_back(Register('G', 80)); // ADDS atualiza CPSR.
+        if (tokens[0].back() == 's') dest_registers.push_back(Register('G', 80)); // ADDS atualiza CPSR.
         for (size_t i = 2; i < tokens.size(); ++i)
-            if (is_register(tokens[i]))
+            if (IsRegister(tokens[i]))
                 source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
     }
 }

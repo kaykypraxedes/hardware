@@ -4,6 +4,16 @@
 # Linhas com '#' sao ignoradas (comentarios)
 # A ordem das configuracoes deve ser mantida
 
+# Simulação: Arquitetura: Simplificada; Processador: Tomasulo Clássico; Numero de Threads: 1;
+
+# Arquitetura das instruções do programa:
+# 0 = SIMPLIFIED
+# 1 = X86_INTEL
+# 2 = ARM_64
+# 3 = RISC_V
+# 4 = MIPS_32
+arquitetura 0
+
 # Tipo do processador:
 # 0 = Processador In-Order
 # 1 = Tomasulo sem especulacao

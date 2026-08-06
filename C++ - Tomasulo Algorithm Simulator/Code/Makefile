@@ -16,12 +16,33 @@ MAIN_OBJ = $(OBJDIR)/Main.o
 
 EXEC     = $(OBJDIR)/executable
 
-TB_NAMES = Components Instruction ReservationStations Thread Processor
+TB_SRCS  = $(wildcard $(TSTDIR)/tb_*.cpp)
+TB_NAMES = $(patsubst $(TSTDIR)/tb_%.cpp,%,$(TB_SRCS))
 TB_BINS  = $(addprefix $(OBJDIR)/tb_,$(TB_NAMES))
 
 INPUTS   = $(wildcard $(INPUTDIR)/*.txt)
 
 DEPS     = $(OBJS:.o=.d)
+
+# Larguras fixas da coluna de nome — valores literais, sem cálculo.
+# Ajuste manualmente se os nomes de testbenchs/casos de simulação mudarem
+# de tamanho o suficiente para não caber mais.
+#
+# WIDTH_WITH_COUNT: linhas que trazem "[ x/y ]" antes do status (17 chars
+#                    de sufixo fixo: " [%3d/%-3d] " + status de 6 chars).
+#                    Usado em: test, e no bloco de testbenchs do simtest-completo.
+# WIDTH:             linhas sem contador, só " <status>". Usado em: simtest,
+#                    simtest-update, e no bloco de simulação do simtest-completo.
+WIDTH_WITH_COUNT := 34
+WIDTH            := 27
+
+# Coluna de alinhamento dos status: o texto (OK/FALHOU/DIFERENTE) deve terminar
+# na coluna 53 (= largura dos cabeçalhos "═══ ... ═══"). Campo de status = 53 - prefixo.
+# Prefixo de cada bloco e largura de campo usada (para recalcular manualmente):
+#   test / simtest-completo (testbenchs): prefixo 47 ("  %-34s [%3d/%-3d] ") + campo 6  -> 53
+#   simtest:                              prefixo 30 ("  %-27s ")            + campo 23 -> 53
+#   simtest-completo (simulação):         prefixo 30 + campo 23                        -> 53
+#   simtest-update:                       prefixo 41 ("  Atualizando %-27s") + pad 10  -> 53
 
 .PHONY: all testbenchs test simtest simtest-completo simtest-update clean rebuild
 
@@ -57,12 +78,6 @@ test: testbenchs
 	@total_ok=0; total_all=0; total_tb=0; fail_tb=0; failed_list=""; \
 	echo ""; \
 	echo "═══ TESTBENCHS ══════════════════════════════════════"; \
-	nome=0; \
-	for tb in $(TB_BINS); do \
-		n=$$(basename $$tb); len=$${#n}; \
-		if [ $$len -gt $$nome ]; then nome=$$len; fi; \
-	done; \
-	nome=$$((nome + 12)); \
 	status=6; bracket=9; sep=1; rightw=$$((bracket + sep + status)); \
 	for tb in $(TB_BINS); do \
 		total_tb=$$((total_tb + 1)); \
@@ -78,16 +93,16 @@ test: testbenchs
 			if [ "$$bad" -gt 0 ]; then \
 				fail_tb=$$((fail_tb + 1)); \
 				failed_list="$$failed_list\n    $$name"; \
-				printf "  %-*s [%3d/%-3d] \033[0;31m%*s\033[0m\n" "$$nome" "$$name" "$$ok" "$$count" "$$status" "FALHOU"; \
+				printf "  %-$(WIDTH_WITH_COUNT)s [%3d/%-3d] \033[0;31m%*s\033[0m\n" "$$name" "$$ok" "$$count" "$$status" "FALHOU"; \
 				echo "$$result" | grep "\[FALHOU\]" | sed 's/.*/    &/'; \
 			else \
-				printf "  %-*s [%3d/%-3d] \033[0;32m%*s\033[0m\n" "$$nome" "$$name" "$$ok" "$$count" "$$status" "OK"; \
+				printf "  %-$(WIDTH_WITH_COUNT)s [%3d/%-3d] \033[0;32m%*s\033[0m\n" "$$name" "$$ok" "$$count" "$$status" "OK"; \
 			fi; \
 		else \
 			fail_tb=$$((fail_tb + 1)); \
 			failed_list="$$failed_list\n    $$name (CRASH/ABORT)"; \
 			crash="CRASH/ABORT"; pad=$$((rightw - $${#crash})); \
-			printf "  %-*s %*s\033[0;31m%s\033[0m\n" "$$nome" "$$name" "$$pad" "" "$$crash"; \
+			printf "  %-$(WIDTH_WITH_COUNT)s %*s\033[0;31m%s\033[0m\n" "$$name" "$$pad" "" "$$crash"; \
 			echo "$$result" | tail -5 | sed 's/^/    /'; \
 		fi; \
 	done; \
@@ -107,17 +122,7 @@ simtest: $(EXEC)
 	echo ""; \
 	echo "═══ SIMULAÇÃO ═══════════════════════════════════════"; \
 	mkdir -p $(EXPDIR); \
-	nome=0; \
-	for input in $(INPUTS); do \
-		n=$$(basename $$input .txt); len=$${#n}; \
-		if [ $$len -gt $$nome ]; then nome=$$len; fi; \
-	done; \
-	nome=$$((nome + 20)); \
-	status=0; \
-	for s in "OK" "DIFERENTE"; do \
-		len=$${#s}; if [ $$len -gt $$status ]; then status=$$len; fi; \
-	done; \
-	status=$$((status + 1)); \
+	status=23; \
 	for input in $(INPUTS); do \
 		total=$$((total + 1)); \
 		name=$$(basename $$input .txt); \
@@ -134,11 +139,11 @@ simtest: $(EXEC)
 		expected=$(EXPDIR)/$$name.expected; \
 		$(EXEC) < $$input > /tmp/$$name.out 2>&1; \
 		if diff -q /tmp/$$name.out $$expected > /dev/null 2>&1; then \
-			printf "  %-*s \033[0;32m%*s\033[0m\n" "$$nome" "$$name" "$$status" "OK"; \
+			printf "  %-$(WIDTH)s \033[0;32m%*s\033[0m\n" "$$name" "$$status" "OK"; \
 		else \
 			diff_count=$$((diff_count + 1)); \
 			failed_list="$$failed_list\n    $$name"; \
-			printf "  %-*s \033[0;31m%*s\033[0m\n" "$$nome" "$$name" "$$status" "DIFERENTE"; \
+			printf "  %-$(WIDTH)s \033[0;31m%*s\033[0m\n" "$$name" "$$status" "DIFERENTE"; \
 		fi; \
 	done; \
 	echo "═════════════════════════════════════════════════════"; \
@@ -168,16 +173,6 @@ simtest-completo: $(EXEC) testbenchs
 	echo "═══ COMPLETO ════════════════════════════════════════"; \
 	mkdir -p $$outdir $(EXPDIR); \
 	has_fail=0; fail_count=0; \
-	nome=0; \
-	for tb in $(TB_BINS); do \
-		n=$$(basename $$tb); len=$${#n}; \
-		if [ $$len -gt $$nome ]; then nome=$$len; fi; \
-	done; \
-	for input in $(INPUTS); do \
-		n=$$(basename $$input .txt); len=$${#n}; \
-		if [ $$len -gt $$nome ]; then nome=$$len; fi; \
-	done; \
-	nome=$$((nome + 12)); \
 	tb_status=6; bracket=9; sep=1; rightw=$$((bracket + sep + tb_status)); \
 	sim_status=0; \
 	for s in "OK" "DIFERENTE" "OK - referencia gerada"; do \
@@ -201,16 +196,16 @@ simtest-completo: $(EXEC) testbenchs
 			if [ "$$bad" -gt 0 ]; then \
 				has_fail=1; fail_count=$$((fail_count + 1)); \
 				failed_list="$$failed_list\n    $$name"; \
-				printf "  %-*s [%3d/%-3d] \033[0;31m%*s\033[0m\n" "$$nome" "$$name" "$$ok" "$$count" "$$tb_status" "FALHOU"; \
+				printf "  %-$(WIDTH_WITH_COUNT)s [%3d/%-3d] \033[0;31m%*s\033[0m\n" "$$name" "$$ok" "$$count" "$$tb_status" "FALHOU"; \
 				echo "$$result" | grep "\[FALHOU\]" | sed 's/.*/    &/'; \
 			else \
-				printf "  %-*s [%3d/%-3d] \033[0;32m%*s\033[0m\n" "$$nome" "$$name" "$$ok" "$$count" "$$tb_status" "OK"; \
+				printf "  %-$(WIDTH_WITH_COUNT)s [%3d/%-3d] \033[0;32m%*s\033[0m\n" "$$name" "$$ok" "$$count" "$$tb_status" "OK"; \
 			fi; \
 		else \
 			has_fail=1; fail_count=$$((fail_count + 1)); \
 			failed_list="$$failed_list\n    $$name (CRASH/ABORT)"; \
 			crash="CRASH/ABORT"; pad=$$((rightw - $${#crash})); \
-			printf "  %-*s %*s\033[0;31m%s\033[0m\n" "$$nome" "$$name" "$$pad" "" "$$crash"; \
+			printf "  %-$(WIDTH_WITH_COUNT)s %*s\033[0;31m%s\033[0m\n" "$$name" "$$pad" "" "$$crash"; \
 			echo "$$result" | tail -5 | sed 's/^/    /'; \
 		fi; \
 		{ \
@@ -223,14 +218,13 @@ simtest-completo: $(EXEC) testbenchs
 	done; \
 	echo ""; \
 	echo "- Casos de Simulação:"; \
-	nome=$$((nome - 7)); \
 	for input in $(INPUTS); do \
 		name=$$(basename $$input .txt); \
 		expected=$(EXPDIR)/$$name.expected; \
 		outf="$$outdir/output-$$name.txt"; \
 		if [ ! -f $$expected ]; then \
 			$(EXEC) < $$input > $$expected 2>&1; \
-			printf "  %-*s \033[0;33m%*s\033[0m\n" "$$nome" "$$name" "$$sim_status" "[OK - referencia gerada]"; \
+			printf "  %-$(WIDTH)s \033[0;33m%*s\033[0m\n" "$$name" "$$sim_status" "[OK - referencia gerada]"; \
 			{ \
 				echo "$$name"; \
 				echo ""; \
@@ -240,7 +234,7 @@ simtest-completo: $(EXEC) testbenchs
 		else \
 			$(EXEC) < $$input > /tmp/$$name.full 2>&1; \
 			if diff -q /tmp/$$name.full $$expected > /dev/null 2>&1; then \
-				printf "  %-*s \033[0;32m%*s\033[0m\n" "$$nome" "$$name" "$$sim_status" "OK"; \
+				printf "  %-$(WIDTH)s \033[0;32m%*s\033[0m\n" "$$name" "$$sim_status" "OK"; \
 				{ \
 					echo "$$name"; \
 					echo ""; \
@@ -248,7 +242,7 @@ simtest-completo: $(EXEC) testbenchs
 					echo ""; \
 				} > "$$outf"; \
 			else \
-				printf "  %-*s \033[0;31m%*s\033[0m\n" "$$nome" "$$name" "$$sim_status" "DIFERENTE"; \
+				printf "  %-$(WIDTH)s \033[0;31m%*s\033[0m\n" "$$name" "$$sim_status" "DIFERENTE"; \
 				has_fail=1; fail_count=$$((fail_count + 1)); \
 				failed_list="$$failed_list\n    $$name"; \
 				{ \
@@ -263,7 +257,6 @@ simtest-completo: $(EXEC) testbenchs
 		input_count=$$((input_count + 1)); \
 	done; \
 	total=$$((tb_count + input_count)); \
-	echo ""; \
 	echo "═════════════════════════════════════════════════════"; \
 	echo ""; \
 	if [ $$has_fail -eq 0 ]; then \
@@ -282,16 +275,10 @@ simtest-update: $(EXEC)
 	total=0; \
 	echo ""; \
 	echo "═══ UPDATE ══════════════════════════════════════════"; \
-	nome=0; \
-	for input in $(INPUTS); do \
-		n=$$(basename $$input .txt); len=$${#n}; \
-		if [ $$len -gt $$nome ]; then nome=$$len; fi; \
-	done; \
-	nome=$$((nome + 17)); \
 	for input in $(INPUTS); do \
 		total=$$((total + 1)); \
 		name=$$(basename $$input .txt); \
-		printf "  Atualizando %-*s" "$$nome" "$$name"; \
+		printf "  Atualizando %-$(WIDTH)s%10s" "$$name" ""; \
 		$(EXEC) < $$input > $(EXPDIR)/$$name.expected 2>&1; \
 		echo "$$(printf '\033[0;32mOK\033[0m')"; \
 	done; \

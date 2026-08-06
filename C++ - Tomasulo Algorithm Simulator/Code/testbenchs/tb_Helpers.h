@@ -1,3 +1,5 @@
+/* tb_Helpers.cpp */
+// Módulo auxiliar para todos os testbenchs
 #ifndef TB_HELPERS_H
 #define TB_HELPERS_H
 

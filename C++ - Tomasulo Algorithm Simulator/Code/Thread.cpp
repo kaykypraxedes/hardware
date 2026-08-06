@@ -1,6 +1,5 @@
 /* Thread.cpp */
 #include "headers/Thread.h"
-#include "headers/InstructionFactory.h"
 
 namespace processor {
 

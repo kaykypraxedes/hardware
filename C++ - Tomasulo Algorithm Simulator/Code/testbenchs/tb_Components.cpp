@@ -1,9 +1,7 @@
-// ──────────────────────────────────────────────────────────────────────────
-//  tb_Components.cpp  —  Testbench isolado de Components.cpp
-//  Compile: g++ -o tb_Components tb_Components.cpp ../Components.cpp
-// ──────────────────────────────────────────────────────────────────────────
+/* tb_Components.cpp */
+//Testbench isolado de Components.cpp
 #include "../headers/Components.h"
-#include "tb_helpers.h"
+#include "tb_Helpers.h"
 #include <iostream>
 #include <vector>
 

@@ -4,33 +4,37 @@
 namespace processor {
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
-static const std::string MOV // Caso especial, já que pode agir como load, store e aritimético (com reg e com imediato).
-    {"MOV"};
+static const int biggest_instruction{9};
 
-static const std::vector<std::string> LOADS
-    {"MOVSS", "MOVSD", "LEA", "MOVAPS", "MOVUPS", "MOVQ", "MOVD"};
+// Opcodes da arquitetura:
+static const std::string LOAD // Exclusivo
+    {"lea"};
+
+static const std::vector<std::string> MOVS // Caso especial, já que pode agir como load, store e aritimético (com reg e com imediato).
+    {"mov", "movss", "movsd", "movaps", "movups", "movq", "movd"};
 
 static const std::vector<std::string> INT_BASIC
-    {"ADD", "SUB", "AND", "OR", "XOR", "INC", "DEC", "CMP", "SHL", "SHR", "NOT", "NEG", "TEST", "ROL", "ROR", "SAR", "SAL", "SBB", "ADC", "MOVSX", "MOVZX"};
+    {"add", "sub", "and", "or", "xor", "inc", "dec", "cmp", "shl", "shr", "not", "neg", "test", "rol", "ror", "sar", "sal", "sbb", "adc", "movsx", "movzx"};
 
 static const std::vector<std::string> INT_MUL
-    {"IMUL", "MUL"};
+    {"imul", "mul"};
 
 static const std::vector<std::string> INT_DIV
-    {"IDIV", "DIV"};
+    {"idiv", "div"};
 
 static const std::vector<std::string> BRANCHES
-    {"JMP", "JE", "JNE", "JG", "JGE", "JL", "JLE", "CALL", "JBE", "JA", "JAE", "JB", "JS", "JNS", "JP", "JO", "RET"};
+    {"jmp", "je", "jne", "jg", "jge", "jl", "jle", "call", "jbe", "ja", "jae", "jb", "js", "jns", "jp", "jo", "ret"};
 
 static const std::vector<std::string> FLOAT_BASIC
-    {"ADDSS", "ADDSD", "SUBSS", "SUBSD", "SQRTSS", "ADDPS", "SUBPS", "MULPS", "DIVPS", "CVTSI2SS", "CVTTSS2SI", "COMISS", "UCOMISS", "PXOR", "PAND", "POR"};
+    {"addss", "addsd", "subss", "subsd", "sqrtss", "addps", "subps", "mulps", "divps", "cvtsi2ss", "cvttss2si", "comiss", "ucomiss", "pxor", "pand", "por"};
 
 static const std::vector<std::string> FLOAT_MUL
-    {"MULSS", "MULSD"};
+    {"mulss", "mulsd"};
 
 static const std::vector<std::string> FLOAT_DIV
-    {"DIVSS", "DIVSD"};
+    {"divss", "divsd"};
 
+// Verifica se o opcode existe (está na tabela).
 static bool Contains(
     const std::vector<std::string>& vec,
     const std::string&              op
@@ -38,6 +42,7 @@ static bool Contains(
     return std::find(vec.begin(), vec.end(), op) != vec.end();
 }
 
+// Identificação do tipo de 'mov' (caso especial, já que ele pode ser LOAD, STORE ou um INT_BASIC)
 static INSTRUCTION_TYPE IdentifyMOVType(const std::vector<std::string>& tokens) {
     if (tokens.size() > 1 && tokens[1].front() == '[') return INSTRUCTION_TYPE::STORE;
     if (tokens.size() > 2 && tokens[2].front() == '[') return INSTRUCTION_TYPE::LOAD;
@@ -45,7 +50,7 @@ static INSTRUCTION_TYPE IdentifyMOVType(const std::vector<std::string>& tokens) 
 }
 
 // Resolve um operando genérico do x86:
-// - Registrador direto ("EBX") -> lookup normal (aborta se nome inválido).
+// - Registrador direto ("ebx") -> lookup normal (aborta se nome inválido).
 // - Memória ("[RBX+4]" ou "[RAX+RBX*4+8]") -> usa apenas a base como fonte.
 // - Imediato ("5", "0x10", "-4") -> não vira fonte (retorna false).
 static bool LookupOperand(
@@ -83,7 +88,7 @@ CDB InstructionX86Intel::MakeCDB() {
     return cdb;
 }
 
-// Tabela: (classe, id físico global).
+// Tabela: (nome, registrador físico).
 const std::unordered_map<std::string, Register>& RegisterTable() {
     // Aliases compartilham o mesmo id:
     // - ids 0-15:  RAX..R15 ('L') = EAX..R15D ('R') = AX..R15W ('W') = AL/AH..R15B ('B').
@@ -94,39 +99,39 @@ const std::unordered_map<std::string, Register>& RegisterTable() {
     if (t.empty()){ // Evita refazer os emplaces a cada chamada da função (já que t é static).
 
         // Int (0-15):
-        // 64-bit (L, 0-15):
+        // 64-bit (L, 0-15).
         const char* l64[] = {"rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rsp", "rbp"};
         for (int i = 0; i < 8;  i++){
             t.emplace(l64[i], Register('L', i));
-            t.emplace("R" + std::to_string(8 + i), Register('L', 8 + i));
+            t.emplace("r" + std::to_string(8 + i), Register('L', 8 + i));
         }
-        // 32-bit (R, 0-15):
+        // 32-bit (R, 0-15).
         const char* r32[] = {"eax", "ebx", "ecx", "edx", "esi", "edi", "esp", "ebp"};
         for (int i = 0; i < 8;  i++){
             t.emplace(r32[i], Register('R', i));
-            t.emplace("R" + std::to_string(8 + i) + "D", Register('R', 8 + i));
+            t.emplace("r" + std::to_string(8 + i) + "d", Register('R', 8 + i));
         }
-        // 16-bit (W, 0-15):
-        const char* w16[] = {"AX", "BX", "CX", "DX", "SI", "DI", "SP", "BP"};
+        // 16-bit (W, 0-15).
+        const char* w16[] = {"ax", "bx", "cx", "dx", "si", "di", "sp", "bp"};
         for (int i = 0; i < 8;  i++){
             t.emplace(w16[i], Register('W', i));
-            t.emplace("R" + std::to_string(8 + i) + "W", Register('W', 8 + i));
+            t.emplace("r" + std::to_string(8 + i) + "w", Register('W', 8 + i));
         }
-        // 8-bit (B, 0-15):
+        // 8-bit (B, 0-15).
         // - AL/AH, BL/BH, ... compartilham o id do grupo.
-        const char* b8[] = {"AL", "AH", "BL", "BH", "CL", "CH", "DL", "DH"};
+        const char* b8[] = {"al", "ah", "bl", "bh", "cl", "ch", "dl", "dh"};
         for (int i = 0; i < 8; i++) t.emplace(b8[i], Register('B', i / 2));
-        t.emplace("SIL", Register('B', 4));
-        t.emplace("DIL", Register('B', 5));
-        t.emplace("SPL", Register('B', 6));
-        t.emplace("BPL", Register('B', 7));
-        for (int i = 8; i < 16; i++) t.emplace("R" + std::to_string(i) + "B", Register('B', i));
+        t.emplace("sil", Register('B', 4));
+        t.emplace("dil", Register('B', 5));
+        t.emplace("spl", Register('B', 6));
+        t.emplace("bpl", Register('B', 7));
+        for (int i = 8; i < 16; i++) t.emplace("r" + std::to_string(i) + "b", Register('B', i));
 
         // Vetorial (64-79):
-        for (int i = 0; i < 16; i++) t.emplace("XMM" + std::to_string(i), Register('V', 64 + i));
+        for (int i = 0; i < 16; i++) t.emplace("xmm" + std::to_string(i), Register('V', 64 + i));
 
         // Flags (80):
-        t.emplace("EFLAGS", Register('G', 80));
+        t.emplace("eflags", Register('G', 80));
     }
 
     return t;
@@ -144,10 +149,10 @@ bool InstructionX86Intel::IdentifyType(
     const std::vector<std::string>& tokens
 ){
     std::string op{tokens[0]};
-    for (char& c : op) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    for (char& c : op) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
-    if (op == MOV)                      type = IdentifyMOVType(tokens);
-    else if (Contains(LOADS, op))       type = INSTRUCTION_TYPE::LOAD;
+    if (op == LOAD)                     type = INSTRUCTION_TYPE::LOAD;
+    else if (Contains(MOVS, op))        type = IdentifyMOVType(tokens);
     else if (Contains(INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
     else if (Contains(BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
     else if (Contains(INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
@@ -181,19 +186,24 @@ std::vector<std::string> InstructionX86Intel::SplitInstruction(
             current += c;
         }
     }
+    // Evita perda de informação do último caracter.
     if (!current.empty()) tokens.push_back(current);
     return tokens;
 }
 
 // Privado:
+// Padroniza os opcodes e registradores em minúsculo, coloca as devidas vírgulas e realiza a tabulação.
 void InstructionX86Intel::NormalizeInstruction(
     std::vector<std::string>& tokens
 ){
-    for (std::string& token : tokens)
-        for (char& c : token) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        // Labels de desvio são case-sensitive: operando de desvio nunca vira fonte.
+        if (type == INSTRUCTION_TYPE::BRANCH && i > 0) continue;
+        for (char& c : tokens[i]) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
 
     std::string normalized = tokens[0];
-    while (normalized.length() < 7) normalized += ' ';
+    while (normalized.length() < biggest_instruction) normalized += ' ';
 
     for (size_t i = 1; i < tokens.size(); ++i)
         normalized += (i == 1 ? "" : ", ") + tokens[i];
