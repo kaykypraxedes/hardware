@@ -39,24 +39,29 @@ static bool Contains(
 }
 
 // Monta o CDB com os registradores físicos:
-// - ids 0-31:  x0..31 ('L').
-// - ids 32-63: f0..31 ('F').
 CDB InstructionRiscV::MakeCDB() {
+    // - ids 0-31:  x0..31 ('L').
+    // - ids 32-63: f0..31 ('F').
     CDB cdb;
     cdb.registers.resize(64);
-    fillCDB(cdb, 'L', 0, 32);
-    fillCDB(cdb, 'F', 32, 32);
+    fillCDB(cdb, 'L', 0, 32);  // Faixa de int.
+    fillCDB(cdb, 'F', 32, 32); // Faixa de float.
     cdb.print_banks = {{'F', 32, 32}, {'L', 0, 32}};
     return cdb;
 }
 
-// Tabela nome -> (classe, id físico global):
-// - ids 0-31:  x0..31 ('L').
-// - ids 32-63: f0..31 ('F').
+// Tabela (classe, id físico global).
 const std::unordered_map<std::string, Register>& RegisterTable() {
+    // - ids 0-31:  x0..31 ('L').
+    // - ids 32-63: f0..31 ('F').
     static std::unordered_map<std::string, Register> t;
-    for (int i = 0; i < 32; i++) t.emplace("x" + std::to_string(i), Register('L', i));
-    for (int i = 0; i < 32; i++) t.emplace("f" + std::to_string(i), Register('F', 32 + i));
+
+    if (t.empty()){ // Evita refazer os emplaces a cada chamada da função (já que t é static).
+        for (int i = 0; i < 32; i++){
+            t.emplace("x" + std::to_string(i), Register('L', i));
+            t.emplace("f" + std::to_string(i), Register('F', 32 + i));
+        }
+    }
     return t;
 }
 

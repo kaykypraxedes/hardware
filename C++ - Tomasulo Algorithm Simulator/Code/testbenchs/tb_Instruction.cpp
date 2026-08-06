@@ -22,7 +22,7 @@ static std::shared_ptr<Instruction> make_inst(const int position, const std::str
         linhas.push_back("ADD R0, R0, R0"); // dummy: apenas ocupa a posição
     linhas.push_back(line);
     std::vector<std::unique_ptr<Instruction>> parsed =
-        InstructionFactory::ParseTrace(linhas, ARCHITECTURE::MIPS_32);
+        InstructionFactory::ParseTrace(linhas, ARCHITECTURE::SIMPLIFIED);
     return std::shared_ptr<Instruction>(std::move(parsed[position]));
 }
 
@@ -53,7 +53,7 @@ int main() {
     secao("1.3 InstructionFactory — arquitetura de trace (MIPS32 por ora)");
     {
         std::vector<std::string> trace = {"ADD R1, R2, R3", "L.D F2, 0(R1)"};
-        auto parsed = InstructionFactory::ParseTrace(trace, ARCHITECTURE::MIPS_32);
+        auto parsed = InstructionFactory::ParseTrace(trace, ARCHITECTURE::SIMPLIFIED);
         check("2 instruções parseadas",            parsed.size() == 2);
         check("posição 0 == 0",                    parsed[0]->GetPosition() == 0);
         check("posição 1 == 1",                    parsed[1]->GetPosition() == 1);

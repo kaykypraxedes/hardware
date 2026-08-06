@@ -2,7 +2,7 @@
 ═══ CONFIGURAÇÕES ════════════════════════════════════════
 ══════════════════════════════════════════════════════════
 
-- Arquitetura: MIPS_32
+- Arquitetura: SIMPLIFIED
 - Tipo: TOMASULO_ESPECULATIVE
 - Numero de Threads: 1
 - Modelo Multi-Threading: NONE

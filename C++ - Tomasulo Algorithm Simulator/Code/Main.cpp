@@ -52,7 +52,7 @@ static const std::vector<std::string> EX_LABELS
 
 // ─── STRUCT ───────────────────────────────────────────────────────
 struct CONFIG {
-    ARCHITECTURE         arch          = ARCHITECTURE::MIPS_32;
+    ARCHITECTURE         arch          = ARCHITECTURE::SIMPLIFIED;
     PROCESSOR_TYPE       type          = PROCESSOR_TYPE::TOMASULO_CLASSIC;
     int                  num_threads   = 1;
     MULTITHREADING_MODEL model         = MULTITHREADING_MODEL::NONE;
@@ -157,13 +157,14 @@ CONFIG ReadConfig() {
         else if (key == "arquitetura")  {
             int aux;
             iss >> aux;
-            cfg.arch = (aux == 1 ? ARCHITECTURE::X86_INTEL :
+            cfg.arch = (aux == 0 ? ARCHITECTURE::SIMPLIFIED :
+                (aux == 1 ? ARCHITECTURE::X86_INTEL :
                 (aux == 2 ? ARCHITECTURE::ARM_64   :
-                (aux == 3 ? ARCHITECTURE::RISC_V   : ARCHITECTURE::MIPS_32)));
+                (aux == 3 ? ARCHITECTURE::RISC_V   : ARCHITECTURE::MIPS_32))));
         }
-        else if (key == "num_rs")       { cfg.num_rs       = ReadIntVector(iss, 6, 1);   }
-        else if (key == "num_ufs")      { cfg.num_fus      = ReadIntVector(iss, 6, 1);   }
-        else if (key == "latencias_ex") { cfg.ex_latencies = ReadIntVector(iss, 10, 1);  }
+        else if (key == "num_rs")       { cfg.num_rs       = ReadIntVector(iss, 6, 1); }
+        else if (key == "num_ufs")      { cfg.num_fus      = ReadIntVector(iss, 6, 1); }
+        else if (key == "latencias_ex") { cfg.ex_latencies = ReadIntVector(iss, 10, 1); }
         else if (key == "latencias_mem"){ cfg.mem_latencies = ReadIntVector(iss, 2, 1); }
         else if (key == "programa")     {
             while (std::getline(std::cin, line)) {
@@ -198,9 +199,10 @@ void PrintConfig(
     std::cout << "══════════════════════════════════════════════════════════\n" <<
                  "═══ CONFIGURAÇÕES ════════════════════════════════════════\n" <<
                  "══════════════════════════════════════════════════════════\n\n" <<
-        "- Arquitetura: " << (cfg.arch == ARCHITECTURE::MIPS_32   ? "MIPS_32" :
+        "- Arquitetura: " << (cfg.arch == ARCHITECTURE::SIMPLIFIED  ? "SIMPLIFIED" :
+            (cfg.arch == ARCHITECTURE::MIPS_32   ? "MIPS_32" :
             (cfg.arch == ARCHITECTURE::X86_INTEL ? "X86_INTEL" :
-            (cfg.arch == ARCHITECTURE::ARM_64    ? "ARM_64"    : "RISC_V"))) << '\n' <<
+            (cfg.arch == ARCHITECTURE::ARM_64    ? "ARM_64"    : "RISC_V")))) << '\n' <<
         "- Tipo: " << (cfg.type == PROCESSOR_TYPE::IN_ORDER ? "IN_ORDER" :
             (cfg.type == PROCESSOR_TYPE::TOMASULO_CLASSIC ? "TOMASULO_CLASSIC" : "TOMASULO_ESPECULATIVE")) << '\n' <<
         "- Numero de Threads: " << cfg.num_threads << '\n' <<

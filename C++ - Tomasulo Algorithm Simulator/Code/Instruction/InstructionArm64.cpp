@@ -39,13 +39,14 @@ static bool Contains(
 }
 
 // Monta o CDB com os registradores físicos:
-// - ids 0-30:  X0..30 ('L') = W0..30 ('R').
-// - ids 32-63: D0..31 ('S') = S0..31 ('F').
-// - id 80:     CPSR ('G').
 CDB InstructionArm64::MakeCDB() {
+    // Aliases compartilham o mesmo id:
+    // - ids 0-30:  X0..30 ('L') = W0..30 ('R').
+    // - ids 32-63: D0..31 ('S') = S0..31 ('F').
+    // - id 80:     CPSR ('G').
     CDB cdb;
     cdb.registers.resize(81);
-    fillCDB(cdb, 'L', 0,  31);  // Faixas inteiras: L e R compartilham os slots 0-30.
+    fillCDB(cdb, 'L', 0,  31);  // Faixas de int: L e R compartilham os slots 0-30.
     fillCDB(cdb, 'R', 0,  31);
     fillCDB(cdb, 'S', 32, 32);  // Faixas de float: S e F compartilham os slots 32-63.
     fillCDB(cdb, 'F', 32, 32);
@@ -54,17 +55,30 @@ CDB InstructionArm64::MakeCDB() {
     return cdb;
 }
 
-// Tabela nome -> (classe, id físico global). Aliases compartilham o mesmo id:
+// Tabela: (classe, id físico global).
 // - ids 0-30:  X0-30 ('L') = W0-30 ('R').
 // - ids 32-63: D0-31 ('S') = S0-31 ('F').
 // - id 80:     CPSR ('G').
 const std::unordered_map<std::string, Register>& RegisterTable() {
     static std::unordered_map<std::string, Register> t;
-    for (int i = 0; i < 31; i++) t.emplace("X" + std::to_string(i), Register('L', i));
-    for (int i = 0; i < 31; i++) t.emplace("W" + std::to_string(i), Register('R', i));
-    for (int i = 0; i < 32; i++) t.emplace("D" + std::to_string(i), Register('S', 32 + i));
-    for (int i = 0; i < 32; i++) t.emplace("S" + std::to_string(i), Register('F', 32 + i));
-    t.emplace("CPSR", Register('G', 80));
+
+    if (t.empty()){ // Evita refazer os emplaces a cada chamada da função (já que t é static).
+
+        // Int (0-30):
+        for (int i = 0; i < 31; i++){
+            t.emplace("X" + std::to_string(i), Register('L', i));
+            t.emplace("W" + std::to_string(i), Register('R', i));
+        }
+
+        // Float (32-63):
+        for (int i = 32; i < 64; i++) {
+            t.emplace("D" + std::to_string(i), Register('S', i));
+            t.emplace("S" + std::to_string(i), Register('F', i));
+        }
+
+        t.emplace("CPSR", Register('G', 80));
+    }
+
     return t;
 }
 

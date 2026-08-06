@@ -42,7 +42,7 @@ class Thread {
             const int               = 1,
             const int               = 0,
             const bool              = false,
-            const ARCHITECTURE      = ARCHITECTURE::MIPS_32
+            const ARCHITECTURE      = ARCHITECTURE::SIMPLIFIED
         );
 
         // Getters:

@@ -4,10 +4,11 @@
 
 #include "Instruction.h"
 // Arquiteturas suportadas:
-#include "../Instruction/headers/InstructionMips32.h"
-#include "../Instruction/headers/InstructionX86Intel.h"
 #include "../Instruction/headers/InstructionArm64.h"
+#include "../Instruction/headers/InstructionMips32.h"
 #include "../Instruction/headers/InstructionRiscV.h"
+#include "../Instruction/headers/InstructionSimplified.h"
+#include "../Instruction/headers/InstructionX86Intel.h"
 #include <vector>
 #include <string>
 #include <memory>    // para std::unique_ptr
@@ -18,6 +19,7 @@ namespace processor {
 
 // ─── ENUMS ────────────────────────────────────────────────────────
 enum class ARCHITECTURE {
+    SIMPLIFIED, // Arquitetura didática "Computer Architecture - A Quantitative Approach - Patterson & Hennessy"
     MIPS_32,
     X86_INTEL,
     ARM_64,
@@ -41,6 +43,9 @@ class InstructionFactory {
                 std::unique_ptr<Instruction> inst;
 
                 switch (arch) {
+                    case ARCHITECTURE::SIMPLIFIED:
+                        inst = std::make_unique<InstructionSimplified>(current_position);
+                        break;
                     case ARCHITECTURE::MIPS_32:
                         inst = std::make_unique<InstructionMips32>(current_position);
                         break;
@@ -74,10 +79,11 @@ class InstructionFactory {
         // - Cada subclasse define os slots, as classes canônicas e as faixas de impressão.
         static CDB MakeCDB(const ARCHITECTURE arch) {
             switch (arch) {
-                case ARCHITECTURE::MIPS_32:   return InstructionMips32::MakeCDB();
-                case ARCHITECTURE::X86_INTEL: return InstructionX86Intel::MakeCDB();
-                case ARCHITECTURE::ARM_64:    return InstructionArm64::MakeCDB();
-                case ARCHITECTURE::RISC_V:    return InstructionRiscV::MakeCDB();
+                case ARCHITECTURE::SIMPLIFIED: return InstructionSimplified::MakeCDB();
+                case ARCHITECTURE::MIPS_32:    return InstructionMips32::MakeCDB();
+                case ARCHITECTURE::X86_INTEL:  return InstructionX86Intel::MakeCDB();
+                case ARCHITECTURE::ARM_64:     return InstructionArm64::MakeCDB();
+                case ARCHITECTURE::RISC_V:     return InstructionRiscV::MakeCDB();
                 default:
                     std::cerr << "[ERRO] Arquitetura não suportada!\n";
                     std::abort();

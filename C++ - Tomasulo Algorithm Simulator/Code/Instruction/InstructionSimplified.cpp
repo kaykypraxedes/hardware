@@ -1,5 +1,5 @@
-/* Instruction/InstructionMips32.cpp */
-#include "headers/InstructionMips32.h"
+/* Instruction/InstructionSimplified.cpp */
+#include "headers/InstructionSimplified.h"
 
 namespace processor {
 
@@ -50,7 +50,7 @@ static bool IsRegister(
 }
 
 // Monta o CDB com os registradores físicos:
-CDB InstructionMips32::MakeCDB() {
+CDB InstructionSimplified::MakeCDB() {
     // - ids 0-31:  R0..31 ('R').
     // - ids 32-63: F0..31 ('F').
     CDB cdb;
@@ -63,55 +63,28 @@ CDB InstructionMips32::MakeCDB() {
 
 // Tabela: (classe, id físico global).
 const std::unordered_map<std::string, Register>& RegisterTable() {
-    // Aliases compartilham o mesmo id:
     // - ids 0-31:  R0..31 ('R').
     // - ids 32-63: F0..31 ('F').
     static std::unordered_map<std::string, Register> t;
 
     if (t.empty()){ // Evita refazer os emplaces a cada chamada da função (já que t é static).
-
-        // Int (0 - 31):
-        // - $zero/$0 (0).
-        t.emplace("$zero", Register('R', 0));
-        t.emplace("$0", Register('R', 0));
-        // - $at (1).
-        t.emplace("$at", Register('R', 1));
-        // - $v0..1 (2-3).
-        for (int i = 0; i < 2; i++)  t.emplace("$v" + std::to_string(i), Register('R', 2 + i));
-        // - $a0..3 (4-7).
-        for (int i = 0; i < 4; i++)  t.emplace("$a" + std::to_string(i), Register('R', 4 + i));
-        // - $t0..7 (8-15).
-        for (int i = 0; i < 8; i++)  t.emplace("$t" + std::to_string(i), Register('R', 8 + i));
-        // - $s0..7 (16-23).
-        for (int i = 0; i < 8; i++)  t.emplace("$s" + std::to_string(i), Register('R', 16 + i));
-        // - $t8..9 (24-25).
-        for (int i = 0; i < 2; i++)  t.emplace("$t" + std::to_string(8 + i), Register('R', 24 + i));
-        // - $k0..1 (26-27).
-        for (int i = 0; i < 2; i++)  t.emplace("$k" + std::to_string(i), Register('R', 26 + i));
-        // - $gp (28).
-        t.emplace("$gp", Register('R', 28));
-        // - $sp (29).
-        t.emplace("$sp", Register('R', 29));
-        // - $fp (30).
-        t.emplace("$fp", Register('R', 30));
-        // - $ra (31).
-        t.emplace("$ra", Register('R', 31));
-
-        // Float (32 - 63):
-        for (int i{}; i < 32; i++) t.emplace("F" + std::to_string(i), Register('F', 32 + i));
+        for (int i = 0; i < 32; i++) {
+            t.emplace("R" + std::to_string(i), Register('R', i));
+            t.emplace("F" + std::to_string(i), Register('F', 32 + i));
+        }
     }
     return t;
 }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
-InstructionMips32::InstructionMips32(
+InstructionSimplified::InstructionSimplified(
     const int position
 ) : Instruction(position) {}
 
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Privado:
-bool InstructionMips32::IdentifyType(
+bool InstructionSimplified::IdentifyType(
     const std::vector<std::string>& tokens
 ){
     std::string op{tokens[0]};
@@ -132,7 +105,7 @@ bool InstructionMips32::IdentifyType(
 }
 
 // Privado:
-std::vector<std::string> InstructionMips32::SplitInstruction(
+std::vector<std::string> InstructionSimplified::SplitInstruction(
     const std::string& str
 ) const {
     std::vector<std::string> tokens;
@@ -152,7 +125,7 @@ std::vector<std::string> InstructionMips32::SplitInstruction(
 }
 
 // Privado:
-void InstructionMips32::NormalizeInstruction(
+void InstructionSimplified::NormalizeInstruction(
     std::vector<std::string>& tokens
 ){
     for (std::string& token : tokens)
@@ -178,7 +151,7 @@ void InstructionMips32::NormalizeInstruction(
 }
 
 // Privado:
-void InstructionMips32::SetAttributes(
+void InstructionSimplified::SetAttributes(
     const std::vector<std::string>& tokens
 ){
     dest_registers.clear();

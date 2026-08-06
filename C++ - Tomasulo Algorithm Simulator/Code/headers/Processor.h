@@ -39,7 +39,7 @@ class Processor {
             const std::vector<int>& = {},
             const std::vector<int>& = {},
             const std::vector<std::tuple<int,int,int>>& = {},
-            const ARCHITECTURE = ARCHITECTURE::MIPS_32
+            const ARCHITECTURE = ARCHITECTURE::SIMPLIFIED
         );
 
         // Getters:
@@ -73,7 +73,7 @@ class Processor {
             const std::vector<int>&,
             const std::vector<int>& = {},
             const std::vector<std::tuple<int,int,int>>& = {},
-            const ARCHITECTURE = ARCHITECTURE::MIPS_32
+            const ARCHITECTURE = ARCHITECTURE::SIMPLIFIED
         );
         bool ExecuteExMemWrCommit();
         void ExecuteIssue();
