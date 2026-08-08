@@ -525,7 +525,7 @@ void Thread::Commit(
         TABLE_ROW& row{instruction_table[commit_pointer]};
         INSTRUCTION_TYPE type = row.instruction->GetInstructionType();
         bool is_store = (type == INSTRUCTION_TYPE::STORE);
-        bool pronto = false;
+        bool ready = false;
 
         // Verifica se é um Store (caso especial, pois não tem WR).
         if (is_store) {
@@ -538,21 +538,21 @@ void Thread::Commit(
                 int mem_end = row.mem_cycles.back() + row.instruction->GetMemLatency() - 1;
                 if (cycle >= mem_end) {
                     row.mem_cycles.pop_back(); // Tira a marcação temporária da tabela.
-                    pronto = true;
+                    ready = true;
                 }
             }
         }
         // Verifica se é um Branch (sem WR também, dependendo do EX completo).
         else if (type == INSTRUCTION_TYPE::BRANCH) {
-            pronto = (row.ex_cycles.size() == 2);
+            ready = (row.ex_cycles.size() == 2);
         }
         // Demais instruções.
         else {
-            pronto = (row.wr_cycle > 0 && row.wr_cycle < cycle);
+            ready = (row.wr_cycle > 0 && row.wr_cycle < cycle);
         }
 
         // Marca na tabela:
-        if (pronto) {
+        if (ready) {
             row.commit_cycle = cycle;
             num_committed_instructions++;
             writes++;

@@ -24,6 +24,32 @@ std::vector<int> Instruction::base_mem_latencies
     1   // STORE
 };
 
+// ─── HELPERS ───────────────────────────────────────────────────────
+void FillCDB(
+    CDB& cdb,
+    const char reg_class,
+    const int id_base,
+    const int count,
+    const int mask
+){
+    for (int i = 0; i < count; i++)
+       cdb.registers.push_back(Register(reg_class, id_base + i, mask));
+}
+
+// Única validação de nome do sistema: aborta com o nome e a instrução que o gerou.
+Register LookupRegister(
+    const std::string& name,
+    const std::string& context, // Puramente para debugging, mas não é obrigatório
+    const std::unordered_map<std::string, Register>& table
+){
+    auto it = table.find(name);
+    if (it == table.end()) {
+        std::cerr << "[ERRO] Registrador inválido: '" << name << "' (instrução: " << context << ")\n";
+        std::abort();
+    }
+    return it->second;
+}
+
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:
 int Instruction::GetPosition()   const { return position; }
@@ -72,6 +98,13 @@ void Instruction::Parse(
 
     // Verifica se a instrução é suportada pela arquitetura.
     std::vector<std::string> tokens = SplitInstruction(str);
+
+    // Verifica se os tokens passados são válidos.
+    // - Pode não estar vazio, mas ser apenas um conjunto de espaços, vírgulas, etc.
+    if (tokens.empty()) {
+        std::cerr << "[ERRO] Nenhum token válido extraído: '" << str << "'\n";
+        std::abort();
+    }
     if (!IdentifyType(tokens)) {
         std::cerr << "[ERRO] Instrução não suportada por essa arquitetura: "
             << tokens[0] << "\n";
@@ -109,28 +142,6 @@ void Instruction::SetMemLatency(
     const int latency
 ){
     mem_latency = latency;
-}
-
-// ─── HELPERS ───────────────────────────────────────────────────────
-
-void fillCDB(CDB& cdb, char classe, int base, int count){
-    for (int i = 0; i < count; i++)
-        if (cdb.registers[base + i].GetId() == -1)
-            cdb.registers[base + i] = Register(classe, base + i);
-}
-
-// Única validação de nome do sistema: aborta com o nome e a instrução que o gerou.
-Register LookupRegister(
-    const std::string& name,
-    const std::string& context, // Puramente para debugging, mas não é obrigatório
-    const std::unordered_map<std::string, Register>& table
-){
-    auto it = table.find(name);
-    if (it == table.end()) {
-        std::cerr << "[ERRO] Registrador inválido: '" << name << "' (instrução: " << context << ")\n";
-        std::abort();
-    }
-    return it->second;
 }
 
 } // namespace processor

@@ -8,10 +8,14 @@ namespace processor {
 PROCESSOR_TYPE Processor::GetType() const { return type; }
 
 // Público:
-const Thread& Processor::GetThread(int i) const { return threads[i]; }
+const Thread& Processor::GetThread(
+    const int i
+) const { return threads[i]; }
 
 // Público:
-const std::vector<TABLE_ROW>& Processor::GetThreadTable(int i) const { return threads[i].GetTable(); }
+const std::vector<TABLE_ROW>& Processor::GetThreadTable(
+    const int i
+) const { return threads[i].GetTable(); }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:

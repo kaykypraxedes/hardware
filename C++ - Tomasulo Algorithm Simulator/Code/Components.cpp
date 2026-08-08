@@ -11,6 +11,9 @@ char Register::GetType() const { return type; }
 int  Register::GetId()   const { return id; }
 
 // Público:
+int  Register::GetMask() const { return mask; }
+
+// Público:
 bool Register::GetBusy() const { return busy; }
 
 // Público:
@@ -20,8 +23,9 @@ const std::vector<std::string>& Register::GetAllocatedRS() const { return alloca
 // Público:
 Register::Register(
     const char type,
-    const int  id
-) : type(type), id(id) {}
+    const int  id,
+    const int  mask
+) : type(type), id(id), mask(mask) {}
 
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 
@@ -33,7 +37,7 @@ void Register::ToggleBusy() { busy = !busy; }
 // Retorna o produtor pendente mais recente (último allocated_rs com end_times == -1).
 // - É este que novas instruções devem aguardar em caso de WAW.
 std::string Register::GetCurrentRS() const {
-    for (int i = static_cast<int>(allocated_rs.size() - 1); i >= 0; i--) {
+    for (int i = static_cast<int>(allocated_rs.size()) - 1; i >= 0; i--) {
         if (end_times[i] == -1) return allocated_rs[i];
     }
     return "";
@@ -119,16 +123,21 @@ bool Register::DeallocateRS( // O for pode não achar correspondente (por isso b
 
 // ─── HELPERS ──────────────────────────────────────────────────────
 // Público:
+// Pesquisa o slot pelo par (id físico, máscara); a classe não é validada aqui.
+// - Um slot por variante (ex.: al = (id 0, mask 0x01), ah = (id 0, mask 0x02)).
 const Register& GetReg(
     const CDB&      cdb,
     const Register& reg
 ){
-    // Pesquisa apenas pelo id físico global; a classe não é validada aqui.
-    if (reg.GetId() < 0 || static_cast<size_t>(reg.GetId()) >= cdb.registers.size()) {
-        std::cerr << "[ERRO] Registrador fora do banco: " << reg.GetType() << reg.GetId() << "\n";
-        std::abort();
+    for (const Register& slot : cdb.registers) {
+        if (slot.GetType() == reg.GetType() &&
+            slot.GetId()   == reg.GetId()   &&
+            slot.GetMask() == reg.GetMask())
+            return slot;
     }
-    return cdb.registers[reg.GetId()];
+    std::cerr << "[ERRO] Slot não encontrado: " << reg.GetType() << reg.GetId()
+        << " (mask " << reg.GetMask() << ")\n";
+    std::abort();
 }
 
 // Público:

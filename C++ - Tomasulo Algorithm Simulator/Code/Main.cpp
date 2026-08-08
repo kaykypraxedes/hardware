@@ -450,7 +450,7 @@ int main() {
             cdb.registers.begin() + bank.base,
             cdb.registers.begin() + bank.base + bank.count
         );
-        processor::PrintComponentGroup(std::string(1, bank.classe), group,
+        processor::PrintComponentGroup(std::string(1, bank.reg_class), group,
             [](const auto& r) { return r.GetAllocationTimes(); },
             [](const auto& r) { return r.GetAllocatedRS(); });
     }
