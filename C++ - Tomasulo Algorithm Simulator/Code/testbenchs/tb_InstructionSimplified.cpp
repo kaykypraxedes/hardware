@@ -13,12 +13,12 @@ static const ARCHITECTURE ARCH = ARCHITECTURE::SIMPLIFIED;
 // Helper do testbench: monta uma instrução Mips Simplificada (SIMPLIFIED) em 'position' via InstructionFactory (MESMO caminho que a Thread usa).
 // - As linhas "dummy" anteriores são necessárias porque a Factory atribui a posição pelo índice da linha no arquivo de trace.
 static std::shared_ptr<Instruction> make_inst(const int position, const std::string& line) {
-    std::vector<std::string> linhas;
+    std::vector<std::string> lines;
     for (int p = 0; p < position; p++)
-        linhas.push_back("add r0, r0, r0"); // dummy: apenas ocupa a posição
-    linhas.push_back(line);
+        lines.push_back("add r0, r0, r0"); // dummy: apenas ocupa a posição
+    lines.push_back(line);
     std::vector<std::unique_ptr<Instruction>> parsed =
-        InstructionFactory::ParseTrace(linhas, ARCH);
+        InstructionFactory::ParseTrace(lines, ARCH);
     return std::shared_ptr<Instruction>(std::move(parsed[position]));
 }
 
@@ -30,7 +30,7 @@ int main() {
 
     print_title("1. CONSTRUÇÃO E ESTADO BÁSICO");
 
-    secao("1.1 Instruction() — construtor padrão (via InstructionSimplified, que é concreta)");
+    section("1.1 Instruction() — construtor padrão (via InstructionSimplified, que é concreta)");
     {
         InstructionSimplified i;
         check("GetPosition() == -1",                   i.GetPosition() == -1);
@@ -39,14 +39,14 @@ int main() {
         check("GetMemLatency() == 0",                  i.GetMemLatency() == 0);
     }
 
-    secao("1.2 InstructionFactory — posição pelo índice da linha e string");
+    section("1.2 InstructionFactory — posição pelo índice da linha e string");
     {
         auto i = make_inst(7, "add r1, r2, r3");
         check("GetPosition() == 7",                            i->GetPosition() == 7);
         check("GetInstructionString() == 'add    r1, r2, r3'", i->GetInstructionString() == "add    r1, r2, r3");
     }
 
-    secao("1.3 InstructionFactory — arquitetura de trace (SIMPLIFIED)");
+    section("1.3 InstructionFactory — arquitetura de trace (SIMPLIFIED)");
     {
         std::vector<std::string> trace = {"add r1, r2, r3", "l.d f2, 0(r1)"};
         auto parsed = InstructionFactory::ParseTrace(trace, ARCH);
@@ -60,14 +60,14 @@ int main() {
     /*
     // Teste das flags de segurança do programa (abortam a execução):
 
-    secao("[ABORT] String vazia deve abortar");
+    section("[ABORT] String vazia deve abortar");
     {
         InstructionSimplified i(5);
         i.Parse("");
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
     }
 
-    secao("[ABORT] Instrução desconhecida deve abortar");
+    section("[ABORT] Instrução desconhecida deve abortar");
     {
         InstructionSimplified i(10);
         i.Parse("xpto r1, r2, r3");
@@ -82,7 +82,7 @@ int main() {
     std::cout << "\n";
     print_title("2. IDENTIFICAÇÃO DE TIPO — MEMÓRIA E INTEIROS");
 
-    secao("2.1 LOAD (l.d)");
+    section("2.1 LOAD (l.d)");
     {
         auto i = make_inst(0, "l.d f2, 0(r1)");
         check("l.d: tipo == LOAD",              i->GetInstructionType() == INSTRUCTION_TYPE::LOAD);
@@ -96,7 +96,7 @@ int main() {
         check("l.d: 1 fonte",                   i->GetSourceRegisters().size() == 1);
     }
 
-    secao("2.2 STORE (s.d)");
+    section("2.2 STORE (s.d)");
     {
         auto i = make_inst(1, "s.d f6, 0(r2)");
         check("s.d: tipo == STORE",                 i->GetInstructionType() == INSTRUCTION_TYPE::STORE);
@@ -109,7 +109,7 @@ int main() {
         check("s.d: source[1] id=2",                i->GetSourceRegisters()[1].GetId()   == 2);
     }
 
-    secao("2.3 INT_BASIC (daddiu, add)");
+    section("2.3 INT_BASIC (daddiu, add)");
     {
         auto i = make_inst(2, "daddiu r1, r1, #8");
         check("daddiu: tipo == INT_BASIC",       i->GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC);
@@ -126,7 +126,7 @@ int main() {
         check("add: source[1] id=2", add->GetSourceRegisters()[1].GetId() == 2);
     }
 
-    secao("2.4 INT_MUL e INT_DIV (mul, div)");
+    section("2.4 INT_MUL e INT_DIV (mul, div)");
     {
         auto mul = make_inst(5, "mul r3, r1, r2");
         check("mul: tipo == INT_MUL",        mul->GetInstructionType() == INSTRUCTION_TYPE::INT_MUL);
@@ -144,7 +144,7 @@ int main() {
     std::cout << "\n";
     print_title("3. IDENTIFICAÇÃO DE TIPO — BRANCH");
 
-    secao("3.1 bnez e beq — operandos padrão");
+    section("3.1 bnez e beq — operandos padrão");
     {
         auto i = make_inst(4, "bnez r3, foo");
         check("bnez: tipo == BRANCH",        i->GetInstructionType() == INSTRUCTION_TYPE::BRANCH);
@@ -161,7 +161,7 @@ int main() {
         check("beq: source[1] id=2",     beq->GetSourceRegisters()[1].GetId()   == 2);
     }
 
-    secao("3.2 Outros opcodes: jr, j, bgtz");
+    section("3.2 Outros opcodes: jr, j, bgtz");
     {
         auto jr = make_inst(0, "jr r1");
         check("jr: source[0] tipo='R'",   jr->GetSourceRegisters()[0].GetType() == 'R');
@@ -180,7 +180,7 @@ int main() {
     std::cout << "\n";
     print_title("4. IDENTIFICAÇÃO DE TIPO — PONTO FLUTUANTE");
 
-    secao("4.1 FLOAT_BASIC (add.d)");
+    section("4.1 FLOAT_BASIC (add.d)");
     {
         auto i = make_inst(7, "add.d f6, f4, f6");
         check("add.d: tipo == FLOAT_BASIC",         i->GetInstructionType() == INSTRUCTION_TYPE::FLOAT_BASIC);
@@ -193,7 +193,7 @@ int main() {
         check("add.d: source[1] id=38 (f6 global)", i->GetSourceRegisters()[1].GetId()   == 38);
     }
 
-    secao("4.2 FLOAT_MUL (mul.d)");
+    section("4.2 FLOAT_MUL (mul.d)");
     {
         auto i = make_inst(8, "mul.d f4, f2, f0");
         check("mul.d: tipo == FLOAT_MUL",           i->GetInstructionType() == INSTRUCTION_TYPE::FLOAT_MUL);
@@ -206,7 +206,7 @@ int main() {
         check("mul.d: source[1] id=32 (f0 global)", i->GetSourceRegisters()[1].GetId()   == 32);
     }
 
-    secao("4.3 FLOAT_DIV (div.d)");
+    section("4.3 FLOAT_DIV (div.d)");
     {
         auto i = make_inst(9, "div.d f4, f2, f0");
         check("div.d: tipo == FLOAT_DIV", i->GetInstructionType() == INSTRUCTION_TYPE::FLOAT_DIV);
@@ -220,7 +220,7 @@ int main() {
     std::cout << "\n";
     print_title("5. LATÊNCIAS");
 
-    secao("5.1 base_ex_latencies / base_mem_latencies — tabelas estáticas");
+    section("5.1 base_ex_latencies / base_mem_latencies — tabelas estáticas");
     {
         check("latEX[NONEXISTENT]=0",    Instruction::base_ex_latencies[0]  == 0);
         check("latEX[LOAD]=1",           Instruction::base_ex_latencies[1]  == 1);
@@ -233,7 +233,7 @@ int main() {
         check("latMEM[STORE]=1",         Instruction::base_mem_latencies[1] == 1);
     }
 
-    secao("5.2 SetExLatency / SetMemLatency");
+    section("5.2 SetExLatency / SetMemLatency");
     {
         auto i = make_inst(11, "l.d f0, 0(r0)");
         check("antes: exLat == 1",   i->GetExLatency()  == 1);
@@ -251,7 +251,7 @@ int main() {
     std::cout << "\n";
     print_title("6. NORMALIZAÇÃO");
 
-    secao("6.1 NormalizeInstruction — casos variados");
+    section("6.1 NormalizeInstruction — casos variados");
     {
         auto i1 = make_inst(0, "ADD R1, R2, R3"); // Maiúsculo.
         check("uppercase -> lowercase", i1->GetInstructionString() ==        "add    r1, r2, r3");
@@ -267,7 +267,7 @@ int main() {
         check("uppercase + STORE sem vírgula", i4->GetInstructionString() == "sw     r1, 4(r2)");
     }
 
-    secao("6.2 BRANCH — normalização de labels");
+    section("6.2 BRANCH — normalização de labels");
     {
         auto i1 = make_inst(0, "bnez r3, LOOP");
         check("label se mantém", i1->GetInstructionString() ==               "bnez   r3, LOOP");
@@ -281,7 +281,18 @@ int main() {
         check("label 'retry' não vira fonte",                   i3->GetSourceRegisters().size() == 1);
     }
 
+    section("6.3 [PEGADINHA] Label com prefixo de registrador fora da faixa — case preservado");
+    {
+        // 'R99' não existe na tabela (faixa r0-31), então NÃO é registrador:
+        // não vira fonte e o case do label é preservado (IsRegister table-based).
+        auto i = make_inst(0, "beqz r3, R99");
+        check("label 'R99' preserva o case (fora da tabela = não é registrador)",
+            i->GetInstructionString() == "beqz   r3, R99");
+        check("beqz r3, R99: só r3 vira fonte",
+            i->GetSourceRegisters().size() == 1 && i->GetSourceRegisters()[0].GetType() == 'R');
+    }
+
     std::cout << "\n-----------------------------\n";
-    std::cout << "Resultado: " << passou << " OK, " << falhou << " FALHOU\n";
-    return falhou ? 1 : 0;
+    std::cout << "Resultado: " << passed << " OK, " << failed << " FALHOU\n";
+    return failed ? 1 : 0;
 }

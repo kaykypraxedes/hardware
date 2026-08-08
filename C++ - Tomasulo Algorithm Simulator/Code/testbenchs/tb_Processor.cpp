@@ -7,9 +7,9 @@
 
 using namespace processor;
 
-static int rodarAteOFim(Processor& p, int limite = 200) {
+static int runUntilEnd(Processor& p, int limit = 200) {
     int c = 0;
-    while (c++ < limite)
+    while (c++ < limit)
         if (p.ExecuteCycle()) return c;
     return -1;
 }
@@ -22,7 +22,7 @@ int main() {
 
     print_title("1. CONSTRUÇÃO E CONFIGURAÇÃO");
 
-    secao("1.1 Construtor — 1 thread, TOMASULO_CLASSIC");
+    section("1.1 Construtor — 1 thread, TOMASULO_CLASSIC");
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
         Processor p(1, 1, false,
@@ -35,7 +35,7 @@ int main() {
               p.GetThreadTable(0)[0].instruction->GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC);
     }
 
-    secao("1.2 Programa vazio — caso de borda trivial");
+    section("1.2 Programa vazio — caso de borda trivial");
     {
         std::vector<std::string> prog = {};
         Processor p(1, 1, false,
@@ -43,14 +43,14 @@ int main() {
                        MULTITHREADING_MODEL::NONE,
                        prog);
 
-        int ciclo_fim = rodarAteOFim(p);
-        check("Programa vazio: encerra imediatamente no ciclo inicial", ciclo_fim == 1);
+        int end_cycle = runUntilEnd(p);
+        check("Programa vazio: encerra imediatamente no ciclo inicial", end_cycle == 1);
     }
 
     /*
     // Teste das flags de segurança do programa (abortam a execução):
 
-    secao("[ABORT] Construtor: mais de uma thread sem modelo de multithreading deve abortar");
+    section("[ABORT] Construtor: mais de uma thread sem modelo de multithreading deve abortar");
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
         // model == NONE com num_threads > 1 → combinação inválida, espera abort().
@@ -69,7 +69,7 @@ int main() {
     std::cout << "\n";
     print_title("2. PIPELINE DE UMA INSTRUÇÃO (TRAÇOS COMPLETOS)");
 
-    secao("2.1 add — issue->EX->WR em 3 ciclos (ExecuteCycle() retorna true)");
+    section("2.1 add — issue->EX->WR em 3 ciclos (ExecuteCycle() retorna true)");
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
         Processor p(1, 1, false,
@@ -77,8 +77,8 @@ int main() {
                        MULTITHREADING_MODEL::NONE,
                        prog);
 
-        int ciclo_fim = rodarAteOFim(p);
-        check("add: terminou (não atingiu limite)", ciclo_fim != -1);
+        int end_cycle = runUntilEnd(p);
+        check("add: terminou (não atingiu limite)", end_cycle != -1);
 
         auto tab = p.GetThreadTable(0);
         check("add: issue == 1",                tab[0].issue_cycle == 1);
@@ -87,7 +87,7 @@ int main() {
         check("add: WR == 3",                    tab[0].wr_cycle == 3);
     }
 
-    secao("2.2 LOAD completo — issue->EX->MEM->WR");
+    section("2.2 LOAD completo — issue->EX->MEM->WR");
     {
         std::vector<std::string> prog = {"l.d f2, 0(r1)"};
         Processor p(1, 1, false,
@@ -95,8 +95,8 @@ int main() {
                        MULTITHREADING_MODEL::NONE,
                        prog);
 
-        int ciclo_fim = rodarAteOFim(p);
-        check("LOAD: terminou", ciclo_fim != -1);
+        int end_cycle = runUntilEnd(p);
+        check("LOAD: terminou", end_cycle != -1);
 
         auto tab = p.GetThreadTable(0);
         check("LOAD: issue == 1",                  tab[0].issue_cycle == 1);
@@ -107,7 +107,7 @@ int main() {
         check("LOAD: WR == 4",                     tab[0].wr_cycle == 4);
     }
 
-    secao("2.3 mul multiciclo via Processor (exLat=4)");
+    section("2.3 mul multiciclo via Processor (exLat=4)");
     {
         std::vector<std::string> prog = {"mul r3, r1, r2"};
         Processor p(1, 1, false,
@@ -115,7 +115,7 @@ int main() {
                        MULTITHREADING_MODEL::NONE,
                        prog);
 
-        rodarAteOFim(p);
+        runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
 
         check("mul: issue == 1",                 tab[0].issue_cycle == 1);
@@ -125,7 +125,7 @@ int main() {
         check("mul: mem_cycles vazio",           tab[0].mem_cycles.empty());
     }
 
-    secao("2.4 Modificação customizada de Latência (new_latency via parâmetro)");
+    section("2.4 Modificação customizada de Latência (new_latency via parâmetro)");
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
         // Tupla: <posição_instrucao, ex_latency, mem_latency>
@@ -137,7 +137,7 @@ int main() {
                        MULTITHREADING_MODEL::NONE,
                        prog, {}, {}, {}, lat);
 
-        rodarAteOFim(p);
+        runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
 
         check("Latência Injetada: add levou exatos 5 ciclos em EX",
@@ -154,7 +154,7 @@ int main() {
     std::cout << "\n";
     print_title("3. DESPACHO E MULTITHREADING");
 
-    secao("3.1 Superscalar (largura=2): 2 instruções independentes no ciclo 1");
+    section("3.1 Superscalar (largura=2): 2 instruções independentes no ciclo 1");
     {
         std::vector<std::string> prog = {"add r1, r2, r3", "add r4, r5, r6"};
         std::vector<int> num_rs  = {5,5,5,4,3,2};
@@ -164,7 +164,7 @@ int main() {
                        MULTITHREADING_MODEL::NONE,
                        prog, num_rs, num_fus);
 
-        rodarAteOFim(p);
+        runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
 
         check("Superscalar: add[0] issue == 1", tab[0].issue_cycle == 1);
@@ -173,7 +173,7 @@ int main() {
               tab[0].wr_cycle == tab[1].wr_cycle);
     }
 
-    secao("3.2 2 threads, FINE_GRAINED, largura=1: thread mantém prioridade até esgotar");
+    section("3.2 2 threads, FINE_GRAINED, largura=1: thread mantém prioridade até esgotar");
     {
         std::vector<std::string> prog = {"add r1, r2, r3", "add r4, r5, r6"};
         Processor p(2, 1, false,
@@ -181,7 +181,7 @@ int main() {
                        MULTITHREADING_MODEL::FINE_GRAINED,
                        prog);
 
-        rodarAteOFim(p);
+        runUntilEnd(p);
         auto t0 = p.GetThreadTable(0);
         auto t1 = p.GetThreadTable(1);
 
@@ -191,7 +191,7 @@ int main() {
         check("FINA: T1[1] issue == 4", t1[1].issue_cycle == 4);
     }
 
-    secao("3.3 2 threads, SMT, largura=2: 1 issue por thread por ciclo");
+    section("3.3 2 threads, SMT, largura=2: 1 issue por thread por ciclo");
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
         Processor p(2, 2, false,
@@ -199,7 +199,7 @@ int main() {
                        MULTITHREADING_MODEL::SMT,
                        prog);
 
-        rodarAteOFim(p);
+        runUntilEnd(p);
         auto t0 = p.GetThreadTable(0);
         auto t1 = p.GetThreadTable(1);
 
@@ -207,7 +207,7 @@ int main() {
         check("SMT: T1[0] issue == 1", t1[0].issue_cycle == 1);
     }
 
-    secao("3.4 Multithreading: COARSE_GRAINED com ciclos de troca (switch_instructions)");
+    section("3.4 Multithreading: COARSE_GRAINED com ciclos de troca (switch_instructions)");
     {
         std::vector<std::string> prog = {"add r1, r2, r3", "add r4, r5, r6"};
         // O vetor define após qual posição de instrução deve ocorrer a troca (ex: índice 0)
@@ -218,7 +218,7 @@ int main() {
                        MULTITHREADING_MODEL::COARSE_GRAINED,
                        prog, {}, {}, switch_instructions);
 
-        rodarAteOFim(p);
+        runUntilEnd(p);
         auto t0 = p.GetThreadTable(0);
         auto t1 = p.GetThreadTable(1);
 
@@ -233,7 +233,7 @@ int main() {
     std::cout << "\n";
     print_title("4. DEPENDÊNCIAS E HAZARDS");
 
-    secao("4.1 RAW via Processor: add -> sub dependente");
+    section("4.1 RAW via Processor: add -> sub dependente");
     {
         std::vector<std::string> prog = {"add r3, r1, r2", "sub r5, r3, r4"};
         Processor p(1, 1, false,
@@ -241,8 +241,8 @@ int main() {
                        MULTITHREADING_MODEL::NONE,
                        prog);
 
-        int ciclo_fim = rodarAteOFim(p);
-        check("RAW: terminou", ciclo_fim != -1);
+        int end_cycle = runUntilEnd(p);
+        check("RAW: terminou", end_cycle != -1);
 
         auto tab = p.GetThreadTable(0);
         check("RAW: add issue == 1", tab[0].issue_cycle == 1);
@@ -253,7 +253,7 @@ int main() {
         check("RAW: sub WR == 5",    tab[1].wr_cycle == 5);
     }
 
-    secao("4.2 Disputa estrutural de FU: 2 instruções independentes competindo por 1 única FU");
+    section("4.2 Disputa estrutural de FU: 2 instruções independentes competindo por 1 única FU");
     {
         // Duas instruções add (int_basic_alu) com num_fus default = 1 para int_basic
         std::vector<std::string> prog = {"add r1, r2, r3", "add r4, r5, r6"};
@@ -264,14 +264,14 @@ int main() {
                        MULTITHREADING_MODEL::NONE,
                        prog, {}, num_fus);
 
-        rodarAteOFim(p);
+        runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
 
         check("Disputa FU: add[0] inicia EX no ciclo 2", tab[0].ex_cycles[0] == 2);
         check("Disputa FU: add[1] serializa e inicia EX após a liberação da FU", tab[1].ex_cycles[0] > tab[0].ex_cycles[0]);
     }
 
-    secao("4.3 Conflito Estrutural no CDB/WR: fu.wr restringe escritas simultâneas");
+    section("4.3 Conflito Estrutural no CDB/WR: fu.wr restringe escritas simultâneas");
     {
         // 2 instruções add independentes que terminariam EX no mesmo ciclo
         std::vector<std::string> prog = {"add r1, r2, r3", "add r4, r5, r6"};
@@ -283,7 +283,7 @@ int main() {
                        MULTITHREADING_MODEL::NONE,
                        prog, {}, num_fus);
 
-        rodarAteOFim(p);
+        runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
 
         check("Conflito CDB: Ambos add[0] e add[1] terminam EX no ciclo 2",
@@ -292,7 +292,7 @@ int main() {
                 tab[0].wr_cycle != tab[1].wr_cycle);
     }
 
-    secao("4.4 Esgotamento de RS (Stall no Issue): Faltam slots de Reservation Station");
+    section("4.4 Esgotamento de RS (Stall no Issue): Faltam slots de Reservation Station");
     {
         // Dispatch=2, mas vamos estrangular as RS de int_basic para apenas 1 slot.
         std::vector<std::string> prog = {"add r1, r2, r3", "add r4, r5, r6"};
@@ -304,7 +304,7 @@ int main() {
                        MULTITHREADING_MODEL::NONE,
                        prog, num_rs);
 
-        rodarAteOFim(p);
+        runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
 
         check("Stall RS: add[0] emitido no ciclo 1 (ocupou a única RS)", tab[0].issue_cycle == 1);
@@ -318,7 +318,7 @@ int main() {
     std::cout << "\n";
     print_title("5. BRANCH");
 
-    secao("5.1 BRANCH sem ROB e sem previsor: dispatch para após o bnez");
+    section("5.1 BRANCH sem ROB e sem previsor: dispatch para após o bnez");
     {
         std::vector<std::string> prog = {"bnez r1, fim", "add r2, r3, r4"};
         Processor p(1, 1, false,
@@ -326,7 +326,7 @@ int main() {
                        MULTITHREADING_MODEL::NONE,
                        prog);
 
-        rodarAteOFim(p);
+        runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
 
         check("BRANCH: bnez issue == 1",      tab[0].issue_cycle == 1);
@@ -342,7 +342,7 @@ int main() {
     std::cout << "\n";
     print_title("6. TOMASULO ESPECULATIVO (COM ROB)");
 
-    secao("6.1 Tomasulo Especulativo (com ROB): Thread::Commit() e Branches/Stores ordenados");
+    section("6.1 Tomasulo Especulativo (com ROB): Thread::Commit() e Branches/Stores ordenados");
     {
         std::vector<std::string> prog = {"add r1, r2, r3", "s.d f2, 0(r1)"};
         Processor p(1, 1, false,
@@ -350,8 +350,8 @@ int main() {
                        MULTITHREADING_MODEL::NONE,
                        prog);
 
-        int ciclo_fim = rodarAteOFim(p);
-        check("Tomasulo Especulativo com Store: terminou", ciclo_fim != -1);
+        int end_cycle = runUntilEnd(p);
+        check("Tomasulo Especulativo com Store: terminou", end_cycle != -1);
 
         auto tab = p.GetThreadTable(0);
         check("Especulativo: add commit_cycle válido", tab[0].commit_cycle > 0);
@@ -359,7 +359,7 @@ int main() {
         check("Especulativo: ordem de commit respeitada", tab[1].commit_cycle >= tab[0].commit_cycle);
     }
 
-    secao("6.2 Instrução do tipo STORE (store_with_rob): caminho sem WR normal");
+    section("6.2 Instrução do tipo STORE (store_with_rob): caminho sem WR normal");
     {
         std::vector<std::string> prog = {"add r1, r2, r3", "s.d f2, 0(r1)"};
         Processor p(1, 1, false,
@@ -367,14 +367,14 @@ int main() {
                        MULTITHREADING_MODEL::NONE,
                        prog);
 
-        rodarAteOFim(p);
+        runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
 
         check("Store: WR cycle permanece inalterado (-1) com ROB", tab[1].wr_cycle == -1);
         check("Store: passou pelo commit corretamente", tab[1].commit_cycle > 0);
     }
 
-    secao("6.3 Branch Especulativo (has_predictor=true): Previsor evita stall no Issue");
+    section("6.3 Branch Especulativo (has_predictor=true): Previsor evita stall no Issue");
     {
         // bnez e add podem entrar no ciclo 1 porque dispatch=2 e tem previsor+ROB
         std::vector<std::string> prog = {"bnez r1, fim", "add r2, r3, r4"};
@@ -383,7 +383,7 @@ int main() {
                        MULTITHREADING_MODEL::NONE,
                        prog);
 
-        rodarAteOFim(p);
+        runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
 
         check("Predictor: bnez issue == 1", tab[0].issue_cycle == 1);
@@ -391,6 +391,6 @@ int main() {
     }
 
     std::cout << "\n-----------------------------\n";
-    std::cout << "Resultado: " << passou << " OK, " << falhou << " FALHOU\n";
-    return falhou ? 1 : 0;
+    std::cout << "Resultado: " << passed << " OK, " << failed << " FALHOU\n";
+    return failed ? 1 : 0;
 }

@@ -15,7 +15,7 @@ int main() {
 
     print_title("1. CONSTRUÇÃO E PARSING");
 
-    secao("1.1 Register() — construtor padrão");
+    section("1.1 Register() — construtor padrão");
     {
         Register r;
         check("GetType() == 'Z'",           r.GetType() == 'Z');
@@ -25,7 +25,7 @@ int main() {
         check("GetAllocatedRS() vazio",     r.GetAllocatedRS().empty());
     }
 
-    secao("1.2 Register(char, id) — construtor por classe e id");
+    section("1.2 Register(char, id) — construtor por classe e id");
     {
         Register r('R', 5);
         check("R5: GetType() == 'R'",   r.GetType() == 'R');
@@ -40,12 +40,12 @@ int main() {
         check("R0: GetId() == 0",      r0.GetId() == 0);
 
         // Registrador "vazio" = construtor padrão (sem classe nem id).
-        Register vazio;
-        check("'': GetType() == 'Z'",       vazio.GetType() == 'Z');
-        check("'': GetId() == -1 (sem id)", vazio.GetId() == -1);
+        Register empty_reg;
+        check("'': GetType() == 'Z'",       empty_reg.GetType() == 'Z');
+        check("'': GetId() == -1 (sem id)", empty_reg.GetId() == -1);
     }
 
-    secao("1.3 Register(char, id) — id alto (limite)");
+    section("1.3 Register(char, id) — id alto (limite)");
     {
         Register ok('R', 31);
         check("R31: válido (limite superior)", ok.GetId() == 31);
@@ -54,19 +54,19 @@ int main() {
     /*
     // Teste das flags de segurança do programa (abortam a execução):
 
-    secao("[ABORT] Register('XYZ') — registrador inválido deve abortar");
+    section("[ABORT] Register('XYZ') — registrador inválido deve abortar");
     {
         Register inv("XYZ");
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
     }
 
-    secao("[ABORT] Register('R') — tipo sem id deve abortar");
+    section("[ABORT] Register('R') — tipo sem id deve abortar");
     {
         Register r("R");
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
     }
 
-    secao("[ABORT] Register('R32') — id acima do limite deve abortar");
+    section("[ABORT] Register('R32') — id acima do limite deve abortar");
     {
         Register invalido("R32");
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
@@ -80,7 +80,7 @@ int main() {
     std::cout << "\n";
     print_title("2. ESTADO DE BUSY");
 
-    secao("2.1 ToggleBusy() — alternância");
+    section("2.1 ToggleBusy() — alternância");
     {
         Register r('R', 1);
         check("antes: GetBusy() == false",           r.GetBusy() == false);
@@ -97,7 +97,7 @@ int main() {
     std::cout << "\n";
     print_title("3. ALOCAÇÃO E DESALOCAÇÃO");
 
-    secao("3.1 AllocateRS(rs, start) — primeira alocação");
+    section("3.1 AllocateRS(rs, start) — primeira alocação");
     {
         Register r('F', 4);
         std::string rs1 = "load0";
@@ -126,7 +126,7 @@ int main() {
             r.GetAllocationTimes().size() == 4);
     }
 
-    secao("3.2 DeallocateRS(rs_id, start_cycle, end_cycle) — desalocação simples");
+    section("3.2 DeallocateRS(rs_id, start_cycle, end_cycle) — desalocação simples");
     {
         Register r('R', 2);
         std::string rs = "int_basic0";
@@ -145,7 +145,7 @@ int main() {
             !r.GetAllocatedRS().empty() && r.GetAllocatedRS()[0] == "int_basic0");
     }
 
-    secao("3.3 DeallocateRS() — casos de erro");
+    section("3.3 DeallocateRS() — casos de erro");
     {
         Register r('R', 9);
         r.AllocateRS("x", 1);
@@ -164,7 +164,7 @@ int main() {
     std::cout << "\n";
     print_title("4. CONSULTAS DE DEPENDÊNCIA");
 
-    secao("4.1 GetRSCycleStart(rs_id)");
+    section("4.1 GetRSCycleStart(rs_id)");
     {
         Register r('R', 3);
         r.AllocateRS("load0", 5);
@@ -176,7 +176,7 @@ int main() {
               r.GetRSCycleStart("load0") == -1);
     }
 
-    secao("4.2 IsDependencyResolved(rs_id, start_cycle)");
+    section("4.2 IsDependencyResolved(rs_id, start_cycle)");
     {
         Register r('F', 2);
         r.AllocateRS("mul0", 3);
@@ -196,7 +196,7 @@ int main() {
     std::cout << "\n";
     print_title("5. MÚLTIPLOS PRODUTORES (WAW)");
 
-    secao("5.1 WAW — múltiplos produtores pendentes");
+    section("5.1 WAW — múltiplos produtores pendentes");
     {
         Register r('R', 4);
         r.AllocateRS("add0", 1);
@@ -217,7 +217,7 @@ int main() {
         check("GetCurrentRS() vazio",            r.GetCurrentRS().empty());
     }
 
-    secao("5.2 Mesmo rs_id reutilizado em ciclos diferentes");
+    section("5.2 Mesmo rs_id reutilizado em ciclos diferentes");
     {
         Register r('R', 7);
         r.AllocateRS("loop_rs", 2);
@@ -239,7 +239,7 @@ int main() {
     std::cout << "\n";
     print_title("6. INTEGRAÇÃO");
 
-    secao("6.1 Ciclo completo: aloca -> desaloca -> aloca novamente");
+    section("6.1 Ciclo completo: aloca -> desaloca -> aloca novamente");
     {
         Register f('F', 6);
         std::string rs_a = "load1";
@@ -257,6 +257,6 @@ int main() {
     }
 
     std::cout << "\n-----------------------------\n";
-    std::cout << "Resultado: " << passou << " OK, " << falhou << " FALHOU\n";
-    return falhou ? 1 : 0;
+    std::cout << "Resultado: " << passed << " OK, " << failed << " FALHOU\n";
+    return failed ? 1 : 0;
 }

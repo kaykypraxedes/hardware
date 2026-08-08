@@ -14,9 +14,9 @@ using namespace processor;
 // usa (InstructionFactory::ParseTrace -> shared_ptr), pois o construtor
 // legado "Instruction(posição, string)" não existe mais (D14).
 static std::shared_ptr<Instruction> make_inst(const std::string& line) {
-    std::vector<std::string> linhas{line};
+    std::vector<std::string> lines{line};
     std::vector<std::unique_ptr<Instruction>> parsed =
-        InstructionFactory::ParseTrace(linhas, ARCHITECTURE::SIMPLIFIED);
+        InstructionFactory::ParseTrace(lines, ARCHITECTURE::SIMPLIFIED);
     // A Factory atribui a posição pelo índice da linha (aqui, sempre 0);
     // nenhum teste desta suíte depende da posição.
     return std::shared_ptr<Instruction>(std::move(parsed[0]));
@@ -52,7 +52,7 @@ int main() {
 
     print_title("1. CONSTRUÇÃO E ESTADO INICIAL");
 
-    secao("1.1 ReservationStation() — construtor");
+    section("1.1 ReservationStation() — construtor");
     {
         ReservationStation r("load0");
         check("GetId() == 'load0'",            r.GetId() == "load0");
@@ -72,7 +72,7 @@ int main() {
     std::cout << "\n";
     print_title("2. ISSUE — EMISSÃO NA RS (AddIssue)");
 
-    secao("2.1 AddIssue() — instrução sem dependências (add r3, r1, r2)");
+    section("2.1 AddIssue() — instrução sem dependências (add r3, r1, r2)");
     {
         ReservationStation rs("int0");
         CDB cdb = makeCDB();
@@ -96,7 +96,7 @@ int main() {
             R(cdb, 3).GetCurrentRS() == "int0");
     }
 
-    secao("2.2 AddIssue() — RS ocupada retorna false");
+    section("2.2 AddIssue() — RS ocupada retorna false");
     {
         ReservationStation rs("int0");
         CDB cdb = makeCDB();
@@ -108,7 +108,7 @@ int main() {
         check("AddIssue em RS ocupada retorna false", !dup);
     }
 
-    secao("2.3 AddIssue() — dependência em Qj (mul.d f4, f2, f0 quando f2 pendente)");
+    section("2.3 AddIssue() — dependência em Qj (mul.d f4, f2, f0 quando f2 pendente)");
     {
         ReservationStation rs("fmul0");
         CDB cdb = makeCDB();
@@ -122,7 +122,7 @@ int main() {
         check("CDB.F[4] -> 'fmul0'",         F(cdb, 4).GetCurrentRS() == "fmul0");
     }
 
-    secao("2.4 AddIssue() — 'add r1, r1, r2' sem auto-dependência");
+    section("2.4 AddIssue() — 'add r1, r1, r2' sem auto-dependência");
     {
         ReservationStation rs("int1");
         CDB cdb = makeCDB();
@@ -139,7 +139,7 @@ int main() {
     std::cout << "\n";
     print_title("3. DEPENDÊNCIAS — ENTRADA EM EX (UpdateDependencies)");
 
-    secao("3.1 UpdateDependencies() — instrução pronta (sem Qj/Qk) entra em EX");
+    section("3.1 UpdateDependencies() — instrução pronta (sem Qj/Qk) entra em EX");
     {
         ReservationStation rs("int2");
         CDB cdb = makeCDB();
@@ -147,17 +147,17 @@ int main() {
         auto instr = make_inst("add r3, r1, r2");
         rs.AddIssue(instr, cdb, 1);
 
-        bool iniciou = rs.UpdateDependencies(cdb, fu, 2);
-        check("UpdateDependencies retorna true (pronta)",  iniciou);
+        bool started = rs.UpdateDependencies(cdb, fu, 2);
+        check("UpdateDependencies retorna true (pronta)",  started);
         check("fase == EX após UpdateDependencies",        rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::EX);
         check("GetCountdown() == exLat == 1",              rs.GetCountdown() == 1);
         check("GetFUPosition() >= 0 (FU alocada)",         rs.GetFUPosition() >= 0);
 
-        bool segunda = rs.UpdateDependencies(cdb, fu, 2);
-        check("Segunda chamada retorna false (já em EX)",     !segunda);
+        bool second = rs.UpdateDependencies(cdb, fu, 2);
+        check("Segunda chamada retorna false (já em EX)",     !second);
     }
 
-    secao("3.2 UpdateDependencies() — aguarda Qj ser liberado");
+    section("3.2 UpdateDependencies() — aguarda Qj ser liberado");
     {
         ReservationStation rs("fmul1");
         CDB cdb = makeCDB();
@@ -169,16 +169,16 @@ int main() {
         rs.AddIssue(instr, cdb, 2);
         check("Qj == 'load0' antes de liberar", rs.GetQj() == "load0");
 
-        bool antes = rs.UpdateDependencies(cdb, fu, 3);
-        check("UpdateDependencies retorna false com Qj pendente", !antes);
+        bool before = rs.UpdateDependencies(cdb, fu, 3);
+        check("UpdateDependencies retorna false com Qj pendente", !before);
 
         F(cdb, 2).DeallocateRS("load0", 1, 3);
-        bool depois = rs.UpdateDependencies(cdb, fu, 4);
-        check("UpdateDependencies retorna true após Qj liberado", depois);
+        bool after = rs.UpdateDependencies(cdb, fu, 4);
+        check("UpdateDependencies retorna true após Qj liberado", after);
         check("fase == EX após Qj liberado", rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::EX);
     }
 
-    secao("3.3 STORE com endereço pronto (Qk) mas dado pendente (Qj) entra em EX");
+    section("3.3 STORE com endereço pronto (Qk) mas dado pendente (Qj) entra em EX");
     {
         ReservationStation rs("store1");
         CDB cdb = makeCDB();
@@ -190,21 +190,21 @@ int main() {
         check("Qk vazio (endereço livre)",        rs.GetQk().empty());
         check("Qj == 'fmul2' (dado pendente)",    rs.GetQj() == "fmul2");
 
-        bool entrou_ex = rs.UpdateDependencies(cdb, fu, 3);
-        check("STORE entra em EX mesmo com dado pendente", entrou_ex);
+        bool entered_ex = rs.UpdateDependencies(cdb, fu, 3);
+        check("STORE entra em EX mesmo com dado pendente", entered_ex);
 
         rs.UpdateCountdown(fu, 3);
         check("fase == MEM aguardando dado",      rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM);
 
-        bool bloqueado = rs.UpdateDependencies(cdb, fu, 4);
-        check("MEM bloqueado enquanto Qj não resolve", !bloqueado);
+        bool blocked = rs.UpdateDependencies(cdb, fu, 4);
+        check("MEM bloqueado enquanto Qj não resolve", !blocked);
 
         F(cdb, 8).DeallocateRS("fmul2", 1, 5);
         bool mem_ok = rs.UpdateDependencies(cdb, fu, 5);
         check("MEM inicia após dado resolvido",   mem_ok);
     }
 
-    secao("3.4 STORE com endereço pendente (Qk) NÃO entra em EX");
+    section("3.4 STORE com endereço pendente (Qk) NÃO entra em EX");
     {
         ReservationStation rs("store2");
         CDB cdb = makeCDB();
@@ -215,12 +215,12 @@ int main() {
         rs.AddIssue(instr, cdb, 2);
         check("Qk == 'int5' (endereço pendente)", rs.GetQk() == "int5");
 
-        bool bloqueado = rs.UpdateDependencies(cdb, fu, 3);
-        check("STORE não entra em EX com endereço pendente", !bloqueado);
+        bool blocked = rs.UpdateDependencies(cdb, fu, 3);
+        check("STORE não entra em EX com endereço pendente", !blocked);
         check("fase permanece ISSUE",             rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::IS);
     }
 
-    secao("3.5 ResolveDependency() — captura direta de Vj via broadcast simulado");
+    section("3.5 ResolveDependency() — captura direta de Vj via broadcast simulado");
     {
         ReservationStation rs("fmul3");
         CDB cdb = makeCDB();
@@ -245,7 +245,7 @@ int main() {
     /*
     // Teste das flags de segurança do programa (abortam a execução):
 
-    secao("[ABORT] TryAllocateFU com ex_latency == 0 (via SetExLatency)");
+    section("[ABORT] TryAllocateFU com ex_latency == 0 (via SetExLatency)");
     {
         ReservationStation rs("int_abort0");
         CDB cdb = makeCDB();
@@ -257,7 +257,7 @@ int main() {
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
     }
 
-    secao("[ABORT] TryAllocateFU com mem_latency == 0 (LOAD, via SetMemLatency)");
+    section("[ABORT] TryAllocateFU com mem_latency == 0 (LOAD, via SetMemLatency)");
     {
         ReservationStation rs("load_abort0");
         CDB cdb = makeCDB();
@@ -279,7 +279,7 @@ int main() {
     std::cout << "\n";
     print_title("4. CONTAGEM DE CICLOS — PROGRESSÃO DE FASES (UpdateCountdown)");
 
-    secao("4.1 UpdateCountdown() — INT_BASIC (exLat=1): EX -> WR");
+    section("4.1 UpdateCountdown() — INT_BASIC (exLat=1): EX -> WR");
     {
         ReservationStation rs("int3");
         CDB cdb = makeCDB();
@@ -288,13 +288,13 @@ int main() {
         rs.AddIssue(instr, cdb, 1);
         rs.UpdateDependencies(cdb, fu, 2);
 
-        bool terminou = rs.UpdateCountdown(fu, 2);
-        check("UpdateCountdown retorna true (EX terminou)", terminou);
+        bool finished = rs.UpdateCountdown(fu, 2);
+        check("UpdateCountdown retorna true (EX terminou)", finished);
         check("fase == WR após EX de 1 ciclo",              rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR);
         check("GetFUPosition() == -1 (FU liberada)",        rs.GetFUPosition() == -1);
     }
 
-    secao("4.2 UpdateCountdown() — LOAD (EX->MEM->WR)");
+    section("4.2 UpdateCountdown() — LOAD (EX->MEM->WR)");
     {
         ReservationStation rs("load0");
         CDB cdb = makeCDB();
@@ -303,13 +303,13 @@ int main() {
         rs.AddIssue(instr, cdb, 1);
         rs.UpdateDependencies(cdb, fu, 2);
 
-        bool fim_ex = rs.UpdateCountdown(fu, 2);
-        check("LOAD: UpdateCountdown sinaliza fim do EX", fim_ex);
+        bool ex_done = rs.UpdateCountdown(fu, 2);
+        check("LOAD: UpdateCountdown sinaliza fim do EX", ex_done);
         check("LOAD: fase == MEM após EX",                 rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM);
         check("LOAD: countdown == -1 (aguarda iniciar MEM)", rs.GetCountdown() == -1);
 
-        bool iniciou_mem = rs.UpdateDependencies(cdb, fu, 3);
-        check("LOAD: UpdateDependencies inicia MEM no ciclo 3", iniciou_mem);
+        bool started_mem = rs.UpdateDependencies(cdb, fu, 3);
+        check("LOAD: UpdateDependencies inicia MEM no ciclo 3", started_mem);
         check("LOAD: countdown == latMEM == 1 após iniciar MEM", rs.GetCountdown() == 1);
 
         bool mem_end = rs.UpdateCountdown(fu, 3);
@@ -317,7 +317,7 @@ int main() {
         check("LOAD: fase == WR após MEM",                 rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR);
     }
 
-    secao("4.3 UpdateCountdown() — STORE (EX->espera dado->MEM->WR)");
+    section("4.3 UpdateCountdown() — STORE (EX->espera dado->MEM->WR)");
     {
         ReservationStation rs("store0");
         CDB cdb = makeCDB();
@@ -329,8 +329,8 @@ int main() {
         rs.AddIssue(instr, cdb, 2);
         rs.UpdateDependencies(cdb, fu, 3);
 
-        bool fim_ex = rs.UpdateCountdown(fu, 3);
-        check("STORE: fim do EX sinalizado", fim_ex);
+        bool ex_done = rs.UpdateCountdown(fu, 3);
+        check("STORE: fim do EX sinalizado", ex_done);
         check("STORE: countdown == -1 após EX (aguarda dado)", rs.GetCountdown() == -1);
 
         F(cdb, 6).DeallocateRS("float_basico0", 1, 4);
@@ -350,7 +350,7 @@ int main() {
     std::cout << "\n";
     print_title("5. LIBERAÇÃO E REUSO (Release)");
 
-    secao("5.1 Release() — RS de inteiros liberada");
+    section("5.1 Release() — RS de inteiros liberada");
     {
         ReservationStation rs("int4");
         CDB cdb = makeCDB();
@@ -370,7 +370,7 @@ int main() {
         check("GetTimes()[1] == 3 (ciclo de release)",  rs.GetTimes()[1] == 3);
     }
 
-    secao("5.2 Release() após LOAD — caminho de liberação completo e reuso");
+    section("5.2 Release() após LOAD — caminho de liberação completo e reuso");
     {
         ReservationStation rs("load1");
         CDB cdb = makeCDB();
@@ -397,11 +397,11 @@ int main() {
         check("LOAD: GetTimes()[0] == 1 (issue)",    rs.GetTimes()[0] == 1);
         check("LOAD: GetTimes()[1] == 4 (release)",  rs.GetTimes()[1] == 4);
         auto instr2 = make_inst("l.d f6, 0(r3)");
-        bool reuso = rs.AddIssue(instr2, cdb, 5);
-        check("LOAD: RS pode ser reusada após Release",  reuso);
+        bool reuse = rs.AddIssue(instr2, cdb, 5);
+        check("LOAD: RS pode ser reusada após Release",  reuse);
     }
 
-    secao("5.3 Reuso de RS — sem autodependência espúria (regressão do resíduo 'tag == id')");
+    section("5.3 Reuso de RS — sem autodependência espúria (regressão do resíduo 'tag == id')");
     {
         ReservationStation rs("int7");
         CDB cdb = makeCDB();
@@ -426,7 +426,7 @@ int main() {
     std::cout << "\n";
     print_title("6. HAZARDS ESTRUTURAIS — FU");
 
-    secao("6.1 FU esgotada -> AddIssue ok mas UpdateDependencies retorna false");
+    section("6.1 FU esgotada -> AddIssue ok mas UpdateDependencies retorna false");
     {
         FUNCTIONAL_UNITS fu;
         fu.int_basic_alu.push_back(FU{});
@@ -444,13 +444,13 @@ int main() {
         rs1.AddIssue(i1, cdb, 1);
 
         rs0.UpdateDependencies(cdb, fu, 2);
-        bool bloqueado = rs1.UpdateDependencies(cdb, fu, 2);
-        check("Segunda RS bloqueada quando FU esgotada", !bloqueado);
+        bool blocked = rs1.UpdateDependencies(cdb, fu, 2);
+        check("Segunda RS bloqueada quando FU esgotada", !blocked);
         check("rs1 ainda em ISSUE",
               rs1.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::IS);
     }
 
-    secao("6.2 Grupos de FU são independentes — EX (int_basic_alu) vs MEM (memory_access)");
+    section("6.2 Grupos de FU são independentes — EX (int_basic_alu) vs MEM (memory_access)");
     {
         FUNCTIONAL_UNITS fu = makeFU(1); // 1 FU por grupo, mais fácil de saturar
         CDB cdb = makeCDB();
@@ -475,7 +475,7 @@ int main() {
         check("rsB bloqueado no MEM: memory_access já ocupado por rsA", !memB);
     }
 
-    secao("6.3 Roteamento de FU — INT_MUL/INT_DIV usam int_mult_div_alu; int_basic_alu não é afetado");
+    section("6.3 Roteamento de FU — INT_MUL/INT_DIV usam int_mult_div_alu; int_basic_alu não é afetado");
     {
         FUNCTIONAL_UNITS fu = makeFU(1); // 1 FU por grupo, fácil de saturar
         CDB cdb = makeCDB();
@@ -500,7 +500,7 @@ int main() {
         check("INT_BASIC: countdown == exLat == 1", rsAdd.GetCountdown() == 1);
     }
 
-    secao("6.4 Roteamento de FU — FLOAT_BASIC usa float_basic_alu (independente de float_mult_div_alu)");
+    section("6.4 Roteamento de FU — FLOAT_BASIC usa float_basic_alu (independente de float_mult_div_alu)");
     {
         FUNCTIONAL_UNITS fu = makeFU(1);
         CDB cdb = makeCDB();
@@ -525,7 +525,7 @@ int main() {
         check("FLOAT_MUL: countdown == exLat == 14", rsFmul.GetCountdown() == 14);
     }
 
-    secao("6.5 Roteamento de FU — FLOAT_MUL/FLOAT_DIV compartilham float_mult_div_alu");
+    section("6.5 Roteamento de FU — FLOAT_MUL/FLOAT_DIV compartilham float_mult_div_alu");
     {
         FUNCTIONAL_UNITS fu = makeFU(1);
         CDB cdb = makeCDB();
@@ -551,6 +551,6 @@ int main() {
     }
 
     std::cout << "\n-----------------------------\n";
-    std::cout << "Resultado: " << passou << " OK, " << falhou << " FALHOU\n";
-    return falhou ? 1 : 0;
+    std::cout << "Resultado: " << passed << " OK, " << failed << " FALHOU\n";
+    return failed ? 1 : 0;
 }

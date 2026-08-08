@@ -13,12 +13,12 @@ static const ARCHITECTURE ARCH = ARCHITECTURE::RISC_V;
 // Helper do testbench: monta uma instrução RISC-V em 'position' via InstructionFactory (MESMO caminho que a Thread usa).
 // - As linhas "dummy" anteriores são necessárias porque a Factory atribui a posição pelo índice da linha no arquivo de trace.
 static std::shared_ptr<Instruction> make_inst(const int position, const std::string& line) {
-    std::vector<std::string> linhas;
+    std::vector<std::string> lines;
     for (int p = 0; p < position; p++)
-        linhas.push_back("add x0, x0, x0"); // dummy: apenas ocupa a posição
-    linhas.push_back(line);
+        lines.push_back("add x0, x0, x0"); // dummy: apenas ocupa a posição
+    lines.push_back(line);
     std::vector<std::unique_ptr<Instruction>> parsed =
-        InstructionFactory::ParseTrace(linhas, ARCH);
+        InstructionFactory::ParseTrace(lines, ARCH);
     return std::shared_ptr<Instruction>(std::move(parsed[position]));
 }
 
@@ -30,7 +30,7 @@ int main() {
 
     print_title("1. CONSTRUÇÃO E ESTADO BÁSICO");
 
-    secao("1.1 Instruction() — construtor padrão (via InstructionRiscV, que é concreta)");
+    section("1.1 Instruction() — construtor padrão (via InstructionRiscV, que é concreta)");
     {
         InstructionRiscV i;
         check("GetPosition() == -1",             i.GetPosition() == -1);
@@ -39,14 +39,14 @@ int main() {
         check("GetMemLatency() == 0",             i.GetMemLatency() == 0);
     }
 
-    secao("1.2 InstructionFactory — posição pelo índice da linha e string");
+    section("1.2 InstructionFactory — posição pelo índice da linha e string");
     {
         auto i = make_inst(7, "add x1, x2, x3");
         check("GetPosition() == 7",                              i->GetPosition() == 7);
         check("GetInstructionString() == 'add     x1, x2, x3'",  i->GetInstructionString() == "add     x1, x2, x3");
     }
 
-    secao("1.3 InstructionFactory — arquitetura de trace (RISCV)");
+    section("1.3 InstructionFactory — arquitetura de trace (RISCV)");
     {
         std::vector<std::string> trace = {"add x1, x2, x3", "lw x5, 0(x6)"};
         auto parsed = InstructionFactory::ParseTrace(trace, ARCH);
@@ -60,27 +60,24 @@ int main() {
     /*
     // Teste das flags de segurança do programa (abortam a execução):
 
-    secao("[ABORT] String vazia deve abortar");
+    section("[ABORT] String vazia deve abortar");
     {
         InstructionRiscV i(5);
         i.Parse("");
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
     }
 
-    secao("[ABORT] Instrução desconhecida deve abortar");
+    section("[ABORT] Instrução desconhecida deve abortar");
     {
         InstructionRiscV i(10);
         i.Parse("xpto x1, x2, x3");
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
     }
 
-    secao("[ABORT] Nome ABI (ra/sp/t0) não é suportado — só x0..x31/f0..f31");
+    section("[ABORT] Load/store truncado (sem base) deve abortar");
     {
-        // Diferente do MIPS32 (que tem uma tabela rica de aliases), este
-        // RegisterTable só cadastra nomes numéricos. Um nome ABI como 'ra'
-        // aborta por não ser encontrado.
         InstructionRiscV i(11);
-        i.Parse("jalr ra, x1, 0");
+        i.Parse("lw x5, 4");
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
     }
     */
@@ -92,7 +89,7 @@ int main() {
     std::cout << "\n";
     print_title("2. IDENTIFICAÇÃO DE TIPO — MEMÓRIA E INTEIROS");
 
-    secao("2.1 LOAD (lw)");
+    section("2.1 LOAD (lw)");
     {
         auto i = make_inst(0, "lw x5, 4(x6)");
         check("lw: tipo == LOAD",           i->GetInstructionType() == INSTRUCTION_TYPE::LOAD);
@@ -103,7 +100,7 @@ int main() {
         check("lw: offset '4' não vira fonte", i->GetSourceRegisters().size() == 1);
     }
 
-    secao("2.2 STORE (sw)");
+    section("2.2 STORE (sw)");
     {
         auto i = make_inst(1, "sw x5, 4(x6)");
         check("sw: tipo == STORE",                 i->GetInstructionType() == INSTRUCTION_TYPE::STORE);
@@ -112,7 +109,7 @@ int main() {
         check("sw: source[1] id=6 (x6, base)",     i->GetSourceRegisters()[1].GetId() == 6);
     }
 
-    secao("2.3 INT_BASIC (add, addi)");
+    section("2.3 INT_BASIC (add, addi)");
     {
         auto add = make_inst(2, "add x1, x2, x3");
         check("add: tipo == INT_BASIC",  add->GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC);
@@ -125,7 +122,7 @@ int main() {
         check("addi: source[0] id=1 (x1, reusado)",  addi->GetSourceRegisters()[0].GetId() == 1);
     }
 
-    secao("2.4 INT_MUL e INT_DIV (mul, div)");
+    section("2.4 INT_MUL e INT_DIV (mul, div)");
     {
         auto mul = make_inst(4, "mul x3, x1, x2");
         check("mul: tipo == INT_MUL", mul->GetInstructionType() == INSTRUCTION_TYPE::INT_MUL);
@@ -143,7 +140,7 @@ int main() {
     std::cout << "\n";
     print_title("3. IDENTIFICAÇÃO DE TIPO — BRANCH");
 
-    secao("3.1 beq — dois registradores viram fonte, label não");
+    section("3.1 beq — dois registradores viram fonte, label não");
     {
         auto i = make_inst(0, "beq x1, x2, LOOP");
         check("beq: tipo == BRANCH",  i->GetInstructionType() == INSTRUCTION_TYPE::BRANCH);
@@ -152,20 +149,37 @@ int main() {
         check("beq: label 'LOOP' não vira fonte", i->GetSourceRegisters().size() == 2);
     }
 
-    secao("3.2 [PEGADINHA] jal/jalr — o registrador de destino (rd) é capturado como se fosse fonte");
+    section("3.2 jal/jalr — rd é DESTINO (endereço de retorno), não fonte");
     {
-        // No RISC-V real, jal rd, label ESCREVE em rd (é o registrador de
-        // retorno) — não o lê. Mas o SetAttributes de BRANCH trata qualquer
-        // token "parecido com registrador" genericamente como fonte,
-        // independente da posição, então rd acaba entrando como fonte.
+        // No RISC-V real, jal rd, label ESCREVE em rd (registrador de retorno).
+        // O rd explícito vira destino; sem rd, x1 é o destino implícito.
         auto jal = make_inst(0, "jal x1, LOOP");
-        check("jal: x1 (na verdade o destino/rd) aparece como fonte",
-            jal->GetSourceRegisters().size() == 1 && jal->GetSourceRegisters()[0].GetId() == 1);
+        check("jal x1: dest x1 (id 1)", has_reg(jal->GetDestRegisters(), 'L', 1));
+        check("jal x1: sem fontes (label não é registrador)", jal->GetSourceRegisters().empty());
 
-        auto jalr = make_inst(1, "jalr x1, x2, 0");
-        check("jalr: x1 (rd) e x2 (rs1) ambos viram fonte",
-            jalr->GetSourceRegisters().size() == 2 &&
-            jalr->GetSourceRegisters()[0].GetId() == 1 && jalr->GetSourceRegisters()[1].GetId() == 2);
+        auto jal_impl = make_inst(1, "jal LOOP");
+        check("jal sem rd: dest x1 implícito (id 1)",
+            jal_impl->GetDestRegisters().size() == 1 && jal_impl->GetDestRegisters()[0].GetId() == 1);
+
+        auto jalr = make_inst(2, "jalr x1, x2, 0");
+        check("jalr: dest x1 (rd, id 1)", has_reg(jalr->GetDestRegisters(), 'L', 1));
+        check("jalr: fonte x2 (rs1, id 2)", has_reg(jalr->GetSourceRegisters(), 'L', 2));
+        check("jalr: sem fonte espúria de rd", only_ids(jalr->GetSourceRegisters(), {2}));
+    }
+
+    section("3.3 Pseudo-instruções j e ret");
+    {
+        // j = jal x0, offset: não escreve nem lê registrador.
+        auto j = make_inst(0, "j LOOP");
+        check("j: tipo == BRANCH", j->GetInstructionType() == INSTRUCTION_TYPE::BRANCH);
+        check("j: sem destinos",   j->GetDestRegisters().empty());
+        check("j: sem fontes (label não é registrador)", j->GetSourceRegisters().empty());
+
+        // ret = jalr x0, 0(x1): lê x1 (endereço de retorno).
+        auto ret = make_inst(1, "ret");
+        check("ret: tipo == BRANCH", ret->GetInstructionType() == INSTRUCTION_TYPE::BRANCH);
+        check("ret: fonte x1 (ra, id 1)", has_reg(ret->GetSourceRegisters(), 'L', 1));
+        check("ret: sem destinos", ret->GetDestRegisters().empty());
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -175,7 +189,7 @@ int main() {
     std::cout << "\n";
     print_title("4. IDENTIFICAÇÃO DE TIPO — PONTO FLUTUANTE");
 
-    secao("4.1 FLOAT_BASIC (fadd.d)");
+    section("4.1 FLOAT_BASIC (fadd.d)");
     {
         auto i = make_inst(4, "fadd.d f1, f2, f3");
         check("fadd.d: tipo == FLOAT_BASIC", i->GetInstructionType() == INSTRUCTION_TYPE::FLOAT_BASIC);
@@ -185,14 +199,14 @@ int main() {
         check("fadd.d: source[1] id=35 (f3)",i->GetSourceRegisters()[1].GetId() == 35);
     }
 
-    secao("4.2 fcvt.w.s — conversão cruzada entre bancos inteiro e float");
+    section("4.2 fcvt.w.s — conversão cruzada entre bancos inteiro e float");
     {
         auto i = make_inst(5, "fcvt.w.s x5, f2");
         check("fcvt.w.s: dest[0] tipo='L' id=5",  i->GetDestRegisters()[0].GetType() == 'L' && i->GetDestRegisters()[0].GetId() == 5);
         check("fcvt.w.s: source[0] tipo='F' id=34", i->GetSourceRegisters()[0].GetType() == 'F' && i->GetSourceRegisters()[0].GetId() == 34);
     }
 
-    secao("4.3 FLOAT_MUL (fmul.s) e FLOAT_DIV (fdiv.s)");
+    section("4.3 FLOAT_MUL (fmul.s) e FLOAT_DIV (fdiv.s)");
     {
         auto mul = make_inst(6, "fmul.s f1, f2, f3");
         check("fmul.s: tipo == FLOAT_MUL", mul->GetInstructionType() == INSTRUCTION_TYPE::FLOAT_MUL);
@@ -210,7 +224,7 @@ int main() {
     std::cout << "\n";
     print_title("5. LATÊNCIAS");
 
-    secao("5.1 base_ex_latencies / base_mem_latencies — tabelas estáticas (compartilhadas)");
+    section("5.1 base_ex_latencies / base_mem_latencies — tabelas estáticas (compartilhadas)");
     {
         check("latEX[NONEXISTENT]=0", Instruction::base_ex_latencies[0]  == 0);
         check("latEX[LOAD]=1",        Instruction::base_ex_latencies[1]  == 1);
@@ -223,7 +237,7 @@ int main() {
         check("latMEM[STORE]=1",      Instruction::base_mem_latencies[1] == 1);
     }
 
-    secao("5.2 SetExLatency / SetMemLatency");
+    section("5.2 SetExLatency / SetMemLatency");
     {
         auto i = make_inst(11, "lw x5, 0(x6)");
         check("antes: exLat == 1",   i->GetExLatency()  == 1);
@@ -241,7 +255,7 @@ int main() {
     std::cout << "\n";
     print_title("6. NORMALIZAÇÃO");
 
-    secao("6.1 NormalizeInstruction — casos variados");
+    section("6.1 NormalizeInstruction — casos variados");
     {
         auto i1 = make_inst(0, "ADD X1, X2, X3"); // Maiúsculo.
         check("uppercase -> lowercase", i1->GetInstructionString() ==      "add     x1, x2, x3");
@@ -254,7 +268,7 @@ int main() {
             i3->GetInstructionString() ==                                 "add     x1, x2, x3");
     }
 
-    secao("6.2 BRANCH — label 'normal' preserva o case");
+    section("6.2 BRANCH — label 'normal' preserva o case");
     {
         auto i1 = make_inst(0, "beq x1, x2, LOOP");
         check("label 'LOOP' se mantém", i1->GetInstructionString() ==      "beq     x1, x2, LOOP");
@@ -267,7 +281,7 @@ int main() {
     std::cout << "\n";
     print_title("7. CASOS ESPECÍFICOS — RISC-V");
 
-    secao("7.1 [PEGADINHA CENTRAL] Label numérico colide SILENCIOSAMENTE com um registrador real");
+    section("7.1 [PEGADINHA CENTRAL] Label numérico colide SILENCIOSAMENTE com um registrador real");
     {
         // 'X5' bate no padrão IsRegister (letra X/F + dígitos) igual a ARM64.
         // A diferença é que aqui a colisão não é só cosmética: 'x5' É um
@@ -283,19 +297,19 @@ int main() {
             i->GetSourceRegisters()[2].GetId() == 5);
     }
 
-    secao("7.2 [PEGADINHA] jal/jalr — rd tratado como fonte, não como destino (revisão)");
+    section("7.2 [PEGADINHA] jal — rd vira destino, e o rd implícito é x1 (revisão)");
     {
-        // Mesmo teste da seção 3.2, reafirmado aqui como pegadinha específica
-        // da arquitetura: JAL semanticamente ESCREVE em rd, mas o parser
-        // genérico de BRANCH não distingue posição de operando.
+        // Mesmo teste da seção 3.2, reafirmado aqui como caso específico da
+        // arquitetura: JAL semanticamente ESCREVE em rd — com rd explícito
+        // ele vira destino; sem rd, x1 é o destino implícito.
         auto jal = make_inst(0, "jal x1, LOOP");
-        check("jal: nenhum destino é registrado (dest_registers vazio)",
-            jal->GetDestRegisters().empty());
-        check("jal: x1 aparece em source_registers em vez de dest_registers",
-            jal->GetSourceRegisters().size() == 1 && jal->GetSourceRegisters()[0].GetId() == 1);
+        check("jal x1: x1 registrado como destino (id 1)",
+            jal->GetDestRegisters().size() == 1 && jal->GetDestRegisters()[0].GetId() == 1);
+        check("jal x1: x1 NÃO aparece em source_registers",
+            jal->GetSourceRegisters().empty());
     }
 
-    secao("7.3 Offsets/imediatos com sinal ou hexadecimal continuam excluídos da fonte");
+    section("7.3 Offsets/imediatos com sinal ou hexadecimal continuam excluídos da fonte");
     {
         auto neg = make_inst(1, "lw x5, -4(x6)");
         check("offset negativo não vira fonte", neg->GetSourceRegisters().size() == 1);
@@ -305,13 +319,48 @@ int main() {
         check("offset hexadecimal não vira fonte", hex->GetSourceRegisters().size() == 1);
     }
 
-    // NOTA: este RegisterTable só cadastra nomes numéricos ('x0'..'x31',
-    // 'f0'..'f31') — diferente do MIPS32, que tem uma tabela rica de aliases
-    // ABI ('$ra', '$sp', '$t0', ...). Usar um nome ABI aqui (ex.: "ra") faz
-    // o LookupRegister abortar o programa (ver bloco [ABORT] comentado
-    // na seção 1).
+    section("7.4 Apelidos ABI mapeados ao registrador físico");
+    {
+        auto add = make_inst(0, "add a0, a1, a2");
+        check("add a0: dest id=10 (x10)", add->GetDestRegisters()[0].GetId() == 10);
+        check("add a1: fonte id=11 (x11)", add->GetSourceRegisters()[0].GetId() == 11);
+        check("add a2: fonte id=12 (x12)", add->GetSourceRegisters()[1].GetId() == 12);
+
+        auto sp = make_inst(1, "addi sp, sp, -16");
+        check("addi sp: dest id=2 (x2)", sp->GetDestRegisters()[0].GetId() == 2);
+        check("addi sp: fonte id=2 (x2)", sp->GetSourceRegisters()[0].GetId() == 2);
+
+        auto lw = make_inst(2, "lw a0, 0(sp)");
+        check("lw a0, 0(sp): dest id=10", lw->GetDestRegisters()[0].GetId() == 10);
+        check("lw a0, 0(sp): fonte id=2 (sp)", lw->GetSourceRegisters()[0].GetId() == 2);
+
+        auto sd = make_inst(3, "sd ra, 8(sp)");
+        check("sd ra: fonte ra (id 1)", has_reg(sd->GetSourceRegisters(), 'L', 1));
+        check("sd ra: fonte sp (id 2)", has_reg(sd->GetSourceRegisters(), 'L', 2));
+    }
+
+    section("7.5 Pseudo-instruções li/mv/nop/call");
+    {
+        auto nop = make_inst(0, "nop");
+        check("nop: tipo == INT_BASIC", nop->GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC);
+        check("nop: sem destinos e sem fontes",
+            nop->GetDestRegisters().empty() && nop->GetSourceRegisters().empty());
+
+        auto li = make_inst(1, "li a0, 5");
+        check("li: dest id=10 (a0)", has_reg(li->GetDestRegisters(), 'L', 10));
+        check("li: sem fontes (imediato não é registrador)", li->GetSourceRegisters().empty());
+
+        auto mv = make_inst(2, "mv a0, a1");
+        check("mv: dest id=10 (a0)", has_reg(mv->GetDestRegisters(), 'L', 10));
+        check("mv: fonte id=11 (a1)", has_reg(mv->GetSourceRegisters(), 'L', 11));
+
+        auto call = make_inst(3, "call FUNC");
+        check("call: tipo == BRANCH", call->GetInstructionType() == INSTRUCTION_TYPE::BRANCH);
+        check("call: dest x1 (ra, id 1)", has_reg(call->GetDestRegisters(), 'L', 1));
+        check("call: sem fontes (label não é registrador)", call->GetSourceRegisters().empty());
+    }
 
     std::cout << "\n-----------------------------\n";
-    std::cout << "Resultado: " << passou << " OK, " << falhou << " FALHOU\n";
-    return falhou ? 1 : 0;
+    std::cout << "Resultado: " << passed << " OK, " << failed << " FALHOU\n";
+    return failed ? 1 : 0;
 }

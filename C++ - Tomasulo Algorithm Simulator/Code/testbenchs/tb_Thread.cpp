@@ -7,9 +7,9 @@
 
 using namespace processor;
 
-static const std::vector<int> NUM_RS_PADRAO    = {5,5,5,4,3,2};
-static const std::vector<int> NUM_FUS_PADRAO   = {1,1,1,1,1,2};
-static const int              LARG_DESP_PADRAO = 1;
+static const std::vector<int> DEFAULT_NUM_RS    = {5,5,5,4,3,2};
+static const std::vector<int> DEFAULT_NUM_FUS   = {1,1,1,1,1,2};
+static const int              DEFAULT_DISPATCH_WIDTH = 1;
 
 int main() {
 
@@ -19,10 +19,10 @@ int main() {
 
     print_title("1. CONSTRUÇÃO E CONFIGURAÇÃO");
 
-    secao("1.1 Thread() — construtor sem ROB");
+    section("1.1 Thread() — construtor sem ROB");
     {
         std::vector<std::string> prog = {"add r1, r2, r3", "sub r4, r1, r5"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
 
         check("GetCurrentInstructionPosition() == 0",      t.GetCurrentInstructionPosition() == 0);
         check("GetTable().size() == 2",                    t.GetTable().size() == 2);
@@ -45,28 +45,28 @@ int main() {
         check("GetFU().commit == 0 (sem ROB, nunca inicializado)", t.GetFU().commit == 0);
     }
 
-    secao("1.2 Thread() — construtor COM ROB");
+    section("1.2 Thread() — construtor COM ROB");
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO, {}, /*dispatch_width=*/3, /*rob_capacity=*/8);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, /*dispatch_width=*/3, /*rob_capacity=*/8);
 
         // Não há getter público de has_rob/rob_capacity — inferimos o efeito via
         // fu.commit (só é setado quando has_rob==true, com valor == dispatch_width).
         check("GetFU().commit == dispatch_width (3) quando há ROB", t.GetFU().commit == 3);
     }
 
-    secao("1.3 IsSwitchCycle() — granulação grossa");
+    section("1.3 IsSwitchCycle() — granulação grossa");
     {
         std::vector<std::string> prog = {"add r1, r2, r3", "sub r4, r1, r5"};
-        std::vector<int> troca = {1};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO, troca);
+        std::vector<int> switch_cycles = {1};
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, switch_cycles);
 
         t.Issue(1);
         check("posição 1 é ciclo de troca", t.IsSwitchCycle());
         check("IsSwitchCycle() consome a marcação (não repete)", !t.IsSwitchCycle());
     }
 
-    secao("1.4 new_latency no construtor");
+    section("1.4 new_latency no construtor");
     {
         std::vector<std::string> prog = {"l.d f2, 0(r1)"};
 
@@ -86,29 +86,29 @@ int main() {
     /*
     // Teste das flags de segurança do programa (abortam a execução):
 
-    secao("[ABORT] Construtor: previsor sem ROB deve abortar");
+    section("[ABORT] Construtor: previsor sem ROB deve abortar");
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
         // has_predictor=true, rob_capacity=0 → combinação inválida, espera abort().
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO, {}, LARG_DESP_PADRAO,
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH,
                  0    // rob_capacity,
                  true // has_predictor);
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
     }
 
-    secao("[ABORT] Construtor: quantidade inválida de valores de RS deve abortar");
+    section("[ABORT] Construtor: quantidade inválida de valores de RS deve abortar");
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
         std::vector<int> rs_errado = {1, 2, 3}; // precisa ter 6 elementos
-        Thread t(prog, {}, rs_errado, NUM_FUS_PADRAO);
+        Thread t(prog, {}, rs_errado, DEFAULT_NUM_FUS);
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
     }
 
-    secao("[ABORT] Construtor: quantidade inválida de valores de FU deve abortar");
+    section("[ABORT] Construtor: quantidade inválida de valores de FU deve abortar");
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
         std::vector<int> fu_errado = {1, 1}; // precisa ter 6 elementos
-        Thread t(prog, {}, NUM_RS_PADRAO, fu_errado);
+        Thread t(prog, {}, DEFAULT_NUM_RS, fu_errado);
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
     }
     */
@@ -120,10 +120,10 @@ int main() {
     std::cout << "\n";
     print_title("2. Issue() ISOLADO");
 
-    secao("2.1 Issue() — emissão simples sem dependência");
+    section("2.1 Issue() — emissão simples sem dependência");
     {
         std::vector<std::string> prog = {"add r3, r1, r2", "sub r5, r3, r4"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
 
         bool ok1 = t.Issue(1);
         check("ciclo 1: Issue retorna true",              ok1);
@@ -139,13 +139,13 @@ int main() {
         check("ciclo 3: retorna false (sem mais instruções)", !ok3);
     }
 
-    secao("2.2 Issue() — RS cheia bloqueia emissão");
+    section("2.2 Issue() — RS cheia bloqueia emissão");
     {
         std::vector<std::string> prog = {
             "l.d f0, 0(r0)", "l.d f1, 0(r1)", "l.d f2, 0(r2)",
             "l.d f3, 0(r3)", "l.d f4, 0(r4)", "l.d f5, 0(r5)"
         };
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
         for (int c = 1; c <= 5; c++)       t.Issue(c);
         check("Posição == 5 após 5 LOADs", t.GetCurrentInstructionPosition() == 5);
         bool cheio =                       t.Issue(6);
@@ -153,10 +153,10 @@ int main() {
         check("Posição não avança",        t.GetCurrentInstructionPosition() == 5);
     }
 
-    secao("2.3 Issue() — ROB cheio bloqueia emissão (rob_capacity pequeno)");
+    section("2.3 Issue() — ROB cheio bloqueia emissão (rob_capacity pequeno)");
     {
         std::vector<std::string> prog = {"add r1,r2,r3", "add r4,r5,r6", "add r7,r8,r9"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO, {}, LARG_DESP_PADRAO, /*rob_capacity=*/2);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/2);
 
         check("1a issue ok",  t.Issue(1));
         check("2a issue ok",  t.Issue(2));
@@ -164,10 +164,10 @@ int main() {
         check("posicao nao avancou (continua em 2)", t.GetCurrentInstructionPosition() == 2);
     }
 
-    secao("2.4 Issue() — BRANCH sem ROB bloqueia a instrução seguinte");
+    section("2.4 Issue() — BRANCH sem ROB bloqueia a instrução seguinte");
     {
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
 
         t.Issue(1); // bnez emitido, unresolved_branch_position = 0
         check("Posição avança para 1 após issue do bnez", t.GetCurrentInstructionPosition() == 1);
@@ -182,10 +182,10 @@ int main() {
     /*
     // Teste das flags de segurança do programa (abortam a execução):
 
-    secao("[ABORT] Issue(): instrução inválida (NONEXISTENT) deve abortar");
+    section("[ABORT] Issue(): instrução inválida (NONEXISTENT) deve abortar");
     {
         std::vector<std::string> prog = {"nop_invalido r1, r2, r3"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
         t.Issue(1);
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
     }
@@ -198,10 +198,10 @@ int main() {
     std::cout << "\n";
     print_title("3. PIPELINE DE UMA INSTRUÇÃO POR VEZ (TRAÇOS COMPLETOS)");
 
-    secao("3.1 add r3,r1,r2 — issue->EX->WR em 3 ciclos");
+    section("3.1 add r3,r1,r2 — issue->EX->WR em 3 ciclos");
     {
         std::vector<std::string> prog = {"add r3, r1, r2"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
 
         t.Issue(1);
         check("ciclo 1: issue registrado", t.GetTable()[0].issue_cycle == 1);
@@ -220,10 +220,10 @@ int main() {
         check("ciclo 3: wr_cycle == 3", t.GetTable()[0].wr_cycle == 3);
     }
 
-    secao("3.2 mul r3,r1,r2 (exLat=4) — multiciclo");
+    section("3.2 mul r3,r1,r2 (exLat=4) — multiciclo");
     {
         std::vector<std::string> prog = {"mul r3, r1, r2"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
 
         t.Issue(1);
         for (int c = 2; c <= 6; c++) {
@@ -239,10 +239,10 @@ int main() {
         check("mul: mem_cycles vazio",           tab[0].mem_cycles.empty());
     }
 
-    secao("3.3 l.d f2,0(r1) — issue->EX->MEM->WR");
+    section("3.3 l.d f2,0(r1) — issue->EX->MEM->WR");
     {
         std::vector<std::string> prog = {"l.d f2, 0(r1)"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
 
         t.Issue(1);
         check("LOAD: issue == 1", t.GetTable()[0].issue_cycle == 1);
@@ -268,10 +268,10 @@ int main() {
         t.ExMem(5);
     }
 
-    secao("3.4 s.d f2,0(r1) SEM ROB — completa igual a um LOAD, mas nunca marca wr_cycle");
+    section("3.4 s.d f2,0(r1) SEM ROB — completa igual a um LOAD, mas nunca marca wr_cycle");
     {
         std::vector<std::string> prog = {"s.d f2, 0(r1)"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO); // sem ROB
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS); // sem ROB
 
         t.Issue(1);
         t.ExMem(2); t.Wr(2); // IS -> EX
@@ -290,11 +290,11 @@ int main() {
         check("STORE: mesmo assim é contado como finalizado", t.ExMem(5));
     }
 
-    secao("3.5 s.d f2,0(r1) COM ROB — RS liberada logo após o EX; latência de MEM simulada no Commit()");
+    section("3.5 s.d f2,0(r1) COM ROB — RS liberada logo após o EX; latência de MEM simulada no Commit()");
     {
         std::vector<std::string> prog = {"s.d f2, 0(r1)"};
         // mem_latency = 3 (via new_latency) para deixar visível a simulação multi-ciclo no Commit().
-        Thread t(prog, {{0, 1, 3}}, NUM_RS_PADRAO, NUM_FUS_PADRAO, {}, LARG_DESP_PADRAO, /*rob_capacity=*/4);
+        Thread t(prog, {{0, 1, 3}}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/4);
 
         t.Issue(1);
         t.ExMem(2); t.Wr(2); // IS -> EX (ex_cycles == [2,2], lat=1)
@@ -321,10 +321,10 @@ int main() {
     std::cout << "\n";
     print_title("4. DEPENDÊNCIAS E HAZARDS");
 
-    secao("4.1 RAW: sub espera add terminar antes de executar");
+    section("4.1 RAW: sub espera add terminar antes de executar");
     {
         std::vector<std::string> prog = {"add r3, r1, r2", "sub r5, r3, r4"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
 
         t.Issue(1);
         t.Issue(2);
@@ -344,15 +344,15 @@ int main() {
         check("RAW: sub ex_cycles[1] == 4 (fim)",              tab[1].ex_cycles.size() == 2 && tab[1].ex_cycles[1] == 4);
         check("RAW: sub WR == 5",                              tab[1].wr_cycle == 5);
 
-        bool tudo_feito = t.ExMem(6);
-        check("RAW: ExMem retorna true após tudo concluído", tudo_feito);
+        bool all_done = t.ExMem(6);
+        check("RAW: ExMem retorna true após tudo concluído", all_done);
     }
 
-    secao("4.2 WAW: duas escritas no mesmo registrador liberam a RS certa (por posição, não por registrador)");
+    section("4.2 WAW: duas escritas no mesmo registrador liberam a RS certa (por posição, não por registrador)");
     {
         // Regressão do bug corrigido: release por posição em vez de por registrador de destino.
         std::vector<std::string> prog = {"add r3, r1, r2", "sub r3, r4, r5"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
 
         t.Issue(1);
         t.Issue(2);
@@ -367,11 +367,11 @@ int main() {
               !t.GetRS().int_basic[0].IsBusy() && !t.GetRS().int_basic[1].IsBusy());
     }
 
-    secao("4.3 Hazard estrutural de FU: 2 muls disputando a única FU int_mult_div_alu");
+    section("4.3 Hazard estrutural de FU: 2 muls disputando a única FU int_mult_div_alu");
     {
-        // NUM_FUS_PADRAO = {1,1,1,1,1,2} → só 1 FU de int_mult_div_alu.
+        // DEFAULT_NUM_FUS = {1,1,1,1,1,2} → só 1 FU de int_mult_div_alu.
         std::vector<std::string> prog = {"mul r1,r2,r3", "mul r4,r5,r6"}; // sem dependência entre si
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
 
         t.Issue(1);
         t.Issue(2);
@@ -385,12 +385,12 @@ int main() {
               tab[1].ex_cycles[0] > tab[0].ex_cycles[1]);
     }
 
-    secao("4.4 Hazard estrutural de porta WR (fu.wr=1): duas add prontas no mesmo ciclo, só 1 escreve por vez");
+    section("4.4 Hazard estrutural de porta WR (fu.wr=1): duas add prontas no mesmo ciclo, só 1 escreve por vez");
     {
         // int_basic_alu=2 (evita disputa de FU na EX) + wr=1 (força disputa só na porta de WR).
         std::vector<int> fus_custom = {1,2,1,1,1,1};
         std::vector<std::string> prog = {"add r1,r2,r3", "add r4,r5,r6"}; // sem dependência entre si
-        Thread t(prog, {}, NUM_RS_PADRAO, fus_custom);
+        Thread t(prog, {}, DEFAULT_NUM_RS, fus_custom);
 
         t.Issue(1);
         t.Issue(2);
@@ -416,49 +416,49 @@ int main() {
 
     // Um ciclo de processador equivale a: ExMem -> Wr -> Commit -> Issue
     // (mesma ordem de Processor::ExecuteCycle()).
-    auto ciclo = [](Thread& t, int c){ t.ExMem(c); t.Wr(c); t.Commit(c); t.Issue(c); };
+    auto cycle = [](Thread& t, int c){ t.ExMem(c); t.Wr(c); t.Commit(c); t.Issue(c); };
 
-    secao("5.1 Branch SEM ROB (lat EX=1): instrução seguinte só começa o EX após o branch");
+    section("5.1 Branch SEM ROB (lat EX=1): instrução seguinte só começa o EX após o branch");
     {
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO); // 1 FU int_basic_alu
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS); // 1 FU int_basic_alu
 
-        ciclo(t, 1); // bnez emitido (unresolved_branch_position = 0)
+        cycle(t, 1); // bnez emitido (unresolved_branch_position = 0)
         check("ciclo 1: bnez emitido", t.GetTable()[0].issue_cycle == 1);
 
-        ciclo(t, 2); // bnez entra em EX (2-2); add emitido, filtrado pelo stall
+        cycle(t, 2); // bnez entra em EX (2-2); add emitido, filtrado pelo stall
         check("ciclo 2: bnez em EX", t.GetTable()[0].ex_cycles.size() >= 1);
         check("ciclo 2: add ainda NÃO entrou em EX", t.GetTable()[1].ex_cycles.empty());
 
-        ciclo(t, 3); // branch terminou o EX no ciclo 2 (lat=1) → add liberado
+        cycle(t, 3); // branch terminou o EX no ciclo 2 (lat=1) → add liberado
         check("ciclo 3: bnez ex == [2,2]", t.GetTable()[0].ex_cycles == std::vector<int>{2,2});
         check("ciclo 3: add entra em EX logo após o branch terminar",
               t.GetTable()[1].ex_cycles.size() >= 1 && t.GetTable()[1].ex_cycles[0] == 3);
     }
 
-    secao("5.2 Branch COM ROB: instrução seguinte NÃO trava (independente de previsor)");
+    section("5.2 Branch COM ROB: instrução seguinte NÃO trava (independente de previsor)");
     {
         // bnez e add disputam a mesma FU int_basic_alu; com o pool padrão (1 FU)
         // o add ficaria preso por hazard estrutural, não por branch stall — usa-se
         // 2 FUs para isolar o comportamento do branch (mesma técnica da seção 4.4).
         std::vector<int> fus_custom = {1, 2, 1, 1, 1, 1};
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
-        Thread t(prog, {}, NUM_RS_PADRAO, fus_custom, {}, LARG_DESP_PADRAO, /*rob_capacity=*/4);
+        Thread t(prog, {}, DEFAULT_NUM_RS, fus_custom, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/4);
 
         // Despacho de largura 2 no ciclo 1 (como Processor::ExecuteIssue faria).
         t.Issue(1); t.Issue(1);
-        ciclo(t, 2); // bnez e add entram em EX juntos (sem stall)
+        cycle(t, 2); // bnez e add entram em EX juntos (sem stall)
         check("com ROB: add entra em EX no mesmo ciclo do branch (sem stall)",
               !t.GetTable()[1].ex_cycles.empty() && t.GetTable()[1].ex_cycles[0] == 2);
     }
 
-    secao("5.3 Commit() de BRANCH sem previsor: serializa 1 por ciclo mesmo com ROB");
+    section("5.3 Commit() de BRANCH sem previsor: serializa 1 por ciclo mesmo com ROB");
     {
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO, {}, LARG_DESP_PADRAO, /*rob_capacity=*/4,
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/4,
                  /*has_predictor=*/false);
 
-        for (int c = 1; c <= 8; c++) ciclo(t, c);
+        for (int c = 1; c <= 8; c++) cycle(t, c);
 
         check("BRANCH commitou", t.GetTable()[0].commit_cycle > 0);
         // Sem previsor, o Commit() dá 'break' logo após commitar o BRANCH — o add só
@@ -467,47 +467,47 @@ int main() {
               t.GetTable()[1].commit_cycle > t.GetTable()[0].commit_cycle);
     }
 
-    secao("5.4 Branch SEM ROB com EX latência 4: add só entra em EX após o branch terminar");
+    section("5.4 Branch SEM ROB com EX latência 4: add só entra em EX após o branch terminar");
     {
         // bnez com exLat=4 (via new_latency). Com 1 FU o add também seria atrasado
         // por hazard estrutural — a flag e a FU agem na mesma direção.
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
-        Thread t(prog, {{0, 4, 0}}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
+        Thread t(prog, {{0, 4, 0}}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
 
         t.Issue(1); t.Issue(1); // despacho largura 2 no ciclo 1
-        ciclo(t, 2);            // bnez entra em EX (2-5); add filtrado pela flag
+        cycle(t, 2);            // bnez entra em EX (2-5); add filtrado pela flag
         check("lat4: bnez entrou em EX no ciclo 2",
               t.GetTable()[0].ex_cycles.size() >= 1 && t.GetTable()[0].ex_cycles[0] == 2);
         check("lat4: add ainda não entrou em EX", t.GetTable()[1].ex_cycles.empty());
 
-        ciclo(t, 3); ciclo(t, 4); ciclo(t, 5); // bnez executa até o ciclo 5
+        cycle(t, 3); cycle(t, 4); cycle(t, 5); // bnez executa até o ciclo 5
         check("lat4: bnez terminou EX no ciclo 5",
               t.GetTable()[0].ex_cycles.size() == 2 && t.GetTable()[0].ex_cycles[1] == 5);
         check("lat4: add continua bloqueado durante o EX do branch", t.GetTable()[1].ex_cycles.empty());
 
-        ciclo(t, 6);
+        cycle(t, 6);
         check("lat4: add entra em EX no ciclo 6 (após o branch terminar)",
               t.GetTable()[1].ex_cycles.size() >= 1 && t.GetTable()[1].ex_cycles[0] == 6);
     }
 
-    secao("5.5 Branch SEM ROB com EX latência 4 e 2 FUs: flag segura até o fim do EX");
+    section("5.5 Branch SEM ROB com EX latência 4 e 2 FUs: flag segura até o fim do EX");
     {
         // Com 2 FUs int_basic_alu não há hazard estrutural mascarando o teste:
         // o add só pode entrar em EX quando a flag for limpa (fim do EX do branch).
         std::vector<int> fus_custom = {1, 2, 1, 1, 1, 1};
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
-        Thread t(prog, {{0, 4, 0}}, NUM_RS_PADRAO, fus_custom);
+        Thread t(prog, {{0, 4, 0}}, DEFAULT_NUM_RS, fus_custom);
 
         t.Issue(1); t.Issue(1); // despacho largura 2 no ciclo 1
-        ciclo(t, 2);             // bnez entra em EX (2-5); add filtrado pela flag
+        cycle(t, 2);             // bnez entra em EX (2-5); add filtrado pela flag
         check("lat4+2FUs: add ainda não entrou em EX", t.GetTable()[1].ex_cycles.empty());
 
-        ciclo(t, 3); ciclo(t, 4); ciclo(t, 5);
+        cycle(t, 3); cycle(t, 4); cycle(t, 5);
         check("lat4+2FUs: bnez terminou EX no ciclo 5",
               t.GetTable()[0].ex_cycles.size() == 2 && t.GetTable()[0].ex_cycles[1] == 5);
         check("lat4+2FUs: add bloqueado mesmo com FU livre (flag)", t.GetTable()[1].ex_cycles.empty());
 
-        ciclo(t, 6);
+        cycle(t, 6);
         check("lat4+2FUs: add entra em EX no ciclo 6",
               t.GetTable()[1].ex_cycles.size() >= 1 && t.GetTable()[1].ex_cycles[0] == 6);
     }
@@ -519,10 +519,10 @@ int main() {
     std::cout << "\n";
     print_title("6. Commit() (tudo com ROB)");
 
-    secao("6.1 Commit() em ordem, respeitando commit_pointer");
+    section("6.1 Commit() em ordem, respeitando commit_pointer");
     {
         std::vector<std::string> prog = {"add r1,r2,r3", "sub r4,r5,r6"}; // independentes
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO, {}, LARG_DESP_PADRAO, /*rob_capacity=*/4);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/4);
 
         t.Issue(1); t.Issue(2);
         for (int c = 2; c <= 5; c++) { t.ExMem(c); t.Wr(c); }
@@ -533,26 +533,26 @@ int main() {
               tab[0].commit_cycle > 0 && tab[0].commit_cycle <= tab[1].commit_cycle);
     }
 
-    secao("6.2 fu.commit limita commits por ciclo");
+    section("6.2 fu.commit limita commits por ciclo");
     {
         std::vector<std::string> prog = {"add r1,r2,r3", "sub r4,r5,r6", "or r7,r8,r9"};
         // dispatch_width = 1 → fu.commit = 1 (só 1 commit por ciclo).
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO, {}, /*dispatch_width=*/1, /*rob_capacity=*/8);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, /*dispatch_width=*/1, /*rob_capacity=*/8);
 
         t.Issue(1); t.Issue(2); t.Issue(3);
         for (int c = 2; c <= 6; c++) { t.ExMem(c); t.Wr(c); }
 
         t.Commit(10);
-        int commitadas_ciclo10 = (t.GetTable()[0].commit_cycle == 10) +
+        int committed_by_cycle10 = (t.GetTable()[0].commit_cycle == 10) +
                                  (t.GetTable()[1].commit_cycle == 10) +
                                  (t.GetTable()[2].commit_cycle == 10);
-        check("fu.commit=1: no máximo 1 instrução commita por ciclo", commitadas_ciclo10 <= 1);
+        check("fu.commit=1: no máximo 1 instrução commita por ciclo", committed_by_cycle10 <= 1);
     }
 
-    secao("6.3 ROB esvaziando libera espaço para novos Issue()");
+    section("6.3 ROB esvaziando libera espaço para novos Issue()");
     {
         std::vector<std::string> prog = {"add r1,r2,r3", "add r4,r5,r6", "add r7,r8,r9"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO, {}, LARG_DESP_PADRAO, /*rob_capacity=*/2);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/2);
 
         t.Issue(1); t.Issue(2);
         check("ROB cheio (cap=2): 3a issue falha", !t.Issue(3));
@@ -570,10 +570,10 @@ int main() {
     std::cout << "\n";
     print_title("7. INTEGRAÇÃO");
 
-    secao("7.1 ExMem() retorna true após todas as instruções finalizadas (sem ROB)");
+    section("7.1 ExMem() retorna true após todas as instruções finalizadas (sem ROB)");
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
 
         check("antes: false com instrução pendente", !t.ExMem(1));
 
@@ -586,16 +586,16 @@ int main() {
         check("chamada extra ainda retorna true", t.ExMem(5));
     }
 
-    secao("7.2 Programa completo COM ROB: issue -> exec -> commit até esvaziar");
+    section("7.2 Programa completo COM ROB: issue -> exec -> commit até esvaziar");
     {
         std::vector<std::string> prog = {"add r1,r2,r3", "sub r4,r1,r5", "mul r6,r4,r1"};
-        Thread t(prog, {}, NUM_RS_PADRAO, NUM_FUS_PADRAO, {}, LARG_DESP_PADRAO, /*rob_capacity=*/8);
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/8);
 
         int cycle = 1;
         while (t.GetCurrentInstructionPosition() < static_cast<int>(t.GetTable().size()))
             if (t.Issue(cycle)) cycle++;
-        int max_ciclos = 50;
-        while (max_ciclos-- > 0) {
+        int max_cycles = 50;
+        while (max_cycles-- > 0) {
             t.ExMem(cycle);
             t.Wr(cycle);
             t.Commit(cycle);
@@ -612,6 +612,6 @@ int main() {
     }
 
     std::cout << "\n-----------------------------\n";
-    std::cout << "Resultado: " << passou << " OK, " << falhou << " FALHOU\n";
-    return falhou ? 1 : 0;
+    std::cout << "Resultado: " << passed << " OK, " << failed << " FALHOU\n";
+    return failed ? 1 : 0;
 }

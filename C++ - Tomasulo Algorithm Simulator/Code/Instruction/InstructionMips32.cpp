@@ -42,34 +42,14 @@ static bool Contains(
     return std::find(vec.begin(), vec.end(), op) != vec.end();
 }
 
-// Verifica se o dado é um registrador ou um dado que não precisa ser armazenado (labels, imediatos, etc.)
-static bool IsRegister(
-    const std::string& token
-){
-    if (token.size() < 2) return false;
-    if (token[0] != '$') return false;
-    return true;
-}
-
-// Monta o CDB com os registradores físicos:
-CDB InstructionMips32::MakeCDB() {
-    // - ids 0-31:  'R'.
-    // - ids 32-63: 'F'.
-    CDB cdb;
-    cdb.registers.resize(64);
-    fillCDB(cdb, 'R', 0,  32); // Faixa de int.
-    fillCDB(cdb, 'F', 32, 32); // Faixa de float.
-    cdb.print_banks = {{'R', 0, 32}, {'F', 32, 32}};
-    return cdb;
-}
-
-// Tabela: (nome, registrador físico).
+// Função de Instruction.h:
+// - Tabela: (nome, registrador físico).
 const std::unordered_map<std::string, Register>& RegisterTable() {
-    // Aliases compartilham o mesmo id:
     // - ids 0-31:  R0..31 ('R').
     // - ids 32-63: F0..31 ('F').
     static std::unordered_map<std::string, Register> t;
 
+    // Como não existem aliases de hardware, todos os registradores recebem a mascara default (0xFF - Integral).
     if (t.empty()){ // Evita refazer os emplaces a cada chamada da função (já que t é static).
 
         // Int (0 - 31):
@@ -107,6 +87,19 @@ const std::unordered_map<std::string, Register>& RegisterTable() {
     return t;
 }
 
+// Monta o CDB com os registradores físicos:
+CDB InstructionMips32::MakeCDB() {
+    // - ids 0-31:  'R'.
+    // - ids 32-63: 'F'.
+    CDB cdb;
+    // Como não existem aliases de hardware, todos os registradores recebem a mascara default (0xFF - Integral).
+    FillCDB(cdb, 'R', 0,  32); // Faixa de int.
+    FillCDB(cdb, 'F', 32, 32); // Faixa de float.
+
+    cdb.print_banks = {{'R', 0, 32}, {'F', 32, 32}};
+    return cdb;
+}
+
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
 InstructionMips32::InstructionMips32(
@@ -136,6 +129,7 @@ bool InstructionMips32::IdentifyType(
 }
 
 // Privado:
+// Separa a instrução nos seus componentes (OpCode + reg/label/imediato ...).
 std::vector<std::string> InstructionMips32::SplitInstruction(
     const std::string& str
 ) const {
@@ -143,6 +137,7 @@ std::vector<std::string> InstructionMips32::SplitInstruction(
     std::string current;
     for (char c : str) {
         if (c == ',' || c == ' ' || c == '(' || c == ')' || c == '\t') {
+            // Ignora os espaços repetidos.
             if (!current.empty()) {
                 tokens.push_back(current);
                 current.clear();
@@ -151,7 +146,8 @@ std::vector<std::string> InstructionMips32::SplitInstruction(
             current += c;
         }
     }
-    // Evita perda de informação do último caracter.
+    // Evita perda de informação do último caracter (quando termina, faz só o piece += c).
+    // - Verifica se está vazio, pois pode ser enviado algo como "add $t0 $t1 $t2 " (espaço no final).
     if (!current.empty()) tokens.push_back(current);
     return tokens;
 }
@@ -163,7 +159,7 @@ void InstructionMips32::NormalizeInstruction(
 ){
     for (size_t i = 0; i < tokens.size(); ++i) {
         // Labels de desvio são case-sensitive: só opcode e registradores viram minúsculo.
-        if (type == INSTRUCTION_TYPE::BRANCH && i > 0 && !IsRegister(tokens[i])) continue;
+        if (type == INSTRUCTION_TYPE::BRANCH && i > 0 && !IsRegister(tokens[i], RegisterTable())) continue;
         for (char& c : tokens[i]) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
 
@@ -171,14 +167,16 @@ void InstructionMips32::NormalizeInstruction(
     while (normalized.length() < biggest_instruction) normalized += ' ';
 
     if (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE) {
+        // Proteção contra linha truncada (ex.: "lw $t0, 4" sem a base).
+        if (tokens.size() < 4) {
+            std::cerr << "[ERRO] Instrução incompleta:\n"  <<
+            "Instrução: "<< tokens[0] << " ...\n";
+            std::abort();
+        }
         normalized += tokens[1] + ", " + tokens[2] + "(" + tokens[3] + ")";
     } else if (type == INSTRUCTION_TYPE::BRANCH) {
-        for (size_t i = 1; i < tokens.size(); ++i) {
-            std::string& token = tokens[i];
-            if (IsRegister(token))
-                for (char& c : token) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            normalized += (i == 1 ? "" : ", ") + token;
-        }
+        for (size_t i = 1; i < tokens.size(); ++i)
+            normalized += (i == 1 ? "" : ", ") + tokens[i];
     } else {
         for (size_t i = 1; i < tokens.size(); ++i)
             normalized += (i == 1 ? "" : ", ") + tokens[i];
@@ -197,19 +195,51 @@ void InstructionMips32::SetAttributes(
     if (type == INSTRUCTION_TYPE::LOAD) {
         dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
         source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
-    } else if (type == INSTRUCTION_TYPE::STORE) {
+    }
+    else if (type == INSTRUCTION_TYPE::STORE) {
         source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
         source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
-    } else if (type == INSTRUCTION_TYPE::BRANCH) {
-        if (tokens.size() > 1 && tokens[1][0] == '$')
-            source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        if (tokens.size() > 2 && tokens[2][0] == '$')
-            source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
-    } else {
+    }
+    else if (type == INSTRUCTION_TYPE::BRANCH) {
+        // jal/bltzal/bgezal escrevem $ra implicitamente (endereço de retorno).
+        if (tokens[0] == "jal" || tokens[0] == "bltzal" || tokens[0] == "bgezal") {
+            dest_registers.push_back(Register('R', 31));
+            // bltzal/bgezal leem o registrador de teste (jal não tem operando registrador).
+            if (tokens[0] != "jal" && tokens.size() > 1 && IsRegister(tokens[1], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+        }
+        else if (tokens[0] == "jalr") {
+            // O número de operandos decide quem é o destino:
+            // - 1 operando ("jalr $rs"): salta para $rs, retorno em $ra;
+            // - 2 operandos ("jalr $rd, $rs"): salta para $rs, retorno em $rd.
+            if (tokens.size() > 1 && IsRegister(tokens[1], RegisterTable())) {
+                if (tokens.size() > 2 && IsRegister(tokens[2], RegisterTable())) {
+                    dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                    source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+                }
+                else {
+                    dest_registers.push_back(Register('R', 31));
+                    source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                }
+            }
+        }
+        else if (tokens[0] == "jr") {
+            if (tokens.size() > 1 && IsRegister(tokens[1], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+        }
+        else {
+            // Demais desvios: operandos registradores viram fonte.
+            if (tokens.size() > 1 && IsRegister(tokens[1], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            if (tokens.size() > 2 && IsRegister(tokens[2], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+        }
+    }
+    else {
         dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        if (tokens.size() > 2 && tokens[2][0] == '$')
+        if (tokens.size() > 2 && IsRegister(tokens[2], RegisterTable()))
             source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
-        if (tokens.size() > 3 && tokens[3][0] == '$')
+        if (tokens.size() > 3 && IsRegister(tokens[3], RegisterTable()))
             source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
     }
 }
