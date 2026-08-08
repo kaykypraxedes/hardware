@@ -1,5 +1,6 @@
 /* Instruction.cpp */
 #include "headers/Instruction.h"
+#include <cctype> // para std::tolower
 
 namespace processor {
 
@@ -48,6 +49,18 @@ Register LookupRegister(
         std::abort();
     }
     return it->second;
+}
+
+// Registrador é qualquer nome que exista na tabela da arquitetura.
+// - Não confunde labels com prefixo de registrador (ex.: "$L2", "X99", "R99")
+// - Só o que a arquitetura realmente conhece vira registrador.
+bool IsRegister(
+    const std::string& token,
+    const std::unordered_map<std::string, Register>& table
+){
+    std::string lower = token;
+    for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return table.count(lower) > 0;
 }
 
 // ─── GETTERS ──────────────────────────────────────────────────────
