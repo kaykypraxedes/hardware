@@ -46,10 +46,10 @@ class Processor {
         PROCESSOR_TYPE GetType() const;
         // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno).
         const Thread& GetThread(
-            int
+            const int
         ) const;
         const std::vector<TABLE_ROW>& GetThreadTable(
-            int
+            const int
         ) const;
 
         // Métodos públicos:

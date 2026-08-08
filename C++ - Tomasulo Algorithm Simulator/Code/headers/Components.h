@@ -16,12 +16,14 @@ class Register {
         Register() = default;
         Register(
             const char,
-            const int
+            const int,
+            const int = 255 // Máscara para identificar sombreamento de registradores (x86 e ARM).
         );
 
         // Getters:
         char GetType() const;
         int  GetId()   const;
+        int  GetMask() const;
         bool GetBusy() const;
         // Não são "const &" pois enviam dados de variáveis locais (apagados ao final da função).
         std::vector<int> GetAllocationTimes() const;
@@ -51,6 +53,7 @@ class Register {
         // Atributos:
         char                     type{'Z'};
         int                      id{-1};
+        int                      mask{255};    // Em binário = 11111111.
         bool                     busy{false};
         std::vector<int>         start_times;
         std::vector<int>         end_times;    // Pares (inicio[n] - fim[n]); fim == -1 enquanto pendente.
@@ -62,15 +65,19 @@ class Register {
 
 // ─── STRUCTS ──────────────────────────────────────────────────────
 struct CDB_BANK {
-    char classe;   // Classe de registrador (B, W, R, L, F, S, V, G).
-    int  base;     // Primeiro id físico da faixa.
-    int  count;    // Quantidade de registradores da faixa.
+    char reg_class; // Classe de registrador (B, W, R, L, F, S, V, G).
+    int  base;      // Primeiro id físico da faixa.
+    int  count;     // Quantidade de registradores da faixa.
 };
+// Um slot um slot por par (id, máscara):
+// - id =      localização física do registrador;
+// - máscara = sub-registrador naquele endereço físico (que pode ou não barrar outros sub-registradores naquele id);
 struct CDB {
-    // Um slot por registrador físico.
-    // - Aliases (RAX/EAX/AX...) compartilham o mesmo id -> mesmo slot.
+    // Em x86 e ARM64, por exemplo, aliases sobrepostos têm slots próprios por variante:
+    // - al (id 0, mask 00000001) - ah (id 0, mask 00000010). A máscara diz qual trecho de bits o registrador cobre.
+    // - Demais arquiteturas: máscara uniforme 11111111 (um slot por id).
     std::vector<Register> registers;
-    // Faixas de impressão na ordem F, R, S, L, V, W, B, G (índice exibido = id - base).
+    // Faixas de impressão definidas por arquitetura (índice exibido = id - base).
     std::vector<CDB_BANK> print_banks;
 };
 struct FU {
@@ -90,7 +97,7 @@ struct FUNCTIONAL_UNITS {
 };
 
 // ─── HELPERS ──────────────────────────────────────────────────────
-// Não são static para não forçar uma reimplementação em cada .cpp
+// Não são static para não forçar uma reimplementação em cada .cpp (são iguais).
 Register& GetReg(
     CDB&,
     const Register&

@@ -47,7 +47,7 @@ class Thread {
 
         // Getters:
         int GetCurrentInstructionPosition() const;
-        // "const &" para evitar cópia (para tipos básicos e enums o ganho é marginal).
+        // "const &" para evitar cópia (para tipos básicos o ganho é marginal).
         const CDB&                    GetCDB()   const;
         const RESERVATION_STATIONS&   GetRS()    const;
         const FUNCTIONAL_UNITS&       GetFU()    const;
@@ -87,7 +87,7 @@ class Thread {
         std::vector<int>         pending_wr_buffer;
         std::vector<int>         switch_cycles;        // Para processadores com granulação grossa.
         std::vector<TABLE_ROW>   instruction_table;
-        std::vector<std::shared_ptr<Instruction>> rob; // guarda ponteiros compartilhados.
+        std::vector<std::shared_ptr<Instruction>> rob; // Guarda ponteiros compartilhados.
 
         // Métodos privados:
         void InitializeComponents(

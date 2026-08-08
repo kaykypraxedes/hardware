@@ -11,12 +11,33 @@
 namespace processor {
 
 // ─── ELEMENTO STATIC ──────────────────────────────────────────────
-// ATENÇÃO: A função deve ser declaradaa em cada uma das subclasses de Instruction (versão própria).
+// ATENÇÃO: A função deve ser declarada em cada uma das subclasses de Instruction (versão própria).
 // - Gera warning (por não ser definido em Instruction.cpp), que é ignorado pela diretiva.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 static const std::unordered_map<std::string, Register>& RegisterTable();
 #pragma GCC diagnostic pop
+
+// ─── HELPERS ──────────────────────────────────────────────────────
+// Não são static para não forçar uma reimplementação em cada .cpp (são iguais).
+void FillCDB(
+    CDB&,
+    const char,
+    const int,
+    const int,
+    const int = 255
+);
+Register LookupRegister(
+    const std::string&,
+    const std::string&,
+    const std::unordered_map<std::string, Register>&
+);
+// Validação de registrador compartilhada por todas as arquiteturas:
+// - Determina a partir da verificação direta do token na RegisterTable() (sem falso positivo).
+bool IsRegister(
+    const std::string&,
+    const std::unordered_map<std::string, Register>&
+);
 
 // ─── ENUMS ────────────────────────────────────────────────────────
 enum class INSTRUCTION_TYPE {
@@ -85,7 +106,7 @@ class Instruction {
         int ex_latency{};
         int mem_latency{};
         INSTRUCTION_TYPE type{INSTRUCTION_TYPE::INVALID};
-        std::vector<Register> dest_registers;   // X86 pode ter múltiplos destinos (como aliases e flags).
+        std::vector<Register> dest_registers;   // X86, ARM, etc. Podem ter múltiplos destinos (como aliases e flags).
         std::vector<Register> source_registers;
 
         // Métodos virtuais (cada arquitetura deve implementar sua versão):
@@ -104,19 +125,6 @@ class Instruction {
         // Método igual para todos.
         void SetLatencies();
 };
-// ─── HELPERS ──────────────────────────────────────────────────────
-// Não são static para não forçar uma reimplementação em cada .cpp
-void fillCDB(
-    CDB&,
-    const char,
-    const int,
-    const int
-);
-Register LookupRegister(
-    const std::string&,
-    const std::string&,
-    const std::unordered_map<std::string, Register>& table
-);
 
 } // namespace processor
 
