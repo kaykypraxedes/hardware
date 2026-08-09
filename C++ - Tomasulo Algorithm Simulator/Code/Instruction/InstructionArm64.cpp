@@ -23,7 +23,7 @@ static const std::vector<std::string> INT_DIV
     {"sdiv", "udiv"};
 
 static const std::vector<std::string> BRANCHES
-    {"b", "b.eq", "b.ne", "bl", "ret", "cbz", "cbnz", "b.lt", "b.gt", "b.le", "b.ge", "b.hs", "b.hi", "b.ls", "b.lo", "tbz", "tbnz", "br"};
+    {"b", "b.eq", "b.ne", "bl", "blr", "ret", "cbz", "cbnz", "b.lt", "b.gt", "b.le", "b.ge", "b.hs", "b.hi", "b.ls", "b.lo", "b.mi", "b.pl", "b.vs", "b.vc", "tbz", "tbnz", "br"};
 
 static const std::vector<std::string> FLOAT_BASIC
     {"fadd", "fsub", "fsqrt", "fcvt", "scvtf", "ucvtf", "fcvtzs", "fcvtzu", "fabs", "fneg", "fmin", "fmax", "fmla", "fcmp"};
@@ -91,6 +91,60 @@ static void PushWithMasked(
     regs.push_back(reg);
     for (const Register& variant : GetMaskedRegisters(reg))
         regs.push_back(variant);
+}
+
+// Interpreta um operando de endereço ("[sp, 16]", "[x1]", "[x1, x2]", "[x1, x2, lsl 3]")
+// e empurra cada registrador encontrado como fonte:
+// - Base ("x1")  -> vira fonte.
+// - Índice ("x2") -> vira fonte, se presente.
+// - Imediato ("16") e mnemônico de shift/extensão ("lsl") -> ignorados (não estão na tabela).
+// - xzr/wzr -> ignorado, mesma lógica de IsZeroRegister.
+// Sem colchetes (defensivo, ARM64 não tem forma reg-reg para LOAD/STORE):
+// - Trata como registrador único, igual aos demais operandos da instrução.
+static void PushAddressSources(
+    std::vector<Register>& sources,
+    const std::string&     token,
+    const std::string&     context
+){
+    std::string name{token};
+    if (name.empty()) return;
+
+    if (name.front() != '[') {
+        if (IsRegister(name, RegisterTable()) && !IsZeroRegister(name))
+            PushWithMasked(sources, LookupRegister(name, context, RegisterTable()));
+        return;
+    }
+
+    // Verifica se a delimitação é válida (o SplitInstruction sempre fecha o colchete
+    // antes de virar token, mas mantém o check por segurança contra entrada malformada).
+    if (name.back() != ']') {
+        std::cerr << "[ERRO] Endereço não fechado por colchetes:\n"  <<
+        "Endereço: "<< token << '\n';
+        std::abort();
+    }
+
+    // Remove os colchetes.
+    name = name.substr(1, name.size() - 2);
+    if (name.empty()) {
+        std::cerr << "[ERRO] Endereço vazio (apenas colchetes enviados)!\n";
+        std::abort();
+    }
+
+    std::string piece;
+    for (char c : name) {
+        if (c == ' ' || c == '\t' || c == ',' || c == '#'){
+            // Ignora espaços repetidos.
+            if (!piece.empty()) {
+                if (IsRegister(piece, RegisterTable()) && !IsZeroRegister(piece))
+                    PushWithMasked(sources, LookupRegister(piece, context, RegisterTable()));
+                piece.clear(); // Limpa a string para comportar mais pieces.
+            }
+        }
+        else piece += c;
+    }
+    // Pega o último piece capturado (quando termina, faz só o piece += c).
+    if (!piece.empty() && IsRegister(piece, RegisterTable()) && !IsZeroRegister(piece))
+        PushWithMasked(sources, LookupRegister(piece, context, RegisterTable()));
 }
 
 // Função de Instruction.h:
@@ -188,9 +242,27 @@ std::vector<std::string> InstructionArm64::SplitInstruction(
 ) const {
     std::vector<std::string> tokens;
     std::string current;
+    bool in_bracket = false;
 
     for (char c : str) {
-        if (c == ',' || c == ' ' || c == '[' || c == ']' || c == '#' || c == '\t') {
+        // Colchetes têm prioridade: tudo entre '[' e ']' vira 1 token só.
+        // (ex.: "[sp, 16]", "[x1, x2, lsl 3]"), igual ao x86.
+        if (c == '[') {
+            in_bracket = true;
+            current += c;
+            continue;
+        }
+        if (c == ']') {
+            current += c;
+            // Fecha o token assim que o colchete termina, pra não colar o '!'
+            // de writeback ("[sp, -16]!") no mesmo token do endereço.
+            tokens.push_back(current);
+            current.clear();
+            in_bracket = false;
+            continue;
+        }
+
+        if ((c == ',' || c == ' ' || c == '#' || c == '\t') && !in_bracket) {
             // Ignora os espaços repetidos.
             if (!current.empty()) {
                 tokens.push_back(current);
@@ -217,11 +289,29 @@ void InstructionArm64::NormalizeInstruction(
         for (char& c : tokens[i]) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
 
+    // Compacta o interior dos colchetes ("[ X1 , #8 ]" -> "[x1, #8]"):
+    // - Remove espaços nas bordas e antes de vírgula; mantém um espaço após a vírgula
+    //   (ex.: "lsl 3" dentro de "[x1, x2, lsl 3]" não é alterado).
+    for (std::string& t : tokens) {
+        if (t.size() >= 2 && t.front() == '[' && t.back() == ']') {
+            std::string interior = t.substr(1, t.size() - 2);
+            std::string compacted;
+            for (size_t k = 0; k < interior.size(); ++k) {
+                if (interior[k] == ' ' &&
+                    (k == 0 || k + 1 == interior.size() || interior[k + 1] == ','))
+                    continue;
+                compacted += interior[k];
+            }
+            t = "[" + compacted + "]";
+        }
+    }
+
     std::string normalized = tokens[0];
     while (normalized.length() < biggest_instruction) normalized += ' ';
 
     for (size_t i = 1; i < tokens.size(); ++i)
-        normalized += (i == 1 ? "" : ", ") + tokens[i];
+        // O '!' de writeback ("[sp, -16]!") cola direto no colchete, sem vírgula antes.
+        normalized += (i == 1 || tokens[i] == "!" ? "" : ", ") + tokens[i];
 
     instruction_string = normalized;
 }
@@ -233,72 +323,209 @@ void InstructionArm64::SetAttributes(
     dest_registers.clear();
     source_registers.clear();
 
-    // Pares load/store ("ldp x29, x30, [sp, 16]" / "stp x29, x30, [sp, -16]!"):
-    // - ldp: destinos = tokens[1] e tokens[2]; fonte = a base (última).
-    // - stp: fontes = dados (tokens[1], tokens[2]) + a base (última).
-    if (tokens[0] == "ldp" || tokens[0] == "stp") {
-        if (type == INSTRUCTION_TYPE::LOAD) {
-            PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            PushWithMasked(dest_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
-        } else { // STORE
-            PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            PushWithMasked(source_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
-        }
-        // Base: primeiro token após o par ("ldp x0, x1, [x2, #8]" -> x2).
-        // - O offset imediato vem depois e não é registrador.
-        if (tokens.size() > 3 && !IsZeroRegister(tokens[3]))
-            PushWithMasked(source_registers, LookupRegister(tokens[3], instruction_string, RegisterTable()));
-    }
-    // Imediatos ("#5", "#0x10") e labels não viram fonte (só registradores).
-    else if (type == INSTRUCTION_TYPE::LOAD) {
-        PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        if (tokens.size() > 2 && !IsZeroRegister(tokens[2]))
-            PushWithMasked(source_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
-    }
-    else if (type == INSTRUCTION_TYPE::STORE) {
-        // Dado primeiro; a base fica por último (o gate de endereço usa Q.back()).
-        if (!IsZeroRegister(tokens[1]))
-            PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        if (tokens.size() > 2 && !IsZeroRegister(tokens[2]))
-            PushWithMasked(source_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
-    }
-    else if (type == INSTRUCTION_TYPE::BRANCH) {
-        // Desvios condicionais (b.eq, b.ne, b.lo, ...) leem CPSR.
-        if (tokens[0].rfind("b.", 0) == 0) {
-            source_registers.push_back(Register('G', 80));
-        }
-        // Operando registrador vira fonte, mas só nos desvios que têm registrador de verdade:
-        // - cbz/cbnz/tbz/tbnz/br/blr.
-        // Em b/bl o alvo é label, que nunca deve virar fonte.
-        // - Evita falso positivo de labels numéricos como "X10".
-        if (tokens[0] == "cbz" || tokens[0] == "cbnz" || tokens[0] == "tbz" || tokens[0] == "tbnz" || tokens[0] == "br" || tokens[0] == "blr") {
-            for (size_t i = 1; i < tokens.size(); ++i)
-                if (IsRegister(tokens[i], RegisterTable()))
+    // Instruções de 5 tokens:
+    if (tokens.size() == 5){
+        // Comparadores com shift/extensão - "cmp x0, x1, lsl #3":
+        // - Fontes  = todo token que for registrador (a partir de tokens[1]);
+        // - Destino = flag "cpsr";
+        if (tokens[0] == "cmp" || tokens[0] == "cmn" || tokens[0] == "tst" || tokens[0] == "fcmp") {
+            for (size_t i{1}; i < tokens.size(); ++i){
+                if (IsRegister(tokens[i], RegisterTable()) && !IsZeroRegister(tokens[i]))
                     PushWithMasked(source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
+            }
+            dest_registers.push_back(Register('G', 80));
+            return;
         }
-        // bl/blr escrevem o link register (x30).
-        if (tokens[0] == "bl" || tokens[0] == "blr") {
-            dest_registers.push_back(Register('L', 30, 0xFF));
+    }
+    // Instruções de 4 tokens:
+    else if (tokens.size() == 4) {
+        if (tokens[0] == "ldp" || tokens[0] == "stp") {
+            // "ldp x29, x30, [sp, #16]":
+            // - Fonte    = tokens[3] (apenas o registrador);
+            // - Destinos = tokens[1] e tokens[2];
+            if (type == INSTRUCTION_TYPE::LOAD) {
+                // Registrador '0' é contabilizado como imediato.
+                if (!IsZeroRegister(tokens[1]))
+                    PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                if (!IsZeroRegister(tokens[2]))
+                    PushWithMasked(dest_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
+                PushAddressSources(source_registers, tokens[3], instruction_string);
+                return;
+            }
+            // "stp x29, x30, [sp, #-16]!":
+            // - Fontes = tokens[1], tokens[2] e tokens[3];
+            // - Sem destino.
+            else if (type == INSTRUCTION_TYPE::STORE){
+                if (!IsZeroRegister(tokens[1]))
+                    PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                if (!IsZeroRegister(tokens[2]))
+                    PushWithMasked(source_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
+                PushAddressSources(source_registers, tokens[3], instruction_string);
+                return;
+            }
         }
-        // ret lê o x30 (endereço de retorno).
-        if (tokens[0] == "ret") {
+        // "tbz x0, #3, LOOP" / "tbnz x0, #3, LOOP":
+        // - Fonte = tokens[1] (só testa o bit, não escreve).
+        // - Sem destino.
+        else if (tokens[0] == "tbz" || tokens[0] == "tbnz") {
+            if (!IsZeroRegister(tokens[1]))
+                PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            return;
+        }
+        // "ldr x0, [x1], #16" (pós-indexado):
+        // - Fonte    = tokens[2] (vira fonte via PushAddressSources);
+        // - Destino  = tokens[1];
+        // - tokens[3] é o deslocamento pós-índice (sempre imediato) — ignorado.
+        else if (type == INSTRUCTION_TYPE::LOAD) {
+            if (!IsZeroRegister(tokens[1]))
+                PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            PushAddressSources(source_registers, tokens[2], instruction_string);
+            return;
+        }
+        // "str x0, [x1], #16" (pós-indexado):
+        // - Fontes = tokens[1] e tokens[2];
+        // - Sem destino.
+        // // - tokens[3] é o deslocamento pós-índice (sempre imediato) — ignorado.
+        else if (type == INSTRUCTION_TYPE::STORE) {
+            if (!IsZeroRegister(tokens[1]))
+                PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            PushAddressSources(source_registers, tokens[2], instruction_string);
+            return;
+        }
+        // Aritmética geral - "add x1, x2, x3" (com ou sem shift/extensão):
+        // - Fontes  = todo token que for registrador (a partir de tokens[2]);
+        // - Destino = tokens[1];
+        else {
+            for (size_t i{2}; i < tokens.size(); ++i){
+                if (IsRegister(tokens[i], RegisterTable()) && !IsZeroRegister(tokens[i]))
+                    PushWithMasked(source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
+            }
+            if (!IsZeroRegister(tokens[1]))
+                PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            // Sufixo 's' (como em "adds") atualiza a flag "cpsr".
+            if (tokens[0].back() == 's')
+                dest_registers.push_back(Register('G', 80));
+            return;
+        }
+    }
+    // Instruções de 3 tokens:
+    else if (tokens.size() == 3) {
+        // "ldr x0, [x1, #8]" (com ou sem deslocamento, o colchete inteiro é 1 token):
+        // - Fonte    = tokens[2].
+        // - Destino  = tokens[1];
+        if (type == INSTRUCTION_TYPE::LOAD) {
+            if (!IsZeroRegister(tokens[1]))
+                PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            PushAddressSources(source_registers, tokens[2], instruction_string);
+            return;
+        }
+        // "str x0, [x1, #8]":
+        // - Fontes = tokens[1] e tokens[2].
+        // - Sem destino.
+        else if (type == INSTRUCTION_TYPE::STORE) {
+            if (!IsZeroRegister(tokens[1]))
+                PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            PushAddressSources(source_registers, tokens[2], instruction_string);
+            return;
+        }
+        // Comparadores - "cmp x0, x1":
+        // - Fontes  = tokens[1] e tokens[2];
+        // - Destino = flag "cpsr";
+        else if (tokens[0] == "cmp" || tokens[0] == "cmn" || tokens[0] == "tst" || tokens[0] == "fcmp") {
+            for (size_t i{1}; i < tokens.size(); ++i){
+                if (IsRegister(tokens[i], RegisterTable()) && !IsZeroRegister(tokens[i]))
+                    PushWithMasked(source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
+            }
+            dest_registers.push_back(Register('G', 80));
+            return;
+        }
+        // "cbz x0, EXIT" / "cbnz x0, EXIT":
+        // - Fonte = tokens[1].
+        // - Sem destino.
+        else if (type == INSTRUCTION_TYPE::BRANCH && (tokens[0] == "cbz" || tokens[0] == "cbnz")) {
+            if (!IsZeroRegister(tokens[1]))
+                PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            return;
+        }
+        // Aritmética de 2 operandos - "fcvtzs w0, d1" / "mov x0, xzr" / "neg x0, x1":
+        // - Fontes  = todo token que for registrador (a partir de tokens[2]);
+        // - Destino = tokens[1];
+        else {
+            for (size_t i{2}; i < tokens.size(); ++i){
+                if (IsRegister(tokens[i], RegisterTable()) && !IsZeroRegister(tokens[i]))
+                    PushWithMasked(source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
+            }
+            if (!IsZeroRegister(tokens[1]))
+                PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            // Sufixo 's' (como em "fcvtzs") atualiza a flag "cpsr".
+            if (tokens[0].back() == 's')
+                dest_registers.push_back(Register('G', 80));
+            return;
+        }
+    }
+    // Instruções de 2 tokens:
+    else if (tokens.size() == 2) {
+        if (type == INSTRUCTION_TYPE::BRANCH) {
+            // "b LOOP": desvio incondicional para label.
+            // - Não lê nem escreve registrador.
+            if (tokens[0] == "b") {
+                return;
+            }
+            // "b.eq LOOP" (e demais condicionais):
+            // - Fonte = flag 'cpsr';
+            // Sem destino.
+            else if (tokens[0].rfind("b.", 0) == 0) {
+                source_registers.push_back(Register('G', 80));
+                return;
+            }
+            // "bl func":
+            // - Destino = link register (x30);
+            // Sem fonte.
+            else if (tokens[0] == "bl") {
+                dest_registers.push_back(Register('L', 30, 0xFF));
+                return;
+            }
+            // "br x0":
+            // - Fonte = tokens[1];
+            // Sem destino.
+            else if (tokens[0] == "br") {
+                if (!IsZeroRegister(tokens[1]))
+                    PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                return;
+            }
+            // "blr x0":
+            // - Fonte   = tokens[1];
+            // - Destino = link register (x30);
+            else if (tokens[0] == "blr") {
+                if (!IsZeroRegister(tokens[1]))
+                    PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                dest_registers.push_back(Register('L', 30, 0xFF));
+                return;
+            }
+            // "ret x5":
+            // - Fonte = tokens[1];
+            // Sem destino.
+            else if (tokens[0] == "ret") {
+                if (!IsZeroRegister(tokens[1]))
+                    PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                return;
+            }
+        }
+    }
+    // Instruções de 1 token:
+    else {
+        // "ret":
+        // - Fonte = link register (x30);
+        // Sem destino.
+        if (type == INSTRUCTION_TYPE::BRANCH && tokens[0] == "ret") {
             source_registers.push_back(Register('L', 30, 0xFF));
+            return;
         }
     }
-    else if (tokens[0] == "cmp" || tokens[0] == "cmn" || tokens[0] == "tst" || tokens[0] == "fcmp") {
-        // Comparadores não escrevem registrador de dados: apenas CPSR.
-        dest_registers.push_back(Register('G', 80));
-        for (size_t i = 1; i < tokens.size(); ++i)
-            if (IsRegister(tokens[i], RegisterTable()))
-                PushWithMasked(source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
-    } else {
-        PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        if (tokens[0].back() == 's')
-            dest_registers.push_back(Register('G', 80)); // ADDS atualiza CPSR.
-        for (size_t i = 2; i < tokens.size(); ++i)
-            if (IsRegister(tokens[i], RegisterTable()))
-                PushWithMasked(source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
-    }
+    // Não atendeu nenhum caso (sem return anterior)
+    std::cerr << "[ERRO] Instrução com sintaxe não suportada:\n"  <<
+    "Instrução: "<< instruction_string << '\n';
+    std::abort();
 }
 
 } // namespace processor
