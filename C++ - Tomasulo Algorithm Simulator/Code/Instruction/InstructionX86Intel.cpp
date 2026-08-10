@@ -142,22 +142,11 @@ static void PushOperandSources(
     std::string name{token};
     if (name.empty()) return;
 
+    // A verificação se a delimitação é válida é realizada em 'ValidateInstruction()'.
     if (name.front() == '[') {
-
-        // Verifica se a delimitação é válida:
-        if(name.back() != ']') {
-            std::cerr << "[ERRO] Endereço não fechado por colchetes:\n"  <<
-            "Endereço: "<< token << '\n';
-            std::abort();
-        }
 
         // Remove os colchetes.
         name = name.substr(1, name.size() - 2);
-
-        if (name.empty()) {
-            std::cerr << "[ERRO] Endereço vazio (apenas colchetes enviados)!\n";
-            std::abort();
-        }
 
         std::string piece;
         for (char c : name) {
@@ -344,6 +333,8 @@ void InstructionX86Intel::NormalizeInstruction(
 }
 
 // Privado:
+// Não foi usado o padrão de número de tokens porque as instruções em sua maioria são polimórficas.
+// - Uma instrução pode ter múltiplos atributos e ser de múltiplos tipos, gerando múltiplos testes para a mesma instrução.
 void InstructionX86Intel::SetAttributes(
     const std::vector<std::string>& tokens
 ){
@@ -517,50 +508,67 @@ void InstructionX86Intel::ValidateInstruction(
 
     const std::string& op = tokens[0];
 
-    // 1. Desvios (BRANCH)
+    // 1. VALIDAÇÃO GLOBAL DE PONTUAÇÃO (Colchetes de Memória)
+    // Garante que nenhum operando possua colchetes abertos e não fechados (ou vazios).
+    for (const auto& token : tokens) {
+        if (token.front() == '[') {
+            if (token.back() != ']') {
+                std::cerr << "[ERRO] Endereço não fechado por colchetes:\n"
+                            << "Instrução: " << instruction_string << '\n';
+                std::abort();
+            }
+            if (token.length() <= 2) {
+                std::cerr << "[ERRO] Endereço vazio (apenas colchetes enviados):\n"
+                            << "Instrução: " << instruction_string << '\n';
+                std::abort();
+            }
+        }
+    }
+
+    // 2. VALIDAÇÃO DE DESVIOS (BRANCH)
     if (type == INSTRUCTION_TYPE::BRANCH) {
-        // 'ret' é a única instrução de desvio esperada com apenas 1 token.
-        // jmp, call, e JCC precisam de pelo menos 2 tokens (opcode + label).
         if (op != "ret" && tokens.size() < 2) {
-            std::cerr <<
-            "[ERRO] Instrução de desvio malformada:\n" <<
-            "Instrução: " << instruction_string << '\n';
+            std::cerr << "[ERRO] Instrução de desvio malformada (requer label ou alvo):\n"
+                        << "Instrução: " << instruction_string << '\n';
             std::abort();
         }
         return;
     }
 
-    // 2. Operações de Memória (LOAD, STORE) e LEA
-    // O 'mov' cairá aqui automaticamente se tiver colchetes (classificado como LOAD ou STORE)[cite: 12].
+    // 3. VALIDAÇÃO DE DESTINOS INVÁLIDOS (Imediato no lugar do Destino)
+    // No x86, o token[1] costuma ser o destino. Ele NUNCA pode ser um número puro (imediato).
+    // Exceções: 'push' (não escreve no token 1) e 'cmp/test' (apenas leem para setar flags).
+    if (tokens.size() > 1 && op != "push" && op != "cmp" && op != "test" &&
+        op != "comiss" && op != "ucomiss") {
+
+        const std::string& dest = tokens[1];
+        // Se o token 1 não for memória (colchete) e não existir na tabela de registradores:
+        if (dest.front() != '[' && !IsRegister(dest, RegisterTable())) {
+            std::cerr << "[ERRO] Destino inválido (Imediato ou label no lugar de Reg/Memória):\n"
+                        << "Instrução: " << instruction_string << '\n';
+            std::abort();
+        }
+    }
+
+    // 4. VALIDAÇÃO DE QUANTIDADE DE TOKENS (Cópia, Memória e Aritmética)
     if (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE || op == "lea") {
         if (tokens.size() < 3) {
-            std::cerr <<
-            "[ERRO] Instrução de memória/endereço requer pelo menos 2 operandos:\n" <<
-            "Instrução: " << instruction_string << '\n';
+            std::cerr << "[ERRO] Instrução de memória/endereço requer pelo menos 2 operandos:\n"
+                        << "Instrução: " << instruction_string << '\n';
             std::abort();
         }
-        return;
     }
-
-    // 3. Caso Específico: MOV (Cópia reg/reg ou reg/imediato)
-    // Se o 'mov' chegou aqui, não é memória. Precisa de no mínimo 3 tokens (ex: mov eax, ebx).
-    if (Contains(MOVS, op)) {
+    else if (Contains(MOVS, op)) {
         if (tokens.size() < 3) {
-            std::cerr <<
-            "[ERRO] Instrução 'mov' malformada (requer destino e fonte):\n" <<
-            "Instrução: " << instruction_string << '\n';
+            std::cerr << "[ERRO] Instrução 'mov' malformada (requer destino e fonte):\n"
+                        << "Instrução: " << instruction_string << '\n';
             std::abort();
         }
-        return;
     }
-
-    // 4. Demais operações (Aritméticas, lógicas, stack, etc.)
-    // push, pop, inc, dec, div, mul aceitam no mínimo 2 tokens[cite: 12].
-    // Operações binárias (add, sub) costumam ter 3, mas a verificação base global é >= 2.
-    if (tokens.size() < 2) {
-        std::cerr <<
-        "[ERRO] Instrução requer pelo menos 1 operando:\n" <<
-        "Instrução: " << instruction_string << '\n';
+    else if (tokens.size() < 2) {
+        // Demais operações exigem ao menos um operando explícito (ex: pop, inc, mul)
+        std::cerr << "[ERRO] Instrução requer pelo menos 1 operando explícito:\n"
+                    << "Instrução: " << instruction_string << '\n';
         std::abort();
     }
 }
