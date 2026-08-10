@@ -12,12 +12,6 @@ static const int biggest_instruction{9};
 static const std::vector<std::string> MOVS // Caso especial, já que pode agir como load, store e aritimético (com reg e com imediato).
     {"mov", "movss", "movsd", "movaps", "movups", "movq", "movd"};
 
-// Opcodes que copiam/convertem sem tocar em EFLAGS:
-// - Não são cópias da família MOV (não viram LOAD/STORE), mas também não
-//   leem o destino antigo nem setam flags (diferente do 'else' genérico).
-static const std::vector<std::string> NO_FLAGS_COPY
-    {"movsx", "movzx", "not", "cvtsi2ss", "cvttss2si"};
-
 static const std::vector<std::string> INT_BASIC
     {"add", "sub", "and", "or", "xor", "inc", "dec", "cmp", "shl", "shr", "not", "neg", "test", "rol", "ror", "sar", "sal", "sbb", "adc", "movsx", "movzx", "lea", "push", "pop"};
 
@@ -42,6 +36,17 @@ static const std::vector<std::string> FLOAT_MUL
 
 static const std::vector<std::string> FLOAT_DIV
     {"divss", "divsd"};
+
+// Helpers dos OpCodes para identificar comportamentos específicos de maneira faciltada:
+
+// - Opcodes de escrita pura: copiam/convertem sem ler o destino antigo.
+static const std::vector<std::string> PURE_WRITE
+    {"movsx", "movzx", "cvtsi2ss", "cvttss2si"};
+
+// - Opcodes que NÃO escrevem no 'eflags' no x86 real (os demais do 'else' genérico setam a flag):
+static const std::vector<std::string> NO_FLAGS_COPY
+    {"movsx", "movzx", "not", "cvtsi2ss", "cvttss2si", "addss", "addsd", "subss", "subsd", "sqrtss", "addps", "subps", "mulps", "divps", "mulss", "mulsd", "divss", "divsd", "pxor", "pand", "por"};
+
 
 // Verifica se o opcode existe (está na tabela).
 static bool Contains(
@@ -347,19 +352,23 @@ void InstructionX86Intel::SetAttributes(
 
     // No x86 Intel, o primeiro operando costuma ser o Destino/Fonte (ex: add eax ebx -> eax = eax + ebx)
     if (type == INSTRUCTION_TYPE::BRANCH) {
-        // Só os desvios condicionais leem 'eflags' (jmp/call/ret não).
+        // "je end" (e demais JCC):
+        // - Fonte   = EFLAGS ('G', 80).
+        // - Sem destino.
         if (Contains(JCC, tokens[0]))
             source_registers.push_back(Register('G', 80));
 
-        // call/ret empurram/tiram o endereço de retorno da pilha: rsp é
-        // lido e reescrito implicitamente (mesmo padrão do push/pop).
+        // "call foo" / "ret":
+        // - Fonte   = rsp implícito ('L', 6).
+        // - Destino = rsp implícito ('L', 6).
         if (tokens[0] == "call" || tokens[0] == "ret") {
             PushWithMasked(dest_registers,   Register('L', 6));
             PushWithMasked(source_registers, Register('L', 6));
         }
 
-        // Desvios indiretos (jmp rax, call [rbx]) têm o operando como fonte.
-        // - Labels não resolvem para registrador: só colchetes ou nomes da tabela.
+        // "jmp rax" / "call [rbx]" (indiretos):
+        // - Fonte = tokens[1], se for colchetes ou registrador (labels não).
+        // - Sem destino.
         if (tokens.size() > 1) {
             std::string op{tokens[1]};
             for (char& c : op) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -367,34 +376,37 @@ void InstructionX86Intel::SetAttributes(
                 PushOperandSources(source_registers, tokens[1], instruction_string);
         }
     }
+    // LOAD - "mov eax, [ebx+4]":
+    // - Fontes   = registradores do endereço (tokens[2]);
+    // - Destino  = tokens[1];
     else if (type == INSTRUCTION_TYPE::LOAD) {
-        // 'mov reg, [mem]'.
-        // - Todos os registradores do endereço viram fonte.
         if (tokens.size() < 3)  {
-            std::cerr << "[ERRO] Instrução incompleta:\n"  <<
+            std::cerr << "[ERRO] Instrução não suportada:\n"  <<
             "Instrução: "<< instruction_string << '\n';
             std::abort();
         }
         PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
         PushOperandSources(source_registers, tokens[2], instruction_string);
     }
+    // STORE - "mov [ebx+4], eax":
+    // - Fontes   = tokens[2] (dado) e registradores do endereço (tokens[1]);
+    // - Sem destino.
     else if (type == INSTRUCTION_TYPE::STORE) {
-        // 'mov [mem], reg'.
-        // - Todos os registradores do endereço viram fonte.
         if (tokens.size() < 3) {
-            std::cerr << "[ERRO] Instrução incompleta:\n"  <<
+            std::cerr << "[ERRO] Instrução não suportada:\n"  <<
             "Instrução: "<< instruction_string << '\n';
             std::abort();
         }
         PushWithMasked(source_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
         PushOperandSources(source_registers, tokens[1], instruction_string);
     }
+    // "cmp eax, ebx" / "test" / "comiss" / "ucomiss":
+    // - Fontes   = tokens[1] (e tokens[2], quando houver), reg ou memória;
+    // - Destino  = EFLAGS ('G', 80).
     else if (tokens[0] == "cmp" || tokens[0] == "test" ||
                tokens[0] == "comiss" || tokens[0] == "ucomiss") {
-        // Comparadores não escrevem no operando 1: apenas setam EFLAGS.
-        // - Todos os operandos viram fontes (registrador ou memória).
         if (tokens.size() < 2) {
-            std::cerr << "[ERRO] Instrução incompleta:\n"  <<
+            std::cerr << "[ERRO] Instrução não suportada:\n"  <<
             "Instrução: "<< instruction_string << '\n';
             std::abort();
         }
@@ -405,12 +417,13 @@ void InstructionX86Intel::SetAttributes(
     }
     else if (tokens[0] == "div" || tokens[0] == "idiv" || tokens[0] == "mul" ||
                (tokens[0] == "imul" && tokens.size() == 2)) {
-        // Forma de 1 operando (única forma de div/idiv/mul; imul de 1 operando também):
-        // - O operando explícito é FONTE (divisor/multiplicador), nunca destino.
-        // - O par implícito eax:edx (ax:dx ou rax:rdx, e só ax em 8 bits) é
-        //   lido (dividendo/produto) e escrito (quociente/resto/produto).
+        // "div ebx" (idiv/mul; imul de 1 operando também):
+        // - Fontes   = tokens[1] (divisor/multiplicador) e o par implícito
+        //              eax:edx (ax:dx ou rax:rdx; só ax em 8 bits);
+        // - Destinos = o par implícito eax:edx (quociente/resto/produto);
+        // - O operando explícito nunca é destino.
         if (tokens.size() < 2) {
-            std::cerr << "[ERRO] Instrução incompleta:\n"  <<
+            std::cerr << "[ERRO] Instrução não suportada:\n"  <<
             "Instrução: "<< instruction_string << '\n';
             std::abort();
         }
@@ -433,18 +446,22 @@ void InstructionX86Intel::SetAttributes(
             PushWithMasked(source_registers, Register(pair_type, 2, pair_mask));
         }
     }
+    // "push ebx":
+    // - Fontes   = tokens[1] (reg/mem/imm) e rsp implícito ('L', 6).
+    // - Destino  = rsp implícito ('L', 6).
+    // "pop ebx":
+    // - Fontes   = rsp implícito ('L', 6) (ou tokens[1], se pop [mem]).
+    // - Destinos = tokens[1] e rsp implícito ('L', 6).
     else if (tokens[0] == "push" || tokens[0] == "pop") {
-        // push/pop usam rsp implicitamente (lido e reescrito) além do operando.
         if (tokens.size() < 2) {
-            std::cerr << "[ERRO] Instrução incompleta:\n"  <<
+            std::cerr <<
+            "[ERRO] Instrução não suportada:\n"  <<
             "Instrução: "<< instruction_string << '\n';
             std::abort();
         }
         if (tokens[0] == "push") {
-            // O operando (reg/mem/imm) é sempre fonte.
             PushOperandSources(source_registers, tokens[1], instruction_string);
         } else if (tokens[1].front() == '[') {
-            // pop [mem] raramente aparece: o endereço é fonte, não destino.
             PushOperandSources(source_registers, tokens[1], instruction_string);
         } else {
             PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
@@ -452,34 +469,99 @@ void InstructionX86Intel::SetAttributes(
         PushWithMasked(dest_registers,   Register('L', 6));
         PushWithMasked(source_registers, Register('L', 6));
     }
+    // "lea eax, [ebx+4]":
+    // - Fontes   = registradores do endereço (tokens[2]);
+    // - Destino  = tokens[1];
+    // - Calcula endereço na ALU (sem memória/EFLAGS).
     else if (tokens[0] == "lea") {
-        // lea computa o endereço na ALU (não acessa memória): sem EFLAGS e
-        // sem ler o destino antigo; os registradores do endereço são fontes.
         if (tokens.size() < 3) {
-            std::cerr << "[ERRO] Instrução incompleta:\n"  <<
+            std::cerr << "[ERRO] Instrução não suportada:\n"  <<
             "Instrução: "<< instruction_string << '\n';
             std::abort();
         }
         PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
         PushOperandSources(source_registers, tokens[2], instruction_string);
     }
+    // Aritmética - "add eax, ebx" (INT e SSE):
+    // - Fontes   = tokens[2] e tokens[1] (RMW, exceto escritas puras);
+    // - Destinos = tokens[1] e EFLAGS ('G', 80) (exceto NO_FLAGS_COPY).
     else {
-        // INT_BASIC / FLOAT_BASIC.
         if (tokens.size() < 2) {
-            std::cerr << "[ERRO] Instrução incompleta:\n"  <<
+            std::cerr << "[ERRO] Instrução não suportada:\n"  <<
             "Instrução: "<< instruction_string << '\n';
             std::abort();
         }
         PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        if (!IsMOVCopy(tokens) && !Contains(NO_FLAGS_COPY, tokens[0])) {
+        // RMW: o destino antigo vira fonte (toda aritmética lê o destino, exceto
+        // escritas puras como movsx/cvtsi2ss e cópias MOV).
+        if (!IsMOVCopy(tokens) && !Contains(PURE_WRITE, tokens[0]))
+            PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+        // EFLAGS: destino extra apenas para opcodes que setam flags no x86 real
+        // (SSE/AVX não setam; ver NO_FLAGS_COPY).
+        if (!IsMOVCopy(tokens) && !Contains(NO_FLAGS_COPY, tokens[0]))
             PushWithMasked(dest_registers, Register('G', 80));
-            PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        } else if (tokens[0] == "not") {
-            // 'not' é read-modify-write de 1 operando: lê e reescreve o próprio operando.
-            PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        }
         if (tokens.size() > 2)
             PushOperandSources(source_registers, tokens[2], instruction_string);
+    }
+}
+
+// Verifica se os destinos e fontes correspondem à sintaxe da linguagem.
+// - Aborta em caso contrário, sem possibilidade de escrita incorreta.
+void InstructionX86Intel::ValidateInstruction(
+    const std::vector<std::string>& tokens,
+    const std::vector<int>&         expected_dests,
+    const std::vector<int>&         expected_srcs
+
+){
+    if (tokens.empty()) return;
+
+    const std::string& op = tokens[0];
+
+    // 1. Desvios (BRANCH)
+    if (type == INSTRUCTION_TYPE::BRANCH) {
+        // 'ret' é a única instrução de desvio esperada com apenas 1 token.
+        // jmp, call, e JCC precisam de pelo menos 2 tokens (opcode + label).
+        if (op != "ret" && tokens.size() < 2) {
+            std::cerr <<
+            "[ERRO] Instrução de desvio malformada:\n" <<
+            "Instrução: " << instruction_string << '\n';
+            std::abort();
+        }
+        return;
+    }
+
+    // 2. Operações de Memória (LOAD, STORE) e LEA
+    // O 'mov' cairá aqui automaticamente se tiver colchetes (classificado como LOAD ou STORE)[cite: 12].
+    if (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE || op == "lea") {
+        if (tokens.size() < 3) {
+            std::cerr <<
+            "[ERRO] Instrução de memória/endereço requer pelo menos 2 operandos:\n" <<
+            "Instrução: " << instruction_string << '\n';
+            std::abort();
+        }
+        return;
+    }
+
+    // 3. Caso Específico: MOV (Cópia reg/reg ou reg/imediato)
+    // Se o 'mov' chegou aqui, não é memória. Precisa de no mínimo 3 tokens (ex: mov eax, ebx).
+    if (Contains(MOVS, op)) {
+        if (tokens.size() < 3) {
+            std::cerr <<
+            "[ERRO] Instrução 'mov' malformada (requer destino e fonte):\n" <<
+            "Instrução: " << instruction_string << '\n';
+            std::abort();
+        }
+        return;
+    }
+
+    // 4. Demais operações (Aritméticas, lógicas, stack, etc.)
+    // push, pop, inc, dec, div, mul aceitam no mínimo 2 tokens[cite: 12].
+    // Operações binárias (add, sub) costumam ter 3, mas a verificação base global é >= 2.
+    if (tokens.size() < 2) {
+        std::cerr <<
+        "[ERRO] Instrução requer pelo menos 1 operando:\n" <<
+        "Instrução: " << instruction_string << '\n';
+        std::abort();
     }
 }
 

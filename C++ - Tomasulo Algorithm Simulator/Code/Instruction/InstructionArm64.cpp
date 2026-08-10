@@ -14,7 +14,7 @@ static const std::vector<std::string> STORES
     {"str", "stur", "stp", "strb", "strh", "sturb", "sturh"};
 
 static const std::vector<std::string> INT_BASIC
-    {"add", "adds", "sub", "subs", "and", "orr", "eor", "lsl", "lsr", "mov", "movz", "movk", "movn", "mvn", "bic", "eon", "orn", "cmp", "cmn", "tst", "neg", "adc", "sbc", "asr", "ror"};
+    {"add", "adds", "sub", "subs", "and", "orr", "eor", "lsl", "lsr", "mov", "movz", "movk", "movn", "mvn", "bic", "eon", "orn", "cmp", "cmn", "tst", "neg", "adc", "sbc", "asr", "ror", "nop"};
 
 static const std::vector<std::string> INT_MUL
     {"mul", "smull", "umull", "madd", "msub", "smaddl", "umaddl"};
@@ -40,6 +40,61 @@ static bool Contains(
     const std::string&              op
 ){
     return std::find(vec.begin(), vec.end(), op) != vec.end();
+}
+
+// Helper para identificar as posições nominais dos destinos da instrução.
+// Retorna {-1} caso a instrução não possua um destino nominal entre os tokens.
+static std::vector<int> GetDestines(
+    const std::string& op,
+    const INSTRUCTION_TYPE type
+){
+    // Stores e desvios não possuem token de destino.
+    if (type == INSTRUCTION_TYPE::STORE || type == INSTRUCTION_TYPE::BRANCH) return {-1};
+    // nop (HINT #0) não lê nem escreve registrador.
+    if (op == "nop")                                                          return {-1};
+    // Comparações afetam a flag implícita CPSR, logo não há token nominal de destino.
+    if (op == "cmp" || op == "cmn" || op == "tst" || op == "fcmp")           return {-1};
+    // ldp possui sempre dois destinos.
+    if (op == "ldp")                                                         return {1, 2};
+
+    // Regra geral (LOAD, Aritmética e Float): destino localizado no token 1.
+    return {1};
+}
+
+// Identifica as posições nominais de fontes da instrução.
+// - Retorna {-1} caso a instrução não possua fonte nominal entre os tokens.
+static std::vector<int> GetSources(
+    const std::string& op,
+    const INSTRUCTION_TYPE type,
+    const size_t num_tokens
+){
+    if (type == INSTRUCTION_TYPE::STORE) {
+        if (op == "stp") return {1, 2, 3}; // Ex: stp x0, x1, [sp]
+        return {1, 2};                     // Ex: str x0, [x1]
+    }
+    if (type == INSTRUCTION_TYPE::LOAD) {
+        if (op == "ldp") return {3};       // Ex: ldp x0, x1, [sp]
+        return {2};                        // Ex: ldr x0, [x1]
+    }
+    if (type == INSTRUCTION_TYPE::BRANCH) {
+        // Desvios que requerem leitura nominal de registrador.
+        if (op == "cbz" || op == "cbnz" || op == "tbz" || op == "tbnz" || op == "br" || op == "blr") return {1};
+        if (op == "ret" && num_tokens == 2) return {1}; // ret com argumento
+        // Demais branches não possuem fonte nominal nos tokens (ou usam x30/CPSR implicitamente).
+        return {-1};
+    }
+    if (op == "cmp" || op == "cmn" || op == "tst" || op == "fcmp") {
+        std::vector<int> srcs;
+        for (size_t i = 1; i < num_tokens; ++i) srcs.push_back(static_cast<int>(i));
+        return srcs.empty() ? std::vector<int>{-1} : srcs;
+    }
+    // nop (HINT #0) não lê nem escreve registrador.
+    if (op == "nop") return {-1};
+
+    // Regra geral para Aritmética e Float: o destino é o token 1, as fontes vão do 2 em diante.
+    std::vector<int> srcs;
+    for (size_t i = 2; i < num_tokens; ++i) srcs.push_back(static_cast<int>(i));
+    return srcs.empty() ? std::vector<int>{-1} : srcs;
 }
 
 // xzr/wzr são o zero arquitetural: nunca são sobrescritos.
@@ -76,7 +131,6 @@ static std::vector<Register> GetMaskedRegisters(
     return blocked_regs;
 }
 
-// Privado:
 // Adiciona o registrador e suas variantes mascaradas, sem duplicar slots:
 // - ex: mov al, bl -> dests {al, ax, eax, rax} (al + os que compartilham hardware).
 static void PushWithMasked(
@@ -93,12 +147,11 @@ static void PushWithMasked(
         regs.push_back(variant);
 }
 
-// Interpreta um operando de endereço ("[sp, 16]", "[x1]", "[x1, x2]", "[x1, x2, lsl 3]")
-// e empurra cada registrador encontrado como fonte:
+// Interpreta um operando de endereço ("[sp, 16]", "[x1]", "[x1, x2]", "[x1, x2, lsl 3]") e empurra cada registrador encontrado como fonte:
 // - Base ("x1")  -> vira fonte.
 // - Índice ("x2") -> vira fonte, se presente.
 // - Imediato ("16") e mnemônico de shift/extensão ("lsl") -> ignorados (não estão na tabela).
-// - xzr/wzr -> ignorado, mesma lógica de IsZeroRegister.
+// - xzr/wzr -> ignorado (IsZeroRegister()).
 // Sem colchetes (defensivo, ARM64 não tem forma reg-reg para LOAD/STORE):
 // - Trata como registrador único, igual aos demais operandos da instrução.
 static void PushAddressSources(
@@ -262,7 +315,7 @@ std::vector<std::string> InstructionArm64::SplitInstruction(
             continue;
         }
 
-        if ((c == ',' || c == ' ' || c == '#' || c == '\t') && !in_bracket) {
+        if ((c == ',' || c == ' ' || c == '\t') && !in_bracket) {
             // Ignora os espaços repetidos.
             if (!current.empty()) {
                 tokens.push_back(current);
@@ -323,6 +376,11 @@ void InstructionArm64::SetAttributes(
     dest_registers.clear();
     source_registers.clear();
 
+    std::vector<int> expected_dests = GetDestines(tokens[0], type);
+    std::vector<int> expected_srcs  = GetSources(tokens[0], type, tokens.size());
+
+    ValidateInstruction(tokens, expected_dests, expected_srcs);
+
     // Instruções de 5 tokens:
     if (tokens.size() == 5){
         // Comparadores com shift/extensão - "cmp x0, x1, lsl #3":
@@ -334,6 +392,30 @@ void InstructionArm64::SetAttributes(
                     PushWithMasked(source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
             }
             dest_registers.push_back(Register('G', 80));
+            return;
+        }
+        // "stp x29, x30, [sp, #-16]!" (writeback pré-indexado):
+        // - Fontes   = tokens[1], tokens[2] e endereço (tokens[3]);
+        // - Sem destino (writeback na base não é modelado, igual ao pós-indexado);
+        // - tokens[4] é o marcador de writeback '!' - ignorado.
+        else if (type == INSTRUCTION_TYPE::STORE && tokens[4] == "!") {
+            if (!IsZeroRegister(tokens[1]))
+                PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            if (!IsZeroRegister(tokens[2]))
+                PushWithMasked(source_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
+            PushAddressSources(source_registers, tokens[3], instruction_string);
+            return;
+        }
+        // "ldp x0, x1, [sp, #16]!" (writeback pré-indexado):
+        // - Fontes   = endereço (tokens[3]);
+        // - Destinos = tokens[1] e tokens[2];
+        // - tokens[4] é o marcador de writeback '!' - ignorado.
+        else if (type == INSTRUCTION_TYPE::LOAD && tokens[4] == "!") {
+            if (!IsZeroRegister(tokens[1]))
+                PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            if (!IsZeroRegister(tokens[2]))
+                PushWithMasked(dest_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
+            PushAddressSources(source_registers, tokens[3], instruction_string);
             return;
         }
     }
@@ -352,9 +434,11 @@ void InstructionArm64::SetAttributes(
                 PushAddressSources(source_registers, tokens[3], instruction_string);
                 return;
             }
-            // "stp x29, x30, [sp, #-16]!":
+            // "stp x29, x30, [sp, #-16]":
             // - Fontes = tokens[1], tokens[2] e tokens[3];
             // - Sem destino.
+            // (A forma com writeback "stp x29, x30, [sp, #-16]!" tem 5 tokens
+            // e é tratada no bloco de 5 tokens.)
             else if (type == INSTRUCTION_TYPE::STORE){
                 if (!IsZeroRegister(tokens[1]))
                     PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
@@ -365,7 +449,7 @@ void InstructionArm64::SetAttributes(
             }
         }
         // "tbz x0, #3, LOOP" / "tbnz x0, #3, LOOP":
-        // - Fonte = tokens[1] (só testa o bit, não escreve).
+        // - Fonte = tokens[1].
         // - Sem destino.
         else if (tokens[0] == "tbz" || tokens[0] == "tbnz") {
             if (!IsZeroRegister(tokens[1]))
@@ -373,9 +457,9 @@ void InstructionArm64::SetAttributes(
             return;
         }
         // "ldr x0, [x1], #16" (pós-indexado):
-        // - Fonte    = tokens[2] (vira fonte via PushAddressSources);
+        // - Fonte    = tokens[2];
         // - Destino  = tokens[1];
-        // - tokens[3] é o deslocamento pós-índice (sempre imediato) — ignorado.
+        // - tokens[3] é o deslocamento pós-índice (sempre imediato) - ignorado.
         else if (type == INSTRUCTION_TYPE::LOAD) {
             if (!IsZeroRegister(tokens[1]))
                 PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
@@ -385,7 +469,7 @@ void InstructionArm64::SetAttributes(
         // "str x0, [x1], #16" (pós-indexado):
         // - Fontes = tokens[1] e tokens[2];
         // - Sem destino.
-        // // - tokens[3] é o deslocamento pós-índice (sempre imediato) — ignorado.
+        // - tokens[3] é o deslocamento pós-índice (sempre imediato) - ignorado.
         else if (type == INSTRUCTION_TYPE::STORE) {
             if (!IsZeroRegister(tokens[1]))
                 PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
@@ -402,8 +486,12 @@ void InstructionArm64::SetAttributes(
             }
             if (!IsZeroRegister(tokens[1]))
                 PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            // Sufixo 's' (como em "adds") atualiza a flag "cpsr".
-            if (tokens[0].back() == 's')
+            // Sufixo 's' (como em "adds") atualiza a flag "cpsr" (apenas aritmética inteira).
+            // - OpCodes FLOAT terminados em 's' (fabs, fcvtzs) não setam flags na ARM64 real.
+            if (tokens[0].back() == 's' &&
+                (type == INSTRUCTION_TYPE::INT_BASIC ||
+                 type == INSTRUCTION_TYPE::INT_MUL ||
+                 type == INSTRUCTION_TYPE::INT_DIV))
                 dest_registers.push_back(Register('G', 80));
             return;
         }
@@ -448,7 +536,7 @@ void InstructionArm64::SetAttributes(
             return;
         }
         // Aritmética de 2 operandos - "fcvtzs w0, d1" / "mov x0, xzr" / "neg x0, x1":
-        // - Fontes  = todo token que for registrador (a partir de tokens[2]);
+        // - Fontes  = todo token que for registrador a partir de tokens[2];
         // - Destino = tokens[1];
         else {
             for (size_t i{2}; i < tokens.size(); ++i){
@@ -457,8 +545,12 @@ void InstructionArm64::SetAttributes(
             }
             if (!IsZeroRegister(tokens[1]))
                 PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            // Sufixo 's' (como em "fcvtzs") atualiza a flag "cpsr".
-            if (tokens[0].back() == 's')
+            // Sufixo 's' (como em "adds") atualiza a flag "cpsr" (apenas aritmética inteira).
+            // - OpCodes FLOAT terminados em 's' (fabs, fcvtzs) não setam flags na ARM64 real.
+            if (tokens[0].back() == 's' &&
+                (type == INSTRUCTION_TYPE::INT_BASIC ||
+                 type == INSTRUCTION_TYPE::INT_MUL ||
+                 type == INSTRUCTION_TYPE::INT_DIV))
                 dest_registers.push_back(Register('G', 80));
             return;
         }
@@ -521,11 +613,79 @@ void InstructionArm64::SetAttributes(
             source_registers.push_back(Register('L', 30, 0xFF));
             return;
         }
+        // "nop":
+        // - Sem fonte.
+        // - Sem destino.
+        else if (tokens[0] == "nop") {
+            return;
+        }
     }
-    // Não atendeu nenhum caso (sem return anterior)
+    // Não atendeu nenhum caso (sem return anterior).
     std::cerr << "[ERRO] Instrução com sintaxe não suportada:\n"  <<
     "Instrução: "<< instruction_string << '\n';
     std::abort();
 }
 
+// Verifica se os destinos e fontes correspondem à sintaxe da linguagem.
+// - Aborta em caso contrário, sem possibilidade de escrita incorreta.
+void InstructionArm64::ValidateInstruction(
+    const std::vector<std::string>& tokens,
+    const std::vector<int>&         expected_dests,
+    const std::vector<int>&         expected_srcs
+
+){
+    // 1. Destinos nominais devem ser invariavelmente registradores.
+    for (int pos : expected_dests) {
+        if (pos != -1 && pos < static_cast<int>(tokens.size())) {
+            // Rejeita imediatos, endereços ou nomenclaturas que não existam na RegisterTable.
+            if (tokens[pos].front() == '#' || tokens[pos].front() == '[' ||
+                (!IsRegister(tokens[pos], RegisterTable()) && !IsZeroRegister(tokens[pos]))) {
+                std::cerr << "[ERRO] Operando inválido no destino. Esperado registrador em: '" << tokens[pos] << "'\n"
+                          << "Instrução: " << instruction_string << '\n';
+                std::abort();
+            }
+        }
+    }
+
+    // 2. Validações restritas por tipo de instrução (Labels, Imediatos, Endereços).
+    if (type == INSTRUCTION_TYPE::BRANCH) {
+        // Em desvios que requerem label, ele deve ser o último token validado.
+        if (tokens[0] == "b" || tokens[0].rfind("b.", 0) == 0 || tokens[0] == "bl" || tokens[0] == "cbz" || tokens[0] == "cbnz" || tokens[0] == "tbz" || tokens[0] == "tbnz") {
+            const std::string& label = tokens.back();
+            if (IsRegister(label, RegisterTable()) || IsZeroRegister(label) || label.front() == '#' || label.front() == '[') {
+                std::cerr << "[ERRO] Esperado LABEL no desvio. Recebido tipo incompatível: '" << label << "'\n"
+                          << "Instrução: " << instruction_string << '\n';
+                std::abort();
+            }
+        }
+        // Fontes nominais de desvio (ex: br x1, cbz x2, Target) devem ser registradores.
+        for (int pos : expected_srcs) {
+            if (pos != -1 && pos < static_cast<int>(tokens.size())) {
+                if (!IsRegister(tokens[pos], RegisterTable()) && !IsZeroRegister(tokens[pos])) {
+                    std::cerr << "[ERRO] Esperado registrador como fonte no branch. Recebido: '" << tokens[pos] << "'\n"
+                              << "Instrução: " << instruction_string << '\n';
+                    std::abort();
+                }
+            }
+        }
+    } else if (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE) {
+        // Uma instrução de Load/Store não aceita um imediato avulso solto como endereço/base.
+        for (int pos : expected_srcs) {
+            if (pos != -1 && pos < static_cast<int>(tokens.size()) && tokens[pos].front() == '#') {
+                std::cerr << "[ERRO] Endereço de memória ou base inválida. Recebido: '" << tokens[pos] << "'\n"
+                          << "Instrução: " << instruction_string << '\n';
+                std::abort();
+            }
+        }
+    } else {
+        // Instruções Aritméticas e Lógicas não aceitam colchetes (endereços de memória) injetados nas fontes.
+        for (int pos : expected_srcs) {
+            if (pos != -1 && pos < static_cast<int>(tokens.size()) && tokens[pos].front() == '[') {
+                std::cerr << "[ERRO] Operando inválido para aritmética (endereço não suportado): '" << tokens[pos] << "'\n"
+                          << "Instrução: " << instruction_string << '\n';
+                std::abort();
+            }
+        }
+    }
+}
 } // namespace processor

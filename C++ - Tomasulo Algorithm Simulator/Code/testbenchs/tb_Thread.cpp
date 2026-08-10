@@ -164,7 +164,7 @@ int main() {
         check("posicao nao avancou (continua em 2)", t.GetCurrentInstructionPosition() == 2);
     }
 
-    section("2.4 Issue() — BRANCH sem ROB bloqueia a instrução seguinte");
+    section("2.4 Issue() — BRANCH sem ROB: emissão liberada, bloqueio ocorre no EX");
     {
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
         Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);

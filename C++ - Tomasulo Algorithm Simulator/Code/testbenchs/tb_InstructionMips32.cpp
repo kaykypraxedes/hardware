@@ -350,10 +350,12 @@ int main() {
 
     section("7.5 Label parecido com nome de registrador (sem '$') NÃO é confundido");
     {
-        // Diferente de ARM64/RISC-V/Simplified (que usam padrão letra+dígito),
-        // o MIPS32 exige o prefixo '$' para reconhecer um registrador — então
-        // um label chamado 't1' (igual ao nome do registrador, só sem o '$')
-        // é tratado com segurança como label.
+        // Diferente de ARM64/RISC-V/Simplified (onde IsRegister é table-based e
+        // case-insensitive), o MIPS32 exige o prefixo '$' na tabela para
+        // reconhecer um registrador — então um label chamado 't1' (igual ao
+        // nome do registrador, só sem o '$') é tratado com segurança como label.
+        // (Nas outras arquiteturas, um label que case com um nome de registrador
+        // real ainda colide — ver seção 7.1 do RISC-V.)
         auto i = make_inst(4, "beqz $a0, t1");
         check("source[0] só $a0",       i->GetSourceRegisters().size() == 1);
         check("source[0] id=4 ($a0)",   i->GetSourceRegisters()[0].GetId() == 4);

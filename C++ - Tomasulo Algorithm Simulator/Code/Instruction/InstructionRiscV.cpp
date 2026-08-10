@@ -178,70 +178,148 @@ void InstructionRiscV::SetAttributes(
     dest_registers.clear();
     source_registers.clear();
 
-    // Imediatos ("8", "0x10") e labels não viram fonte (só registradores).
-    if (type == INSTRUCTION_TYPE::LOAD) {
-        dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        for (size_t i = 2; i < tokens.size(); ++i)
-            if (IsRegister(tokens[i], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
-    }
-    else if (type == INSTRUCTION_TYPE::STORE) {
-        for (size_t i = 1; i < tokens.size(); ++i)
-            if (IsRegister(tokens[i], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
-    }
-    else if (type == INSTRUCTION_TYPE::BRANCH) {
-        if (tokens[0] == "jal") {
-            // jal rd, offset: rd explícito; jal offset: rd = x1 implícito.
-            if (tokens.size() > 1 && IsRegister(tokens[1], RegisterTable()))
-                dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            else
-                dest_registers.push_back(Register('L', 1));
-        }
-        else if (tokens[0] == "jalr") {
-            // jalr rd, offset(rs1): rd explícito; sem rd: x1 implícito.
-            if (tokens.size() > 1 && IsRegister(tokens[1], RegisterTable()))
-                dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            else
-                dest_registers.push_back(Register('L', 1));
+    // Instruções de 4+ tokens:
+    if (tokens.size() > 3) {
+        // "lw x5, 4(x6)":
+        // - Fontes  = qualquer token registrador a partir de tokens[2] (imediato é ignorado).
+        // - Destino = tokens[1];
+        if (type == INSTRUCTION_TYPE::LOAD) {
+            dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             for (size_t i = 2; i < tokens.size(); ++i)
                 if (IsRegister(tokens[i], RegisterTable()))
                     source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
+            return;
         }
-        else if (tokens[0] == "j") {
-            // Pseudo de 'jal x0, offset': não escreve nem lê registrador.
-        }
-        else if (tokens[0] == "ret") {
-            // Pseudo de 'jalr x0, 0(x1)': lê x1 (endereço de retorno).
-            source_registers.push_back(Register('L', 1));
-        }
-        else if (tokens[0] == "call") {
-            // Pseudo de 'auipc ra, hi; jalr ra, lo(ra)': escreve x1; operando é imediato.
-            dest_registers.push_back(Register('L', 1));
-        }
-        else {
-            // beq/bne/blt/bge/bltu/bgeu: operandos registradores viram fonte.
+        // "sw x5, 4(x6)":
+        // - Fontes = qualquer token registrador (dado + base);
+        // Sem destino.
+        else if (type == INSTRUCTION_TYPE::STORE) {
             for (size_t i = 1; i < tokens.size(); ++i)
                 if (IsRegister(tokens[i], RegisterTable()))
                     source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
+            return;
+        }
+        // "jalr x1, 0(x5)" (forma completa: rd, imediato, rs1):
+        // - Fonte   = tokens[3];
+        // - Destino = tokens[1];
+        // - tokens[2] é o deslocamento (sempre imediato) - ignorado.
+        else if (tokens[0] == "jalr") {
+            dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            for (size_t i = 2; i < tokens.size(); ++i)
+                if (IsRegister(tokens[i], RegisterTable()))
+                    source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
+            return;
+        }
+        // "beq x5, x6, LOOP" (e bne/blt/bge/bltu/bgeu):
+        // - Fontes = tokens[1] e tokens[2].
+        // - Sem destino.
+        // - tokens[3] é o deslocamento é sempre o label - ignorado.
+        else if (type == INSTRUCTION_TYPE::BRANCH) {
+            for (size_t i = 1; i < tokens.size(); ++i)
+                if (IsRegister(tokens[i], RegisterTable()))
+                    source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
+            return;
+        }
+        // Aritmética - "add x5, x6, x7" / "addi x5, x6, 10" (e formas com mais fontes, como fmadd.s dest,src,src,src):
+        // - Fontes  = qualquer token registrador a partir de tokens[2].
+        // - Destino = tokens[1];
+        else {
+            dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            for (size_t i = 2; i < tokens.size(); ++i)
+                if (IsRegister(tokens[i], RegisterTable()))
+                    source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
+            return;
         }
     }
-    else if (tokens[0] == "nop" || tokens[0] == "li" || tokens[0] == "mv") {
-        // Pseudo-instruções (expansões de addi):
-        // - nop: addi x0, x0, 0  -> não escreve nem lê registrador.
-        // - li rd, imm: addi rd, x0, imm -> escreve rd (x0 nunca é produtor).
-        // - mv rd, rs:  addi rd, rs, 0   -> escreve rd, lê rs.
-        if (tokens[0] != "nop" && tokens.size() > 1)
+    // Instruções de 3 tokens:
+    else if (tokens.size() > 2) {
+        // "jal x1, func" (rd explícito):
+        // - Destino = tokens[1];
+        // Sem destino.
+        if (tokens[0] == "jal") {
             dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        if (tokens[0] == "mv" && tokens.size() > 2 && IsRegister(tokens[2], RegisterTable()))
-            source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+            return;
+        }
+        // "mv x5, x6" (pseudo de "addi x5, x6, 0"):
+        // - Fonte   = tokens[2];
+        // - Destino = tokens[1];
+        else if (tokens[0] == "mv") {
+            dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            if (IsRegister(tokens[2], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+            return;
+        }
+        // "li x5, 10" / "lui x5, 10" / "auipc x5, 10" (dest + imediato) ou "fsqrt.s f1, f2" / "fabs.s f1, f2" / "fcvt.s.w f1, x2" (dest + fonte única):
+        // - Fonte   = tokens[2], se for registrador (li/lui/auipc não são; fsqrt.s/fabs.s/fneg.s/fcvt.*/fmv.* são).
+        // - Destino = tokens[1];
+        else {
+            dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            if (IsRegister(tokens[2], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+            return;
+        }
     }
+    // Instruções de 2 tokens:
+    else if (tokens.size() > 1) {
+        // "jal func"
+        // - Destino = rd implícito (x1);
+        // Sem fonte;
+        if (tokens[0] == "jal") {
+            dest_registers.push_back(Register('L', 1));
+            return;
+        }
+        // "jalr x5" (pseudo: rd implícito = x1, offset implícito = 0):
+        // - Fonte = tokens[1];
+        // - Destino = x1;
+        else if (tokens[0] == "jalr") {
+            dest_registers.push_back(Register('L', 1));
+            if (IsRegister(tokens[1], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            return;
+        }
+        // "call func":
+        // - Destino = x1 (ra);
+        // Sem fonte
+        else if (tokens[0] == "call") {
+            dest_registers.push_back(Register('L', 1));
+            return;
+        }
+        // "j LOOP":
+        // - Não lê nem escreve registrador.
+        else if (tokens[0] == "j") {
+            return;
+        }
+    }
+    // Instruções de 1 token:
     else {
-        dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        for (size_t i = 2; i < tokens.size(); ++i)
-            if (IsRegister(tokens[i], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
+        // "ret" (pseudo de "jalr x0, 0(x1)"):
+        // - Fonte = x1 (ra);
+        // Sem destino.
+        if (tokens[0] == "ret") {
+            source_registers.push_back(Register('L', 1));
+            return;
+        }
+        // "nop" (pseudo de "addi x0, x0, 0"):
+        // - Não lê nem escreve registrador.
+        else if (tokens[0] == "nop") {
+            return;
+        }
     }
+    // Não atendeu nenhum caso (sem return anterior).
+    std::cerr << "[ERRO] Instrução incompleta:\n"
+    "Instrução: "<< instruction_string << '\n';
+    std::abort();
+}
+
+// Verifica se os destinos e fontes correspondem à sintaxe da linguagem.
+// - Aborta em caso contrário, sem possibilidade de escrita incorreta.
+void InstructionRiscV::ValidateInstruction(
+    const std::vector<std::string>& tokens,
+    const std::vector<int>&         expected_dests,
+    const std::vector<int>&         expected_srcs
+
+){
+
 }
 
 } // namespace processor

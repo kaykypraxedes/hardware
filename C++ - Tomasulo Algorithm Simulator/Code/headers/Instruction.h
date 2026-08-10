@@ -122,6 +122,11 @@ class Instruction {
         virtual void SetAttributes(
             const std::vector<std::string>& tokens
         ) = 0;
+        virtual void ValidateInstruction(
+            const std::vector<std::string>&,
+            const std::vector<int>&,
+            const std::vector<int>&
+        ) = 0;
         // Método igual para todos.
         void SetLatencies();
 };

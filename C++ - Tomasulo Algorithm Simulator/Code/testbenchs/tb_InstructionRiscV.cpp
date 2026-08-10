@@ -281,13 +281,12 @@ int main() {
     std::cout << "\n";
     print_title("7. CASOS ESPECÍFICOS — RISC-V");
 
-    section("7.1 [PEGADINHA CENTRAL] Label numérico colide SILENCIOSAMENTE com um registrador real");
+    section("7.1 Label que colide com registrador real — vira fonte espúria");
     {
-        // 'X5' bate no padrão IsRegister (letra X/F + dígitos) igual a ARM64.
-        // A diferença é que aqui a colisão não é só cosmética: 'x5' É um
-        // registrador válido de verdade (x5), então o LookupRegister não
-        // aborta — ele silenciosamente resolve o "label" para o registrador
-        // físico x5 e o injeta como uma 3ª fonte espúria da instrução.
+        // 'X5' existe na tabela de registradores (IsRegister é table-based e
+        // case-insensitive): a colisão não é só cosmética — 'x5' é registrador
+        // de verdade, então o LookupRegister resolve o "label" para o
+        // registrador físico x5 e o injeta como 3ª fonte espúria do branch.
         auto i = make_inst(0, "beq x1, x2, X5");
         check("normalização corrompe o case do label ('X5' -> 'x5')",
             i->GetInstructionString() == "beq     x1, x2, x5");
@@ -295,9 +294,17 @@ int main() {
             i->GetSourceRegisters().size() == 3);
         check("a 3ª fonte é o registrador x5 (id 5), não um label",
             i->GetSourceRegisters()[2].GetId() == 5);
+
+        // Mesma colisão com nome ABI: 'RA' existe na tabela (ra = x1).
+        auto i2 = make_inst(1, "beq x2, x3, RA");
+        check("label 'RA' vira 'ra' na string normalizada (ra é registrador ABI real)",
+            i2->GetInstructionString() == "beq     x2, x3, ra");
+        check("beq x2, x3, RA: 3 fontes (x2, x3 + ra espúrio)",
+            i2->GetSourceRegisters().size() == 3 &&
+            i2->GetSourceRegisters()[2].GetId() == 1);
     }
 
-    section("7.2 [PEGADINHA] jal — rd vira destino, e o rd implícito é x1 (revisão)");
+    section("7.2 jal — rd vira destino, e o rd implícito é x1");
     {
         // Mesmo teste da seção 3.2, reafirmado aqui como caso específico da
         // arquitetura: JAL semanticamente ESCREVE em rd — com rd explícito

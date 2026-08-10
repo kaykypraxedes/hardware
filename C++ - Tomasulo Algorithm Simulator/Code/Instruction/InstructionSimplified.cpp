@@ -165,28 +165,76 @@ void InstructionSimplified::SetAttributes(
     dest_registers.clear();
     source_registers.clear();
 
-    // Imediatos ("#5", "#0x10") e labels não viram fonte (só registradores).
-    if (type == INSTRUCTION_TYPE::LOAD) {
-        dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
-    }
-    else if (type == INSTRUCTION_TYPE::STORE) {
-        source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
-    }
-    else if (type == INSTRUCTION_TYPE::BRANCH) {
-        if (tokens.size() > 1 && IsRegister(tokens[1], RegisterTable()))
-            source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        if (tokens.size() > 2 && IsRegister(tokens[2], RegisterTable()))
-            source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
-    }
-    else {
-        dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        if (tokens.size() > 2 && IsRegister(tokens[2], RegisterTable()))
-            source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
-        if (tokens.size() > 3 && IsRegister(tokens[3], RegisterTable()))
+    // Instruções de 4+ tokens:
+    if(tokens.size() > 3){
+        // LOAD ("l.d f2, 0(r1)"):
+        // - Fonte   = tokens[3]
+        // - Destino = tokens[1];
+        // - tokens[2] é o deslocamento (sempre imediato) - ignorado.
+        if (type == INSTRUCTION_TYPE::LOAD) {
+            dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
+            return;
+        }
+        // STORE ("s.d f2, 0(r1)"):
+        // - Fontes = tokens[1] e tokens[3];
+        // Sem destino.
+        // - tokens[2] é o deslocamento (sempre imediato) - ignorado.
+        else if (type == INSTRUCTION_TYPE::STORE) {
+            source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
+            return;
+        }
+        // "beq r1, r2, LOOP":
+        // - Fonte = tokens[1] e tokens[2] ;
+        // Sem destino.
+        // - tokens[3] é o sempre o label - ignorado.
+        else if (type == INSTRUCTION_TYPE::BRANCH) {
+            if (IsRegister(tokens[1], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            if (IsRegister(tokens[2], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+            return;
+        }
+        // Aritmética ("add r1, r2, r3"):
+        // Fontes  = Todos os registradores a partir de tokens[2];
+        // Destino = tokens[1];
+        else {
+            dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            if (IsRegister(tokens[2], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+            if (IsRegister(tokens[3], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
+            return;
+        }
     }
+    // Instruções de 2-3 tokens:
+    else if (tokens.size() > 1){
+        // BRANCH ("bnez r3, LOOP" / "j LOOP" / "jr r3"):
+        // - Fonte = tokens[1] (as vezes);
+        // Sem destino.
+        // - tokens[2] (se existe) é o sempre o label - ignorado.
+        if (type == INSTRUCTION_TYPE::BRANCH) {
+            if (tokens.size() > 1 && IsRegister(tokens[1], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            return;
+        }
+    }
+    // Não atendeu nenhum caso (sem return anterior).
+    std::cerr << "[ERRO] Instrução não suportada:\n"
+    "Instrução: "<< instruction_string << '\n';
+    std::abort();
+}
+
+// Verifica se os destinos e fontes correspondem à sintaxe da linguagem.
+// - Aborta em caso contrário, sem possibilidade de escrita incorreta.
+void InstructionSimplified::ValidateInstruction(
+    const std::vector<std::string>& tokens,
+    const std::vector<int>&         expected_dests,
+    const std::vector<int>&         expected_srcs
+
+){
+
 }
 
 } // namespace processor

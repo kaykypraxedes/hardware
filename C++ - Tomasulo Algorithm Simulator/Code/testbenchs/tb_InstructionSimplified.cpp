@@ -275,13 +275,13 @@ int main() {
         auto i2 = make_inst(1, "J END");
         check("J lowercase + label igual", i2->GetInstructionString() ==     "j      END");
 
-        // Este é o caso que expõe o bug do SetAttributes:
+        // Regressão do bug do SetAttributes: label que começa com 'R' não vira registrador.
         auto i3 = make_inst(2, "beqz r2, retry");
         check("label 'retry' (começa com R) não vira Register", i3->GetSourceRegisters()[0].GetType() == 'R');
         check("label 'retry' não vira fonte",                   i3->GetSourceRegisters().size() == 1);
     }
 
-    section("6.3 [PEGADINHA] Label com prefixo de registrador fora da faixa — case preservado");
+    section("6.3 Label com prefixo de registrador fora da faixa — case preservado");
     {
         // 'R99' não existe na tabela (faixa r0-31), então NÃO é registrador:
         // não vira fonte e o case do label é preservado (IsRegister table-based).
@@ -290,6 +290,20 @@ int main() {
             i->GetInstructionString() == "beqz   r3, R99");
         check("beqz r3, R99: só r3 vira fonte",
             i->GetSourceRegisters().size() == 1 && i->GetSourceRegisters()[0].GetType() == 'R');
+    }
+
+    section("6.4 Label que colide com registrador real da tabela — quirk documentado");
+    {
+        // 'R5' existe na tabela (r5 é registrador de verdade), então o token é
+        // tratado como registrador: lowercased na string e vira fonte espúria
+        // do branch (dependência falsa de r5; só stall, nunca valor errado).
+        auto i = make_inst(0, "beqz r3, R5");
+        check("label 'R5' vira 'r5' na string normalizada (r5 é registrador real)",
+            i->GetInstructionString() == "beqz   r3, r5");
+        check("beqz r3, R5: r3 e r5 entram como fontes (colisão)",
+            i->GetSourceRegisters().size() == 2 &&
+            i->GetSourceRegisters()[0].GetType() == 'R' &&
+            i->GetSourceRegisters()[1].GetType() == 'R');
     }
 
     std::cout << "\n-----------------------------\n";

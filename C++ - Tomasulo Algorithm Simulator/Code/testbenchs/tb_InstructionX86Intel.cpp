@@ -132,7 +132,7 @@ int main() {
             i->GetInstructionString() == "mov      [ebx+4], eax");
     }
 
-    section("2.3 INT_BASIC — EFLAGS entra como destino e origem inicial (quirk do modelo)");
+    section("2.3 INT_BASIC — EFLAGS como destino; destino antigo vira fonte (RMW)");
     {
         auto i = make_inst(3, "add eax, ebx");
         check("add: tipo == INT_BASIC",         i->GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC);
@@ -169,7 +169,7 @@ int main() {
     std::cout << "\n";
     print_title("3. IDENTIFICAÇÃO DE TIPO — BRANCH");
 
-    section("3.1 BRANCH sempre lê EFLAGS — mesmo desvios incondicionais (quirk do modelo)");
+    section("3.1 BRANCH — apenas desvios condicionais (jcc) leem EFLAGS");
     {
         auto je = make_inst(0, "je end_loop");
         check("je: tipo == BRANCH",         je->GetInstructionType() == INSTRUCTION_TYPE::BRANCH);
@@ -207,16 +207,18 @@ int main() {
     std::cout << "\n";
     print_title("4. IDENTIFICAÇÃO DE TIPO — PONTO FLUTUANTE (SSE)");
 
-    section("4.1 FLOAT_BASIC (addss) — mesmo quirk do EFLAGS como destino");
+    section("4.1 FLOAT_BASIC (addss) — sem EFLAGS; destino antigo vira fonte (RMW)");
     {
         auto i = make_inst(4, "addss xmm0, xmm1");
         check("addss: tipo == FLOAT_BASIC",  i->GetInstructionType() == INSTRUCTION_TYPE::FLOAT_BASIC);
         check("addss: exLatency == 9",       i->GetExLatency() == 9);
         check("addss: dest[0] tipo='V'",     i->GetDestRegisters()[0].GetType() == 'V');
         check("addss: dest[0] id=64 (xmm0)", i->GetDestRegisters()[0].GetId()   == 64);
-        check("addss: dest[1] tipo='G' (EFLAGS, mesmo em SSE)", i->GetDestRegisters()[1].GetType() == 'G');
+        check("addss: só 1 destino (xmm0, sem EFLAGS — SSE não seta flags)",
+            i->GetDestRegisters().size() == 1);
         check("addss: source[0] id=64 (xmm0 reusado)", i->GetSourceRegisters()[0].GetId() == 64);
         check("addss: source[1] id=65 (xmm1)",         i->GetSourceRegisters()[1].GetId() == 65);
+        check("addss: fontes só xmm0/xmm1", only_ids(i->GetSourceRegisters(), {64, 65}));
     }
 
     section("4.2 FLOAT_MUL (mulss)");
@@ -231,6 +233,32 @@ int main() {
         auto i = make_inst(6, "divss xmm0, xmm1");
         check("divss: tipo == FLOAT_DIV", i->GetInstructionType() == INSTRUCTION_TYPE::FLOAT_DIV);
         check("divss: exLatency == 40",   i->GetExLatency() == 40);
+    }
+
+    section("4.4 Nenhuma SSE escreve EFLAGS (trava das correções)");
+    {
+        // FLOAT_BASIC vetorial: RMW mantido, EFLAGS ausente.
+        auto sub = make_inst(7, "subsd xmm0, xmm1");
+        check("subsd: destinos só xmm0 (sem EFLAGS)", no_type(sub->GetDestRegisters(), 'G'));
+        check("subsd: fontes xmm0 (RMW) e xmm1", only_ids(sub->GetSourceRegisters(), {64, 65}));
+
+        // Idiom de zeroing: pxor xmm0, xmm0 — RMW do próprio destino.
+        auto px = make_inst(8, "pxor xmm0, xmm0");
+        check("pxor: destinos só xmm0 (sem EFLAGS)", no_type(px->GetDestRegisters(), 'G'));
+        check("pxor: fontes só xmm0/xmm0 (RMW)", only_ids(px->GetSourceRegisters(), {64}));
+
+        // FLOAT_MUL e FLOAT_DIV também não setam flags.
+        auto mul = make_inst(9, "mulss xmm0, xmm1");
+        check("mulss: destinos só xmm0 (sem EFLAGS)", no_type(mul->GetDestRegisters(), 'G'));
+        check("mulss: fontes xmm0 (RMW) e xmm1", only_ids(mul->GetSourceRegisters(), {64, 65}));
+        auto div = make_inst(10, "divss xmm0, xmm1");
+        check("divss: destinos só xmm0 (sem EFLAGS)", no_type(div->GetDestRegisters(), 'G'));
+
+        // Contraste: comiss realmente seta EFLAGS no x86 — continua como destino.
+        auto co = make_inst(11, "comiss xmm0, xmm1");
+        check("comiss: EFLAGS continua entre os destinos",
+            has_reg(co->GetDestRegisters(), 'G', 80));
+        check("comiss: fontes xmm0 e xmm1", only_ids(co->GetSourceRegisters(), {64, 65}));
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -485,5 +513,6 @@ int main() {
 
     std::cout << "\n-----------------------------\n";
     std::cout << "Resultado: " << passed << " OK, " << failed << " FALHOU\n";
+
     return failed ? 1 : 0;
 }

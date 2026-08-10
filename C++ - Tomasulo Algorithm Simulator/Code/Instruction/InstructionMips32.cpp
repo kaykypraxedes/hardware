@@ -191,57 +191,136 @@ void InstructionMips32::SetAttributes(
     dest_registers.clear();
     source_registers.clear();
 
-    // Imediatos ("$8", "$0x10") e labels não viram fonte (só registradores).
-    if (type == INSTRUCTION_TYPE::LOAD) {
-        dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
-    }
-    else if (type == INSTRUCTION_TYPE::STORE) {
-        source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
-    }
-    else if (type == INSTRUCTION_TYPE::BRANCH) {
-        // jal/bltzal/bgezal escrevem $ra implicitamente (endereço de retorno).
-        if (tokens[0] == "jal" || tokens[0] == "bltzal" || tokens[0] == "bgezal") {
-            dest_registers.push_back(Register('R', 31));
-            // bltzal/bgezal leem o registrador de teste (jal não tem operando registrador).
-            if (tokens[0] != "jal" && tokens.size() > 1 && IsRegister(tokens[1], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        }
-        else if (tokens[0] == "jalr") {
-            // O número de operandos decide quem é o destino:
-            // - 1 operando ("jalr $rs"): salta para $rs, retorno em $ra;
-            // - 2 operandos ("jalr $rd, $rs"): salta para $rs, retorno em $rd.
-            if (tokens.size() > 1 && IsRegister(tokens[1], RegisterTable())) {
-                if (tokens.size() > 2 && IsRegister(tokens[2], RegisterTable())) {
-                    dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-                    source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
-                }
-                else {
-                    dest_registers.push_back(Register('R', 31));
-                    source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-                }
-            }
-        }
-        else if (tokens[0] == "jr") {
-            if (tokens.size() > 1 && IsRegister(tokens[1], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        }
-        else {
-            // Demais desvios: operandos registradores viram fonte.
-            if (tokens.size() > 1 && IsRegister(tokens[1], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            if (tokens.size() > 2 && IsRegister(tokens[2], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
-        }
-    }
-    else {
-        dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        if (tokens.size() > 2 && IsRegister(tokens[2], RegisterTable()))
-            source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
-        if (tokens.size() > 3 && IsRegister(tokens[3], RegisterTable()))
+    // Instruções de 4 tokens:
+    if (tokens.size() > 3) {
+        // "lw $t0, 4($t1)":
+        // - Destino = tokens[1];
+        // - Fonte   = tokens[3];
+        // - tokens[2] é o deslocamento (sempre imediato) - ignorado.
+        if (type == INSTRUCTION_TYPE::LOAD) {
+            dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
+            return;
+        }
+        // "sw $t0, 4($t1)":
+        // - Fontes = tokens[1] e tokens[3];
+        // - Sem destino.
+        // - tokens[2] é o deslocamento (sempre imediato) - ignorado.
+        else if (type == INSTRUCTION_TYPE::STORE) {
+            source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
+            return;
+        }
+        // "beq $t0, $t1, LOOP" / "bne $t0, $t1, LOOP":
+        // - Fontes = tokens[1] e tokens[2]
+        // - Sem destino.
+        // - tokens[3] é o sempre o label - ignorado.
+        else if (type == INSTRUCTION_TYPE::BRANCH) {
+            if (IsRegister(tokens[1], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            if (IsRegister(tokens[2], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+            return;
+        }
+        // Aritmética - "add $t0, $t1, $t2" / "addi $t0, $t1, 5":
+        // - Fontes  = tokens[2] e tokens[3] (imediatos são ignorados por IsRegister);
+        // - Destino = tokens[1];
+        else {
+            dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            if (IsRegister(tokens[2], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+            if (IsRegister(tokens[3], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
+            return;
+        }
     }
+    // Instruções de 3 tokens:
+    else if (tokens.size() > 2) {
+        // "jalr $ra, $t0" (forma de 2 operandos: rd explícito):
+        // - Fonte   = tokens[2];
+        // - Destino = tokens[1];
+        if (tokens[0] == "jalr") {
+            if (IsRegister(tokens[1], RegisterTable()) && IsRegister(tokens[2], RegisterTable())) {
+                dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+            }
+            return;
+        }
+        // "bltzal $t0, LOOP" / "bgezal $t0, LOOP":
+        // - Fonte   - tokens[1];
+        // - Destino - $ra.
+        else if (tokens[0] == "bltzal" || tokens[0] == "bgezal") {
+            dest_registers.push_back(Register('R', 31));
+            if (IsRegister(tokens[1], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            return;
+        }
+        // "bnez $t0, LOOP" (e beqz/bgtz/bltz/bgez/blez):
+        // - Fonte = tokens[1].
+        // - Sem destino.
+        else if (type == INSTRUCTION_TYPE::BRANCH) {
+            if (IsRegister(tokens[1], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            return;
+        }
+        // "lui $t0, 5" / "abs.s $f0, $f1" (dest + imediato ou dest + fonte única):
+        // - Fonte   = tokens[2], se for registrador (lui não é; abs.s/neg.s/sqrt.s/cvt.* são).
+        // - Destino = tokens[1];
+        else {
+            dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            if (IsRegister(tokens[2], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+            return;
+        }
+    }
+    // Instruções de 2 tokens:
+    else if (tokens.size() > 1) {
+        // "jal FUNC":
+        // - Destino = $ra.
+        // Sem fonte.
+        if (tokens[0] == "jal") {
+            dest_registers.push_back(Register('R', 31));
+            return;
+        }
+        // "jalr $t0" (forma de 1 operando: retorno implícito em $ra):
+        // - Fonte   = tokens[1];
+        // - Destino = $ra;
+        else if (tokens[0] == "jalr") {
+            if (IsRegister(tokens[1], RegisterTable())) {
+                dest_registers.push_back(Register('R', 31));
+                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            }
+            return;
+        }
+        // "jr $ra":
+        // - Fonte = tokens[1];
+        // - Sem destino.
+        else if (tokens[0] == "jr") {
+            if (IsRegister(tokens[1], RegisterTable()))
+                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            return;
+        }
+        // "j LOOP":
+        // - Não lê nem escreve registrador.
+        else if (tokens[0] == "j") {
+            return;
+        }
+    }
+    // Não atendeu nenhum caso (sem return anterior).
+    std::cerr << "[ERRO] Instrução incompleta:\n"
+    "Instrução: "<< instruction_string << '\n';
+    std::abort();
+}
+
+// Verifica se os destinos e fontes correspondem à sintaxe da linguagem.
+// - Aborta em caso contrário, sem possibilidade de escrita incorreta.
+void InstructionMips32::ValidateInstruction(
+    const std::vector<std::string>& tokens,
+    const std::vector<int>&         expected_dests,
+    const std::vector<int>&         expected_srcs
+
+){
+
 }
 
 } // namespace processor

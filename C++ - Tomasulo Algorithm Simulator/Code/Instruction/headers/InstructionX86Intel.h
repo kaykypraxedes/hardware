@@ -35,7 +35,12 @@ class InstructionX86Intel : public Instruction { // Herança da classe Instructi
         void SetAttributes(
             const std::vector<std::string>&
         ) override;
-    };
+        void ValidateInstruction(
+            const std::vector<std::string>&,
+            const std::vector<int>&,
+            const std::vector<int>&
+        ) override;
+};
 
 } // namespace processor
 
