@@ -1,9 +1,15 @@
 /* Instruction.cpp */
 #include "headers/Instruction.h"
 
+// ─── ATENÇÃO ──────────────────────────────────────────────────────
+/*
+ * O funcionamento detalhado das funções e as características dos
+ * elementos desse módulo são abordados no header.
+ */
+
 namespace processor {
 
-// ─── HELPERS ───────────────────────────────────────────────────────
+// ─── HELPERS ──────────────────────────────────────────────────────
 void FillCDB(
     CDB& cdb,
     const char reg_class,
@@ -33,9 +39,9 @@ bool ContainsOpcode(
     return std::find(vec.begin(), vec.end(), op) != vec.end();
 }
 
-// ──────────────────────────────────────────────────────────────────
-// ─── CLASSE ───────────────────────────────────────────────────────
-// ──────────────────────────────────────────────────────────────────
+// ==================================================================
+// === CLASSE =======================================================
+// ==================================================================
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
 std::vector<int> Instruction::base_ex_latencies
