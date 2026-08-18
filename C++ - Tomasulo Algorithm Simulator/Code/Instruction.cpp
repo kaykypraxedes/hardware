@@ -1,8 +1,41 @@
 /* Instruction.cpp */
 #include "headers/Instruction.h"
-#include <cctype> // para std::tolower
 
 namespace processor {
+
+// ─── HELPERS ───────────────────────────────────────────────────────
+void FillCDB(
+    CDB& cdb,
+    const char reg_class,
+    const int  id_base,
+    const int  count,
+    const int  mask
+){
+    for (int i{}; i < count; i++)
+        cdb.registers.push_back(Register(reg_class, id_base + i, mask));
+}
+
+bool IsRegister(
+    const std::string&                               token,
+    const std::unordered_map<std::string, Register>& table
+){
+    std::string lower{token};
+    for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    // unordered_map::count() retorna a quantidade de elementos com aquela chave:
+    // - Se for um registrador, irá retornar 1 (> 0 => true), se não, retorna 0 (false).
+    return table.count(lower) > 0;
+}
+
+bool ContainsOpcode(
+    const std::vector<std::string>& vec,
+    const std::string&              op
+){
+    return std::find(vec.begin(), vec.end(), op) != vec.end();
+}
+
+// ──────────────────────────────────────────────────────────────────
+// ─── CLASSE ───────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
 std::vector<int> Instruction::base_ex_latencies
@@ -25,44 +58,6 @@ std::vector<int> Instruction::base_mem_latencies
     1   // STORE
 };
 
-// ─── HELPERS ───────────────────────────────────────────────────────
-void FillCDB(
-    CDB& cdb,
-    const char reg_class,
-    const int id_base,
-    const int count,
-    const int mask
-){
-    for (int i = 0; i < count; i++)
-       cdb.registers.push_back(Register(reg_class, id_base + i, mask));
-}
-
-// Única validação de nome do sistema: aborta com o nome e a instrução que o gerou.
-Register LookupRegister(
-    const std::string& name,
-    const std::string& context, // Puramente para debugging, mas não é obrigatório
-    const std::unordered_map<std::string, Register>& table
-){
-    auto it = table.find(name);
-    if (it == table.end()) {
-        std::cerr << "[ERRO] Registrador inválido: '" << name << "' (instrução: " << context << ")\n";
-        std::abort();
-    }
-    return it->second;
-}
-
-// Registrador é qualquer nome que exista na tabela da arquitetura.
-// - Não confunde labels com prefixo de registrador (ex.: "$L2", "X99", "R99")
-// - Só o que a arquitetura realmente conhece vira registrador.
-bool IsRegister(
-    const std::string& token,
-    const std::unordered_map<std::string, Register>& table
-){
-    std::string lower = token;
-    for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return table.count(lower) > 0;
-}
-
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:
 int Instruction::GetPosition()   const { return position; }
@@ -77,13 +72,16 @@ int Instruction::GetMemLatency() const { return mem_latency; }
 INSTRUCTION_TYPE Instruction::GetInstructionType() const { return type; }
 
 // Público:
-const std::vector<Register>& Instruction::GetDestRegisters()   const { return dest_registers; }
+const std::string& Instruction::GetInstructionString()            const { return instruction_string; }
 
 // Público:
-const std::vector<Register>& Instruction::GetSourceRegisters() const { return source_registers; }
+const std::vector<Register>& Instruction::GetDestRegisters()      const { return dest_registers; }
 
 // Público:
-const std::string& Instruction::GetInstructionString()         const { return instruction_string; }
+const std::vector<Register>& Instruction::GetExSourceRegisters()  const { return ex_source_registers; }
+
+// Público:
+const std::vector<Register>& Instruction::GetMemSourceRegisters() const { return mem_source_registers; }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
@@ -93,7 +91,7 @@ Instruction::Instruction(
     position(position)
 {
     if (position < -1) {
-        std::cerr << "[ERRO] Valor inválido de posição: " << position << "\n";
+        std::cerr << "[ERRO] Valor inválido de posição: " << position << '\n';
         std::abort();
     }
 }
@@ -109,18 +107,18 @@ void Instruction::Parse(
         std::abort();
     }
 
-    // Verifica se a instrução é suportada pela arquitetura.
-    std::vector<std::string> tokens = SplitInstruction(str);
+    std::vector<std::string> tokens{SplitInstruction(str)};
 
     // Verifica se os tokens passados são válidos.
     // - Pode não estar vazio, mas ser apenas um conjunto de espaços, vírgulas, etc.
     if (tokens.empty()) {
-        std::cerr << "[ERRO] Nenhum token válido extraído: '" << str << "'\n";
+        std::cerr <<
+            "[ERRO] Nenhum token válido extraído!\n"
+            "- Instrução: " << str << '\n';
         std::abort();
     }
     if (!IdentifyType(tokens)) {
-        std::cerr << "[ERRO] Instrução não suportada por essa arquitetura: "
-            << tokens[0] << "\n";
+        std::cerr << "[ERRO] Instrução não suportada por essa arquitetura: " << tokens[0] << '\n';
         std::abort();
     }
 
@@ -137,11 +135,9 @@ void Instruction::SetLatencies() {
     } else if (type == INSTRUCTION_TYPE::STORE) {
         mem_latency = base_mem_latencies[1];
     }
+    // "enums" tradicionais (sem um valor atribuido) podem ser convertidos para int (ordem -> valor int).
     ex_latency = base_ex_latencies[static_cast<int>(type)];
 }
-
-// Métodos utilizados para settar um valor diferente do padrão de latência.
-// - Simular um cache miss, por exemplo.
 
 // Público:
 void Instruction::SetExLatency(
