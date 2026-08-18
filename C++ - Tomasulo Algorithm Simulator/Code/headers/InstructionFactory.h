@@ -1,19 +1,27 @@
 /* headers/InstructionFactory.h */
+
+/**
+ * @file InstructionFactory.h
+ *
+ * @brief Módulo responsável pela identificação da arquitetura,
+ * criação da tabela de instruções e realizar o "parse" da instrução.
+ */
+
 #ifndef INSTRUCTION_FACTORY_H
 #define INSTRUCTION_FACTORY_H
 
 #include "Instruction.h"
+#include <vector>
+#include <string>
+#include <memory>    // para std::unique_ptr
+#include <cstdlib>   // para std::abort
+#include <iostream>  // para std::cerr
 // Arquiteturas suportadas:
 #include "../Instruction/headers/InstructionArm64.h"
 #include "../Instruction/headers/InstructionMips32.h"
 #include "../Instruction/headers/InstructionRiscV.h"
 #include "../Instruction/headers/InstructionSimplified.h"
 #include "../Instruction/headers/InstructionX86Intel.h"
-#include <vector>
-#include <string>
-#include <memory>    // para std::unique_ptr
-#include <cstdlib>   // para std::abort
-#include <iostream>  // para std::cerr
 
 namespace processor {
 
@@ -29,9 +37,24 @@ enum class ARCHITECTURE {
 // ─── CLASSE ───────────────────────────────────────────────────────
 class InstructionFactory {
     public:
-        // Elemento static:
-        // Decodifica o código passado em vetores de string para um vetor de instruções.
-        // - O vetor de instruções é genérico (por issa a adaptação, utilizando ponteiros).
+        // Elementos static:
+
+        /**
+         * @brief Decodifica o código passado em vetores de string
+         * para um vetor de instruções.
+         *
+         * @details O vetor de instruções é genérico (simulando o
+         * agrupamento que pode ser feito em Java). Todavia, esse
+         * método tem de ser adaptado utilizando ponteiros.
+         *
+         * @param const std::vector<std::string>& trace_lines - Vetor
+         * de instruções (ainda em string).
+         * @param const ARCHITECTURE arch - Arquitetura que deve ser
+         * considerada.
+         *
+         * @return std::vector<std::unique_ptr<Instruction>> - Vetor
+         * com o ponteiro para as instruções (já decodificadas).
+         */
         static std::vector<std::unique_ptr<Instruction>> ParseTrace(
             const std::vector<std::string>& trace_lines,
             const ARCHITECTURE arch
@@ -74,10 +97,24 @@ class InstructionFactory {
             return instructions;
         }
 
-        // Elemento static:
-        // Monta o CDB com os registradores físicos da arquitetura (D20).
-        // - Cada subclasse define os slots, as classes canônicas e as faixas de impressão.
-        static CDB MakeCDB(const ARCHITECTURE arch) {
+        /**
+         * @brief Monta o CDB com os registradores físicos da
+         * arquitetura.
+         *
+         * @details Cada subclasse define suas características
+         *
+         * - Slots;
+         * - Classes
+         * - Faixas de impressão;
+         * ...
+         *
+         * @param const ARCHITECTURE arch - Arquitetura.
+         *
+         * @return CDB - Banco de registradores da arquitetura.
+         */
+        static CDB MakeCDB(
+            const ARCHITECTURE arch
+        ){
             switch (arch) {
                 case ARCHITECTURE::SIMPLIFIED: return InstructionSimplified::MakeCDB();
                 case ARCHITECTURE::MIPS_32:    return InstructionMips32::MakeCDB();
