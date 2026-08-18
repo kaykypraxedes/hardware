@@ -96,7 +96,7 @@ class Register {
          * @return const std::vector<std::string>& - Nome de todos os
          * módulos da RS alocada.
          */
-        const std::vector<std::string>& GetAllocatedRS() const; // "const &" para evitar cópia
+        const std::vector<std::string>& GetAllocatedRS() const; // "const &" para evitar cópia de dados grandes.
 
         // Demais métodos:
 
@@ -185,15 +185,21 @@ class Register {
         bool                     busy{false};
 
         /**
-         * @brief Identificação do registrador pelo par
-         * (id, mask).
+         * @brief Localização física do registrador.
+         */
+        int                      id{-1};
+
+        /**
+         * @brief Máscara de bits para identificação de sobreposição
+         * de registradores.
          *
-         * @details Cada componente do par tem sua função:
+         * @details A identificação do é feita pelo registrador par
+         * (id, mask):
          * - id (localização física do registrador);
          * - mask (posição de ocupação desse registrador em relação
          * ao registrador principal - 100%);
          *
-         * Em x86 e ARM64, por exemplo, registradores podem ser
+         * Em algumas arquitetura os registradores podem ser
          * sobrepostos (um registrador de 32 bits é apenas a metade
          * inferior de um de 64 bits, por exemplo), e essa máscara é
          * importante para não gerar falsas dependências.
@@ -207,7 +213,6 @@ class Register {
          * ou o "ah" só bloqueiam o "ax" (visto que eles ocupam
          * máscaras que não se intersectam).
          */
-        int                      id{-1};
         int                      mask{255};    // Em binário: 255 = 11111111 (usa 100% do registrador principal).
 
         // - Dados para a impressão (debugging).
