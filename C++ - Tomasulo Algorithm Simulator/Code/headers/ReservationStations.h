@@ -166,7 +166,7 @@ class RS {
         std::vector<int>             allocation_times;       // De 2 em 2, início da alocação e fim da alocação.
         std::vector<std::string>     allocated_instructions; // De 1 em 1, instruções alocadas na RS.
 
-        // Métodos privados:
+        // Métodos:
 
         // - AddIssue()
 
