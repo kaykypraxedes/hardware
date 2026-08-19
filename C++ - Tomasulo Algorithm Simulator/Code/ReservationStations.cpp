@@ -10,7 +10,7 @@
 namespace processor {
 
 // ─── HELPERS ──────────────────────────────────────────────────────
-static bool InvalidRegister(const Register& reg) {
+static bool IsInvalidRegister(const Register& reg) {
     return reg.GetType() == 'Z'; // É inválido se for igual.
 }
 
@@ -142,7 +142,7 @@ void RS::ReadSourceOperand(
     CDB&            cdb
 ){
     // Não tem fonte.
-    if (InvalidRegister(src)) return;
+    if (IsInvalidRegister(src)) return;
 
     // Acessa o registrador alvo no CDB e verifica se ele está com uma dependencia atualmente.
     const Register& regCDB{GetReg(cdb, src)};
@@ -165,7 +165,7 @@ void RS::AllocateDestInCDB(
 ){
     for (const Register& dest : dests) {
         // Não tem destino.
-        if (InvalidRegister(dest)) continue;
+        if (IsInvalidRegister(dest)) continue;
 
         GetReg(cdb, dest).AllocateRS(id, cycle);
     }
