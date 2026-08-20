@@ -1,4 +1,12 @@
 /* headers/Processor.h */
+
+/**
+ * @file Processor.h
+ *
+ * @brief Módulo responsável por gerenciar as threads (avançar o
+ * ciclo, trocar de thread, etc).
+*/
+
 #ifndef PROCESSOR_H   // Include guard
 #define PROCESSOR_H
 #include "Thread.h"
@@ -12,6 +20,7 @@
 namespace processor {
 
 // ─── ENUMS ────────────────────────────────────────────────────────
+
 enum class PROCESSOR_TYPE {
     IN_ORDER,
     TOMASULO_CLASSIC,     // Sem ROB
@@ -25,8 +34,16 @@ enum class MULTITHREADING_MODEL {
 };
 
 // ─── CLASSE ───────────────────────────────────────────────────────
+
+/**
+ * @brief Classe onde são armazenadas as threads e a suas execuçẽoes
+ * são gerenciadas.
+ */
 class Processor {
     public:
+        // Elemento static:
+        static int base_rob_capacity;
+
         // Construtor:
         Processor(
             const int,
@@ -52,7 +69,23 @@ class Processor {
             const int
         ) const;
 
-        // Métodos públicos:
+        // Método:
+
+        /**
+         * @brief
+         *
+         * @details É uma escolha de implementação que as
+         * "Reservation Stations" sejam liberadas antes do "Issue" no
+         * mesmo ciclo.
+         *
+         * Dessa maneira, elas podem ser reutilizadas imediatamente
+         * por novas instruções emitidas após serem liberadas (não
+         * precisa de um ciclo de liberação).
+         *
+         * @return true - Todas as instruções foram finalizadas.
+         * @return false - Ainda faltam instruções a serem
+         * processadas.
+         */
         bool ExecuteCycle();
     private:
         // Atributos:
@@ -65,20 +98,36 @@ class Processor {
         MULTITHREADING_MODEL mt_model;
         std::vector<Thread>  threads;
 
-        // Métodos privados:
-        void InitializeThreads(
-            const std::vector<std::string>&,
-            const int,
-            const std::vector<int>&,
-            const std::vector<int>&,
-            const std::vector<int>& = {},
-            const std::vector<std::tuple<int,int,int>>& = {},
-            const ARCHITECTURE = ARCHITECTURE::SIMPLIFIED
-        );
-        bool ExecuteExMemWrCommit();
-        void ExecuteIssue();
-        void AdvanceRoundRobinPointer();
+        // Métodos:
+
+        /**
+         * @brief Executa as fases "ex", "mem", "wr" e "commit" das
+         * instruções já adicionadas.
+         *
+         * @return true - Todas as instruções foram finalizadas
+         * (todas as fases e tabela completa).
+         * @return false - Ainda faltam instruções a serem
+         * processadas.
+         */
+        bool ExecuteOperations();
+
+        /**
+         * @brief Tenta adicionar a próxima instrução da fila em uma
+         * célula da RS (issue).
+         *
+         * @details Loop de dispatch (a política de escalonamento
+         * varia conforme o modelo de multithreading):
+         *
+         * - SMT: Rotaciona a cada dispatch múltiplas threads a cada
+         * cíclo.
+         * - Granulação Fina: Mantém thread até falhar e troca a
+         * cada cíclo.
+         * - Granulação Grossa: Mantém thread até falhar e só troca
+         * em stalls longos.
+         */
+        void AddInstructions();
 };
+
 } // namespace processor
 
 #endif
