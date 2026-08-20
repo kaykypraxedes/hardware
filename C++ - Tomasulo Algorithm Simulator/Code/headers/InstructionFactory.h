@@ -36,7 +36,6 @@ enum class ARCHITECTURE {
 
 // ─── CLASSE ───────────────────────────────────────────────────────
 
-// ──────────────────────────────────────────────────────────────────
 /**
  * @brief Classe onde ocorre a decodificação das instruções e a
  * montagem do banco de registradores (na implementação, dentro do
