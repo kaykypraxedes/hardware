@@ -3,7 +3,7 @@
 /**
  * @file Thread.h
  *
- * @brief Módulo responsável gerenciar as operações que ocorrem
+ * @brief Módulo responsável por gerenciar as operações que ocorrem
  * dentro de uma thread.
  *
  * @details Dentro dessas responsabilidades estão:

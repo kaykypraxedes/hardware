@@ -3,7 +3,7 @@
 /**
  * @file ReservationStations.h
  *
- * @brief Módulo responsável gerenciar as operações que ocorrem
+ * @brief Módulo responsável por gerenciar as operações que ocorrem
  * dentro de um módulo da Reservatio Station (RS) e também definí-la
  * completamente ("struct" com o conjunto dos unidades do hardware).
  *
