@@ -50,7 +50,7 @@ static const std::unordered_map<std::string, Register>& RegisterTable();
  * registradores.
  */
 void FillCDB(
-    CDB& cdb,
+    CDB&       cdb,
     const char reg_class,
     const int  id_base,
     const int  count,
@@ -62,17 +62,17 @@ void FillCDB(
  * na tabela retornada pela função "RegisterTable()".
  *
  * @details É feito para evitar alguma confusão como por exemplo
- * labels com prefixo de registrador ("$L2", "X99", "R99", etc.)
+ * labels com prefixo de registrador ("$L2", "X99", "R99", etc.).
  *
  * Esse método de verificação impede casos de falso positivo
  * por simplificação de sintaxe, como começar com "$".
  *
  * @param const std::string& - Nome alvo.
  * @param const std::unordered_map<std::string, Register>& - Tabela
- * do "RegisterTable()"
+ * do "RegisterTable()".
  *
  * @return true - Encontrou o nome na tabela (é um registrador).
- * @return true - Não encontrou (não é um registrador)
+ * @return false - Não encontrou (não é um registrador).
  */
 bool IsRegister(
     const std::string&                               token,
