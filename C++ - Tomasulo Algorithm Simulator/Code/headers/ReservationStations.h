@@ -4,9 +4,10 @@
  * @file ReservationStations.h
  *
  * @brief Módulo responsável gerenciar as operações que ocorrem
- * dentro de um módulo da Reservatio Station (RS).
+ * dentro de um módulo da Reservatio Station (RS) e também definí-la
+ * completamente ("struct" com o conjunto dos unidades do hardware).
  *
- * @details Dentro desssas responsabilidades estão:
+ * @details Dentro das responsabilidades de uma unidade da RS estão:
  *
  * - Gerenciar dependências de instruções.
  * - Solucionar conflitos.
