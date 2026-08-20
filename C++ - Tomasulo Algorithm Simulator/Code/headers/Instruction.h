@@ -96,6 +96,7 @@ bool ContainsOpcode(
 );
 
 // ─── ENUMS ────────────────────────────────────────────────────────
+
 enum class INSTRUCTION_TYPE {
     INVALID,
     LOAD,

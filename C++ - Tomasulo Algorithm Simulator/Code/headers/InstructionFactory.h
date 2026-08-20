@@ -26,6 +26,7 @@
 namespace processor {
 
 // ─── ENUMS ────────────────────────────────────────────────────────
+
 enum class ARCHITECTURE {
     SIMPLIFIED, // Arquitetura didática "Computer Architecture - A Quantitative Approach - Patterson & Hennessy"
     MIPS_32,
