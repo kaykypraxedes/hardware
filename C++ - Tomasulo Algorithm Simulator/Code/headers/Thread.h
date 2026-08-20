@@ -171,12 +171,7 @@ class Thread {
         );
     private:
         // Atributos:
-        // - Elementos auxiliares:
-        int                      num_finished_instructions{};
-        int                      num_committed_instructions{};
-        int                      commit_pointer{};
-        int                      unresolved_branch_position{-1};
-        // - Elementos funcionais:
+        // - Elementos da thread:
         bool                     has_rob{false};
         int                      rob_capacity{1};
         int                      current_instruction_position{};
@@ -186,9 +181,14 @@ class Thread {
         FUNCTIONAL_UNITS         fu;
         std::vector<int>         wr_buffer;
         std::vector<int>         pending_wr_buffer;
-        std::vector<int>         switch_cycles;        // Para processadores com granulação grossa.
         std::vector<TABLE_ROW>   instruction_table;
         std::vector<std::shared_ptr<Instruction>> rob; // Guarda ponteiros compartilhados.
+        // - Elementos auxiliares/histórico:
+        int                      num_finished_instructions{};
+        int                      num_committed_instructions{};
+        int                      commit_pointer{};
+        int                      unresolved_branch_position{-1};
+        std::vector<int>         switch_cycles;        // Para processadores com granulação grossa.
 
         // Métodos:
 
