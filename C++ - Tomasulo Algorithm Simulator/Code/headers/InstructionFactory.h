@@ -10,18 +10,18 @@
 #ifndef INSTRUCTION_FACTORY_H
 #define INSTRUCTION_FACTORY_H
 
-#include "Instruction.h"
+#include "Architecture.h"
 #include <vector>
 #include <string>
 #include <memory>    // para std::unique_ptr
 #include <cstdlib>   // para std::abort
 #include <iostream>  // para std::cerr
 // Arquiteturas suportadas:
-#include "../Instruction/headers/InstructionArm64.h"
-#include "../Instruction/headers/InstructionMips32.h"
-#include "../Instruction/headers/InstructionRiscV.h"
-#include "../Instruction/headers/InstructionSimplified.h"
-#include "../Instruction/headers/InstructionX86Intel.h"
+#include "../Instruction/headers/ArchSimplified.h"
+#include "../Instruction/headers/Arm64.h"
+#include "../Instruction/headers/Mips32.h"
+#include "../Instruction/headers/RiscV.h"
+#include "../Instruction/headers/X86Intel.h"
 
 namespace processor {
 

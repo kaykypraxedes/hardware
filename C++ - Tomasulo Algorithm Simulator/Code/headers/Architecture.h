@@ -1,16 +1,17 @@
-/* headers/Instruction.h */
+/* headers/Architecture.h */
 
 /**
- * @file Instruction.h
+ * @file Architecture.h
  *
- * @brief Módulo responsável pela definição virtual de uma instrução.
+ * @brief Módulo responsável pela definição virtual (genérica) de uma
+ * instrução e mecanismos para verificação da coerência dessa.
  *
  * @details Esse arquivo também inclui as fases de uma instrução
  * dentro do pipeline (clássico e tomasulo).
  */
 
-#ifndef INSTRUCTION_H    // Include guard
-#define INSTRUCTION_H
+#ifndef ACHITECTURE_H    // Include guard
+#define ACHITECTURE_H
 #include "Components.h"
 #include <string>
 #include <vector>
@@ -24,10 +25,14 @@ namespace processor {
 
 // ─── HELPERS ──────────────────────────────────────────────────────
 
-// ATENÇÃO: A função deve ser declarada em cada uma das subclasses de
-// "Instruction" (versão própria).
-// - Gera warning (por não ser definido em "Instruction.cpp"), que é
-// ignorado pela diretiva.
+/**
+ * ATENÇÃO: A função deve ser declarada em cada um dos módulos que
+ * importa esse módulo.
+ *
+ * Ele só tem de realmente ser definido nos
+ * códigos das subclasses de "Instruction" (versão própria).
+ */
+// Gera warning (por não ser definido em "Instruction.cpp"), que é ignorado pela diretiva.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 static const std::unordered_map<std::string, Register>& RegisterTable();
@@ -66,6 +71,11 @@ void FillCDB(
  *
  * Esse método de verificação impede casos de falso positivo
  * por simplificação de sintaxe, como começar com "$".
+ *
+ * Esse helper não foi implementado em "Components" pois ele
+ * depende da definição do banco de registradores (que é feito pela
+ * função "RegisterTable()", desse módulo).
+ * )
  *
  * @param const std::string& - Nome alvo.
  * @param const std::unordered_map<std::string, Register>& - Tabela

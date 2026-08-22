@@ -16,7 +16,7 @@
 
 #ifndef THREAD_H     // Include guard
 #define THREAD_H
-#include "Instruction.h"
+#include "Architecture.h"
 #include "InstructionFactory.h"
 #include "ReservationStations.h"
 #include "Components.h"

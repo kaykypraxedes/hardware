@@ -1,6 +1,6 @@
 /* Main.cpp */
 #include "headers/Processor.h"
-#include "headers/Instruction.h"
+#include "headers/Architecture.h"
 #include "headers/InstructionFactory.h"
 #include <iomanip>
 #include <iostream>

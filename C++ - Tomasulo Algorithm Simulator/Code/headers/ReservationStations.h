@@ -17,7 +17,7 @@
 
 #ifndef RESERVATION_STATIONS_H // Include guard
 #define RESERVATION_STATIONS_H
-#include "Instruction.h"
+#include "Architecture.h"
 #include "Components.h"
 #include <string>
 #include <vector>

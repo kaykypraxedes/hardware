@@ -10,7 +10,7 @@
 #ifndef PROCESSOR_H   // Include guard
 #define PROCESSOR_H
 #include "Thread.h"
-#include "Instruction.h"
+#include "Architecture.h"
 #include <string>
 #include <vector>
 #include <tuple>      // para passar e receber as instruções de troca de thread na Granulação Grossa
