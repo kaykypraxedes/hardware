@@ -53,7 +53,7 @@ static void AdvanceRoundRobinPointer(
 // ==================================================================
 
 // ─── ELEMENTO STATIC ──────────────────────────────────────────────
-int base_rob_capacity{32};
+int Processor::base_rob_capacity{32};
 
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:
