@@ -1,7 +1,26 @@
-/* Instruction/InstructionRiscV.cpp */
-#include "headers/InstructionRiscV.h"
+/* Architectures/RiscV.cpp */
+#include "headers/RiscV.h"
 
 namespace processor {
+
+static Register LookupRegister(
+    const std::string& name,
+    const std::string& instruction, // Puramente para debugging em caso de erro (não é obrigatório para o funcionamento).
+    const std::unordered_map<std::string, Register>& table
+){
+    auto it{table.find(name)};
+
+    // Verifica se o registrador está dentro da tabela:
+    // - O método "find()" retorna "end()" se não encontra o elemento.
+    if (it == table.end()) {
+        std::cerr <<
+            "[ERRO] Registrador inválido: \n" <<
+            "- Nome: " << name << '\n' <<
+            "- Instrução: " << instruction << '\n';
+        std::abort();
+    }
+    return it->second;
+}
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
 static const int biggest_instruction{8};
@@ -35,14 +54,6 @@ static const std::vector<std::string> FLOAT_MUL
 
 static const std::vector<std::string> FLOAT_DIV
     {"fdiv.s", "fdiv.d"};
-
-// Verifica se o opcode existe (está na tabela).
-static bool Contains(
-    const std::vector<std::string>& vec,
-    const std::string&              op
-){
-    return std::find(vec.begin(), vec.end(), op) != vec.end();
-}
 
 // Função de Instruction.h:
 // - Tabela: (nome, registrador físico).
@@ -104,15 +115,15 @@ bool InstructionRiscV::IdentifyType(
     std::string op{tokens[0]};
     for (char& c : op) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
-    if (Contains(LOADS, op))            type = INSTRUCTION_TYPE::LOAD;
-    else if (Contains(STORES, op))      type = INSTRUCTION_TYPE::STORE;
-    else if (Contains(INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
-    else if (Contains(BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
-    else if (Contains(INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
-    else if (Contains(INT_DIV, op))     type = INSTRUCTION_TYPE::INT_DIV;
-    else if (Contains(FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
-    else if (Contains(FLOAT_MUL, op))   type = INSTRUCTION_TYPE::FLOAT_MUL;
-    else if (Contains(FLOAT_DIV, op))   type = INSTRUCTION_TYPE::FLOAT_DIV;
+    if (ContainsOpcode(LOADS, op))            type = INSTRUCTION_TYPE::LOAD;
+    else if (ContainsOpcode(STORES, op))      type = INSTRUCTION_TYPE::STORE;
+    else if (ContainsOpcode(INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
+    else if (ContainsOpcode(BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
+    else if (ContainsOpcode(INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
+    else if (ContainsOpcode(INT_DIV, op))     type = INSTRUCTION_TYPE::INT_DIV;
+    else if (ContainsOpcode(FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
+    else if (ContainsOpcode(FLOAT_MUL, op))   type = INSTRUCTION_TYPE::FLOAT_MUL;
+    else if (ContainsOpcode(FLOAT_DIV, op))   type = INSTRUCTION_TYPE::FLOAT_DIV;
     else return false;
 
     return true;
@@ -176,7 +187,8 @@ void InstructionRiscV::SetAttributes(
     const std::vector<std::string>& tokens
 ){
     dest_registers.clear();
-    source_registers.clear();
+    ex_source_registers.clear();
+    mem_source_registers.clear();
 
     // Instruções de 4+ tokens:
     if (tokens.size() > 3) {
@@ -187,16 +199,18 @@ void InstructionRiscV::SetAttributes(
             dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             for (size_t i = 2; i < tokens.size(); ++i)
                 if (IsRegister(tokens[i], RegisterTable()))
-                    source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    ex_source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
             return;
         }
         // "sw x5, 4(x6)":
-        // - Fontes = qualquer token registrador (dado + base);
-        // Sem destino.
+        // - Dado = tokens[1];
+        // - Base = tokens[3] (imediato ignorado);
         else if (type == INSTRUCTION_TYPE::STORE) {
-            for (size_t i = 1; i < tokens.size(); ++i)
+            if (IsRegister(tokens[1], RegisterTable()))
+                mem_source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            for (size_t i = 2; i < tokens.size(); ++i)
                 if (IsRegister(tokens[i], RegisterTable()))
-                    source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    ex_source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
             return;
         }
         // "jalr x1, 0(x5)" (forma completa: rd, imediato, rs1):
@@ -207,7 +221,7 @@ void InstructionRiscV::SetAttributes(
             dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             for (size_t i = 2; i < tokens.size(); ++i)
                 if (IsRegister(tokens[i], RegisterTable()))
-                    source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    ex_source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
             return;
         }
         // "beq x5, x6, LOOP" (e bne/blt/bge/bltu/bgeu):
@@ -217,7 +231,7 @@ void InstructionRiscV::SetAttributes(
         else if (type == INSTRUCTION_TYPE::BRANCH) {
             for (size_t i = 1; i < tokens.size(); ++i)
                 if (IsRegister(tokens[i], RegisterTable()))
-                    source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    ex_source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
             return;
         }
         // Aritmética - "add x5, x6, x7" / "addi x5, x6, 10" (e formas com mais fontes, como fmadd.s dest,src,src,src):
@@ -227,7 +241,7 @@ void InstructionRiscV::SetAttributes(
             dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             for (size_t i = 2; i < tokens.size(); ++i)
                 if (IsRegister(tokens[i], RegisterTable()))
-                    source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    ex_source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
             return;
         }
     }
@@ -246,7 +260,7 @@ void InstructionRiscV::SetAttributes(
         else if (tokens[0] == "mv") {
             dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             if (IsRegister(tokens[2], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+                ex_source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
             return;
         }
         // "li x5, 10" / "lui x5, 10" / "auipc x5, 10" (dest + imediato) ou "fsqrt.s f1, f2" / "fabs.s f1, f2" / "fcvt.s.w f1, x2" (dest + fonte única):
@@ -255,7 +269,7 @@ void InstructionRiscV::SetAttributes(
         else {
             dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             if (IsRegister(tokens[2], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+                ex_source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
             return;
         }
     }
@@ -274,7 +288,7 @@ void InstructionRiscV::SetAttributes(
         else if (tokens[0] == "jalr") {
             dest_registers.push_back(Register('L', 1));
             if (IsRegister(tokens[1], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                ex_source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             return;
         }
         // "call func":
@@ -296,7 +310,7 @@ void InstructionRiscV::SetAttributes(
         // - Fonte = x1 (ra);
         // Sem destino.
         if (tokens[0] == "ret") {
-            source_registers.push_back(Register('L', 1));
+            ex_source_registers.push_back(Register('L', 1));
             return;
         }
         // "nop" (pseudo de "addi x0, x0, 0"):
@@ -314,10 +328,7 @@ void InstructionRiscV::SetAttributes(
 // Verifica se os destinos e fontes correspondem à sintaxe da linguagem.
 // - Aborta em caso contrário, sem possibilidade de escrita incorreta.
 void InstructionRiscV::ValidateInstruction(
-    const std::vector<std::string>& tokens,
-    const std::vector<int>&         expected_dests,
-    const std::vector<int>&         expected_srcs
-
+    const std::vector<std::string>& tokens
 ){
 
 }

@@ -1,14 +1,13 @@
-/* Instruction/headers/InstructionX86Intel.h */
-#ifndef INSTRUCTION_X86INTEL_H // Include guard
-#define INSTRUCTION_X86INTEL_H
-#include "../../headers/Instruction.h"
-#include <algorithm>           // para std::find
-#include <cctype>              // para std::toupper
+/* Architectures/headers/Arm64.h */
+#ifndef ARM64_H   // Include guard
+#define ARM64_H
+#include "../../headers/Architecture.h"
+#include <cctype> // para std::toupper
 
 namespace processor {
 
 // ─── CLASSE ───────────────────────────────────────────────────────
-class InstructionX86Intel : public Instruction { // Herança da classe Instruction.
+class InstructionArm64 : public Instruction { // Herança da classe Instruction.
     public:
         // Método estático:
         // Monta o CDB (vetor de registradores físicos) da arquitetura.
@@ -16,7 +15,7 @@ class InstructionX86Intel : public Instruction { // Herança da classe Instructi
 
         // Construtor:
         // - explicit para impedir o cast implícito.
-        explicit InstructionX86Intel(
+        explicit InstructionArm64(
             const int = -1
         );
 
@@ -24,21 +23,19 @@ class InstructionX86Intel : public Instruction { // Herança da classe Instructi
         // Métodos "privados":
         // - override para implementar sua versão específica.
         std::vector<std::string> SplitInstruction(
-            const std::string&
+            const std::string& str
         ) const override;
         bool IdentifyType(
-            const std::vector<std::string>&
-        ) override;
-        void NormalizeInstruction(
-            std::vector<std::string>&
-        ) override;
-        void SetAttributes(
-            const std::vector<std::string>&
+            const std::vector<std::string>& tokens
         ) override;
         void ValidateInstruction(
-            const std::vector<std::string>&,
-            const std::vector<int>&,
-            const std::vector<int>&
+            const std::vector<std::string>& tokens
+        ) override;
+        void NormalizeInstruction(
+            std::vector<std::string>& tokens
+        ) override;
+        void SetAttributes(
+            const std::vector<std::string>& tokens
         ) override;
 };
 

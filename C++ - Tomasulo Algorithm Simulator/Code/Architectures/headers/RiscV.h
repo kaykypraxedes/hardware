@@ -1,14 +1,14 @@
-/* Instruction/headers/InstructionMips32.h */
-#ifndef INSTRUCTION_MIPS32_H // Include guard
-#define INSTRUCTION_MIPS32_H
-#include "../../headers/Instruction.h"
-#include <algorithm>         // para std::find
-#include <cctype>            // para std::toupper
+/* Architectures/headers/RiscV.h */
+#ifndef RISCV_H      // Include guard
+#define INSTRUCTION_RISCV_H
+#include "../../headers/Architecture.h"
+#include <algorithm> // para std::find
+#include <cctype>    // para std::toupper
 
 namespace processor {
 
 // ─── CLASSE ───────────────────────────────────────────────────────
-class InstructionMips32 : public Instruction { // Herança da classe Instruction.
+class InstructionRiscV : public Instruction { // Herança da classe Instruction.
     public:
         // Método estático:
         // Monta o CDB (vetor de registradores físicos) da arquitetura.
@@ -16,7 +16,7 @@ class InstructionMips32 : public Instruction { // Herança da classe Instruction
 
         // Construtor:
         // - explicit para impedir o cast implícito.
-        explicit InstructionMips32(
+        explicit InstructionRiscV(
             const int = -1
         );
 
@@ -24,21 +24,19 @@ class InstructionMips32 : public Instruction { // Herança da classe Instruction
         // Métodos "privados":
         // - override para implementar sua versão específica.
         std::vector<std::string> SplitInstruction(
-            const std::string&
+            const std::string& str
         ) const override;
         bool IdentifyType(
-            const std::vector<std::string>&
-        ) override;
-        void NormalizeInstruction(
-            std::vector<std::string>&
-        ) override;
-        void SetAttributes(
-            const std::vector<std::string>&
+            const std::vector<std::string>& tokens
         ) override;
         void ValidateInstruction(
-            const std::vector<std::string>&,
-            const std::vector<int>&,
-            const std::vector<int>&
+            const std::vector<std::string>& tokens
+        ) override;
+        void NormalizeInstruction(
+            std::vector<std::string>& tokens
+        ) override;
+        void SetAttributes(
+            const std::vector<std::string>& tokens
         ) override;
 };
 

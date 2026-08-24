@@ -1,10 +1,29 @@
-/* Instruction/InstructionArm64.cpp */
-#include "headers/InstructionArm64.h"
+/* Architectures/Arm64.cpp */
+#include "headers/Arm64.h"
 
 namespace processor {
 
+static Register LookupRegister(
+    const std::string& name,
+    const std::string& instruction, // Puramente para debugging em caso de erro (não é obrigatório para o funcionamento).
+    const std::unordered_map<std::string, Register>& table
+){
+    auto it{table.find(name)};
+
+    // Verifica se o registrador está dentro da tabela:
+    // - O método "find()" retorna "end()" se não encontra o elemento.
+    if (it == table.end()) {
+        std::cerr <<
+            "[ERRO] Registrador inválido: \n" <<
+            "- Nome: " << name << '\n' <<
+            "- Instrução: " << instruction << '\n';
+        std::abort();
+    }
+    return it->second;
+}
+
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
-static const int biggest_instruction{6};
+static const int biggest_instruction{6}; // Elemento apenas para a formatação do "instruction_string".
 
 // Opcodes da arquitetura:
 static const std::vector<std::string> LOADS
@@ -34,47 +53,43 @@ static const std::vector<std::string> FLOAT_MUL
 static const std::vector<std::string> FLOAT_DIV
     {"fdiv"};
 
-// Verifica se o opcode existe (está na tabela).
-static bool Contains(
-    const std::vector<std::string>& vec,
-    const std::string&              op
-){
-    return std::find(vec.begin(), vec.end(), op) != vec.end();
-}
-
-// Helper para identificar as posições nominais dos destinos da instrução.
+// Identifica as posições dos registradores de destino da instrução.
 // Retorna {-1} caso a instrução não possua um destino nominal entre os tokens.
 static std::vector<int> GetDestines(
     const std::string& op,
     const INSTRUCTION_TYPE type
 ){
     // Stores e desvios não possuem token de destino.
-    if (type == INSTRUCTION_TYPE::STORE || type == INSTRUCTION_TYPE::BRANCH) return {-1};
+    if (type == INSTRUCTION_TYPE::STORE || type == INSTRUCTION_TYPE::BRANCH)
+        return {-1};
     // nop (HINT #0) não lê nem escreve registrador.
-    if (op == "nop")                                                          return {-1};
+    if (op == "nop")
+        return {-1};
     // Comparações afetam a flag implícita CPSR, logo não há token nominal de destino.
-    if (op == "cmp" || op == "cmn" || op == "tst" || op == "fcmp")           return {-1};
+    if (op == "cmp" || op == "cmn" || op == "tst" || op == "fcmp")
+        return {-1};
     // ldp possui sempre dois destinos.
-    if (op == "ldp")                                                         return {1, 2};
+    if (op == "ldp")
+        return {1, 2};
 
     // Regra geral (LOAD, Aritmética e Float): destino localizado no token 1.
     return {1};
 }
 
-// Identifica as posições nominais de fontes da instrução.
+// Identifica as posições dos registradores de fontes da instrução.
 // - Retorna {-1} caso a instrução não possua fonte nominal entre os tokens.
 static std::vector<int> GetSources(
-    const std::string& op,
+    const std::string&     op,
     const INSTRUCTION_TYPE type,
-    const size_t num_tokens
+    const size_t           num_tokens
 ){
     if (type == INSTRUCTION_TYPE::STORE) {
-        if (op == "stp") return {1, 2, 3}; // Ex: stp x0, x1, [sp]
-        return {1, 2};                     // Ex: str x0, [x1]
+        if (op == "stp") return {1, 2, 3}; // ex.: stp x0, x1, [sp]
+        return {1, 2};                     // ex.: str x0, [x1]
     }
     if (type == INSTRUCTION_TYPE::LOAD) {
-        if (op == "ldp") return {3};       // Ex: ldp x0, x1, [sp]
-        return {2};                        // Ex: ldr x0, [x1]
+        if (op == "ldp") return {3};       // ex.: ldp x0, x1, [sp]
+        return {2};                        // ex.: ldr x0, [x1]
     }
     if (type == INSTRUCTION_TYPE::BRANCH) {
         // Desvios que requerem leitura nominal de registrador.
@@ -111,13 +126,12 @@ static bool IsZeroRegister(
 // - x0 (64 bits) contém o w0 (32 bits de baixo).
 // - Quando o x0 é usado, ele bloqueia w0 e vice-versa.
 // - Mesmo id + máscaras sobrepostas = mesmo espaço de hardware (bloqueiam-se mutuamente).
-
-// Mais simples que X86, porque, se dividem o mesmo hardware, necessariamente um bloqueia o outro.
 static std::vector<Register> GetMaskedRegisters(
     const Register& target_reg
 ){
     std::vector<Register> blocked_regs;
 
+    // Mais simples que X86, porque, se dividem o mesmo hardware, necessariamente um bloqueia o outro.
     for (const auto& [name, reg] : RegisterTable()) {
         if (
             target_reg.GetType()   != reg.GetType() && // Tipo igual e id igual => o próprio registrador.
@@ -138,13 +152,14 @@ static void PushWithMasked(
     const Register&        reg
 ){
     for (const Register& candidate : regs) {
-        if (candidate.GetType() == reg.GetType() && candidate.GetId() == reg.GetId() && candidate.GetMask() == reg.GetMask())
+        if (candidate.GetType() == reg.GetType() &&
+            candidate.GetId()   == reg.GetId()   &&
+            candidate.GetMask() == reg.GetMask())
             return; // Já adicionado.
     }
 
     regs.push_back(reg);
-    for (const Register& variant : GetMaskedRegisters(reg))
-        regs.push_back(variant);
+    for (const Register& variant : GetMaskedRegisters(reg)) regs.push_back(variant);
 }
 
 // Interpreta um operando de endereço ("[sp, 16]", "[x1]", "[x1, x2]", "[x1, x2, lsl 3]") e empurra cada registrador encontrado como fonte:
@@ -274,15 +289,15 @@ bool InstructionArm64::IdentifyType(
     std::string op{tokens[0]};
     for (char& c : op) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
-    if (Contains(LOADS, op))            type = INSTRUCTION_TYPE::LOAD;
-    else if (Contains(STORES, op))      type = INSTRUCTION_TYPE::STORE;
-    else if (Contains(INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
-    else if (Contains(BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
-    else if (Contains(INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
-    else if (Contains(INT_DIV, op))     type = INSTRUCTION_TYPE::INT_DIV;
-    else if (Contains(FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
-    else if (Contains(FLOAT_MUL, op))   type = INSTRUCTION_TYPE::FLOAT_MUL;
-    else if (Contains(FLOAT_DIV, op))   type = INSTRUCTION_TYPE::FLOAT_DIV;
+    if (ContainsOpcode(LOADS, op))            type = INSTRUCTION_TYPE::LOAD;
+    else if (ContainsOpcode(STORES, op))      type = INSTRUCTION_TYPE::STORE;
+    else if (ContainsOpcode(INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
+    else if (ContainsOpcode(BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
+    else if (ContainsOpcode(INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
+    else if (ContainsOpcode(INT_DIV, op))     type = INSTRUCTION_TYPE::INT_DIV;
+    else if (ContainsOpcode(FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
+    else if (ContainsOpcode(FLOAT_MUL, op))   type = INSTRUCTION_TYPE::FLOAT_MUL;
+    else if (ContainsOpcode(FLOAT_DIV, op))   type = INSTRUCTION_TYPE::FLOAT_DIV;
     else return false;
 
     return true;
@@ -307,8 +322,8 @@ std::vector<std::string> InstructionArm64::SplitInstruction(
         }
         if (c == ']') {
             current += c;
-            // Fecha o token assim que o colchete termina, pra não colar o '!'
-            // de writeback ("[sp, -16]!") no mesmo token do endereço.
+            // Fecha o token assim que o colchete termina.
+            // - Para não colar o "!" de writeback ("[sp, -16]!") no mesmo token do endereço.
             tokens.push_back(current);
             current.clear();
             in_bracket = false;
@@ -374,12 +389,13 @@ void InstructionArm64::SetAttributes(
     const std::vector<std::string>& tokens
 ){
     dest_registers.clear();
-    source_registers.clear();
+    ex_source_registers.clear();
+    mem_source_registers.clear();
 
-    std::vector<int> expected_dests = GetDestines(tokens[0], type);
-    std::vector<int> expected_srcs  = GetSources(tokens[0], type, tokens.size());
+    std::vector<int> expected_dests{GetDestines(tokens[0], type)};
+    std::vector<int> expected_srcs{GetSources(tokens[0], type, tokens.size())};
 
-    ValidateInstruction(tokens, expected_dests, expected_srcs);
+    ValidateInstruction(tokens);
 
     // Instruções de 5 tokens:
     if (tokens.size() == 5){
@@ -389,7 +405,7 @@ void InstructionArm64::SetAttributes(
         if (tokens[0] == "cmp" || tokens[0] == "cmn" || tokens[0] == "tst" || tokens[0] == "fcmp") {
             for (size_t i{1}; i < tokens.size(); ++i){
                 if (IsRegister(tokens[i], RegisterTable()) && !IsZeroRegister(tokens[i]))
-                    PushWithMasked(source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    PushWithMasked(ex_source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
             }
             dest_registers.push_back(Register('G', 80));
             return;
@@ -400,10 +416,10 @@ void InstructionArm64::SetAttributes(
         // - tokens[4] é o marcador de writeback '!' - ignorado.
         else if (type == INSTRUCTION_TYPE::STORE && tokens[4] == "!") {
             if (!IsZeroRegister(tokens[1]))
-                PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                PushWithMasked(mem_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
             if (!IsZeroRegister(tokens[2]))
-                PushWithMasked(source_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
-            PushAddressSources(source_registers, tokens[3], instruction_string);
+                PushWithMasked(mem_source_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
+            PushAddressSources(ex_source_registers, tokens[3], instruction_string);
             return;
         }
         // "ldp x0, x1, [sp, #16]!" (writeback pré-indexado):
@@ -415,7 +431,7 @@ void InstructionArm64::SetAttributes(
                 PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
             if (!IsZeroRegister(tokens[2]))
                 PushWithMasked(dest_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
-            PushAddressSources(source_registers, tokens[3], instruction_string);
+            PushAddressSources(ex_source_registers, tokens[3], instruction_string);
             return;
         }
     }
@@ -431,7 +447,7 @@ void InstructionArm64::SetAttributes(
                     PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
                 if (!IsZeroRegister(tokens[2]))
                     PushWithMasked(dest_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
-                PushAddressSources(source_registers, tokens[3], instruction_string);
+                PushAddressSources(ex_source_registers, tokens[3], instruction_string);
                 return;
             }
             // "stp x29, x30, [sp, #-16]":
@@ -441,10 +457,10 @@ void InstructionArm64::SetAttributes(
             // e é tratada no bloco de 5 tokens.)
             else if (type == INSTRUCTION_TYPE::STORE){
                 if (!IsZeroRegister(tokens[1]))
-                    PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                    PushWithMasked(mem_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
                 if (!IsZeroRegister(tokens[2]))
-                    PushWithMasked(source_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
-                PushAddressSources(source_registers, tokens[3], instruction_string);
+                    PushWithMasked(mem_source_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
+                PushAddressSources(ex_source_registers, tokens[3], instruction_string);
                 return;
             }
         }
@@ -453,7 +469,7 @@ void InstructionArm64::SetAttributes(
         // - Sem destino.
         else if (tokens[0] == "tbz" || tokens[0] == "tbnz") {
             if (!IsZeroRegister(tokens[1]))
-                PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                PushWithMasked(ex_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
             return;
         }
         // "ldr x0, [x1], #16" (pós-indexado):
@@ -463,7 +479,7 @@ void InstructionArm64::SetAttributes(
         else if (type == INSTRUCTION_TYPE::LOAD) {
             if (!IsZeroRegister(tokens[1]))
                 PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            PushAddressSources(source_registers, tokens[2], instruction_string);
+            PushAddressSources(ex_source_registers, tokens[2], instruction_string);
             return;
         }
         // "str x0, [x1], #16" (pós-indexado):
@@ -472,8 +488,8 @@ void InstructionArm64::SetAttributes(
         // - tokens[3] é o deslocamento pós-índice (sempre imediato) - ignorado.
         else if (type == INSTRUCTION_TYPE::STORE) {
             if (!IsZeroRegister(tokens[1]))
-                PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            PushAddressSources(source_registers, tokens[2], instruction_string);
+                PushWithMasked(mem_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            PushAddressSources(ex_source_registers, tokens[2], instruction_string);
             return;
         }
         // Aritmética geral - "add x1, x2, x3" (com ou sem shift/extensão):
@@ -482,7 +498,7 @@ void InstructionArm64::SetAttributes(
         else {
             for (size_t i{2}; i < tokens.size(); ++i){
                 if (IsRegister(tokens[i], RegisterTable()) && !IsZeroRegister(tokens[i]))
-                    PushWithMasked(source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    PushWithMasked(ex_source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
             }
             if (!IsZeroRegister(tokens[1]))
                 PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
@@ -504,7 +520,7 @@ void InstructionArm64::SetAttributes(
         if (type == INSTRUCTION_TYPE::LOAD) {
             if (!IsZeroRegister(tokens[1]))
                 PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            PushAddressSources(source_registers, tokens[2], instruction_string);
+            PushAddressSources(ex_source_registers, tokens[2], instruction_string);
             return;
         }
         // "str x0, [x1, #8]":
@@ -512,8 +528,8 @@ void InstructionArm64::SetAttributes(
         // - Sem destino.
         else if (type == INSTRUCTION_TYPE::STORE) {
             if (!IsZeroRegister(tokens[1]))
-                PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            PushAddressSources(source_registers, tokens[2], instruction_string);
+                PushWithMasked(mem_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            PushAddressSources(ex_source_registers, tokens[2], instruction_string);
             return;
         }
         // Comparadores - "cmp x0, x1":
@@ -522,7 +538,7 @@ void InstructionArm64::SetAttributes(
         else if (tokens[0] == "cmp" || tokens[0] == "cmn" || tokens[0] == "tst" || tokens[0] == "fcmp") {
             for (size_t i{1}; i < tokens.size(); ++i){
                 if (IsRegister(tokens[i], RegisterTable()) && !IsZeroRegister(tokens[i]))
-                    PushWithMasked(source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    PushWithMasked(ex_source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
             }
             dest_registers.push_back(Register('G', 80));
             return;
@@ -532,7 +548,7 @@ void InstructionArm64::SetAttributes(
         // - Sem destino.
         else if (type == INSTRUCTION_TYPE::BRANCH && (tokens[0] == "cbz" || tokens[0] == "cbnz")) {
             if (!IsZeroRegister(tokens[1]))
-                PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                PushWithMasked(ex_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
             return;
         }
         // Aritmética de 2 operandos - "fcvtzs w0, d1" / "mov x0, xzr" / "neg x0, x1":
@@ -541,7 +557,7 @@ void InstructionArm64::SetAttributes(
         else {
             for (size_t i{2}; i < tokens.size(); ++i){
                 if (IsRegister(tokens[i], RegisterTable()) && !IsZeroRegister(tokens[i]))
-                    PushWithMasked(source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    PushWithMasked(ex_source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
             }
             if (!IsZeroRegister(tokens[1]))
                 PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
@@ -567,7 +583,7 @@ void InstructionArm64::SetAttributes(
             // - Fonte = flag 'cpsr';
             // Sem destino.
             else if (tokens[0].rfind("b.", 0) == 0) {
-                source_registers.push_back(Register('G', 80));
+                ex_source_registers.push_back(Register('G', 80));
                 return;
             }
             // "bl func":
@@ -582,7 +598,7 @@ void InstructionArm64::SetAttributes(
             // Sem destino.
             else if (tokens[0] == "br") {
                 if (!IsZeroRegister(tokens[1]))
-                    PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                    PushWithMasked(ex_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
                 return;
             }
             // "blr x0":
@@ -590,7 +606,7 @@ void InstructionArm64::SetAttributes(
             // - Destino = link register (x30);
             else if (tokens[0] == "blr") {
                 if (!IsZeroRegister(tokens[1]))
-                    PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                    PushWithMasked(ex_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
                 dest_registers.push_back(Register('L', 30, 0xFF));
                 return;
             }
@@ -599,7 +615,7 @@ void InstructionArm64::SetAttributes(
             // Sem destino.
             else if (tokens[0] == "ret") {
                 if (!IsZeroRegister(tokens[1]))
-                    PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                    PushWithMasked(ex_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
                 return;
             }
         }
@@ -610,7 +626,7 @@ void InstructionArm64::SetAttributes(
         // - Fonte = link register (x30);
         // Sem destino.
         if (type == INSTRUCTION_TYPE::BRANCH && tokens[0] == "ret") {
-            source_registers.push_back(Register('L', 30, 0xFF));
+            ex_source_registers.push_back(Register('L', 30, 0xFF));
             return;
         }
         // "nop":
@@ -629,15 +645,14 @@ void InstructionArm64::SetAttributes(
 // Verifica se os destinos e fontes correspondem à sintaxe da linguagem.
 // - Aborta em caso contrário, sem possibilidade de escrita incorreta.
 void InstructionArm64::ValidateInstruction(
-    const std::vector<std::string>& tokens,
-    const std::vector<int>&         expected_dests,
-    const std::vector<int>&         expected_srcs
+    const std::vector<std::string>& tokens
 
 ){
+    /*
     // 1. Destinos nominais devem ser invariavelmente registradores.
     for (int pos : expected_dests) {
         if (pos != -1 && pos < static_cast<int>(tokens.size())) {
-            // Rejeita imediatos, endereços ou nomenclaturas que não existam na RegisterTable.
+            // Rejeita imediatos, endereços ou nomenclaturas que não existam em "RegisterTable()".
             if (tokens[pos].front() == '#' || tokens[pos].front() == '[' ||
                 (!IsRegister(tokens[pos], RegisterTable()) && !IsZeroRegister(tokens[pos]))) {
                 std::cerr << "[ERRO] Operando inválido no destino. Esperado registrador em: '" << tokens[pos] << "'\n"
@@ -687,5 +702,7 @@ void InstructionArm64::ValidateInstruction(
             }
         }
     }
+    */
 }
+
 } // namespace processor

@@ -8,9 +8,9 @@ OBJDIR   = build
 INPUTDIR = test-cases/inputs
 EXPDIR   = test-cases/expected
 
-# Módulo multi-arquitetura (Code/Instruction/) — mantido em pasta separada
-# para receber as novas arquiteturas (ver multiarchitecture.md).
-SRCS     = $(wildcard $(SRCDIR)/*.cpp) $(wildcard $(SRCDIR)/Instruction/*.cpp)
+# Módulo multi-arquitetura (Code/Architectures/)
+# Mantido em pasta separada para receber as novas arquiteturas.
+SRCS     = $(wildcard $(SRCDIR)/*.cpp) $(wildcard $(SRCDIR)/Architectures/*.cpp)
 OBJS     = $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%.o,$(SRCS))
 MAIN_OBJ = $(OBJDIR)/Main.o
 

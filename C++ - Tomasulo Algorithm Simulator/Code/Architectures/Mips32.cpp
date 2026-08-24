@@ -1,10 +1,29 @@
-/* Instruction/InstructionMips32.cpp */
-#include "headers/InstructionMips32.h"
+/* Architectures/Mips32.cpp */
+#include "headers/Mips32.h"
 
 namespace processor {
 
+static Register LookupRegister(
+    const std::string& name,
+    const std::string& instruction, // Puramente para debugging em caso de erro (não é obrigatório para o funcionamento).
+    const std::unordered_map<std::string, Register>& table
+){
+    auto it{table.find(name)};
+
+    // Verifica se o registrador está dentro da tabela:
+    // - O método "find()" retorna "end()" se não encontra o elemento.
+    if (it == table.end()) {
+        std::cerr <<
+            "[ERRO] Registrador inválido: \n" <<
+            "- Nome: " << name << '\n' <<
+            "- Instrução: " << instruction << '\n';
+        std::abort();
+    }
+    return it->second;
+}
+
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
-static const int biggest_instruction{7};
+static const int biggest_instruction{7}; // Elemento apenas para a formatação do "instruction_string".
 
 // Opcodes da arquitetura:
 static const std::vector<std::string> LOADS
@@ -34,14 +53,6 @@ static const std::vector<std::string> FLOAT_MUL
 static const std::vector<std::string> FLOAT_DIV
     {"div.d", "div.s"};
 
-// Verifica se o opcode existe (está na tabela).
-static bool Contains(
-    const std::vector<std::string>& vec,
-    const std::string& op
-){
-    return std::find(vec.begin(), vec.end(), op) != vec.end();
-}
-
 // Função de Instruction.h:
 // - Tabela: (nome, registrador físico).
 const std::unordered_map<std::string, Register>& RegisterTable() {
@@ -50,7 +61,7 @@ const std::unordered_map<std::string, Register>& RegisterTable() {
     static std::unordered_map<std::string, Register> t;
 
     // Como não existem aliases de hardware, todos os registradores recebem a mascara default (0xFF - Integral).
-    if (t.empty()){ // Evita refazer os emplaces a cada chamada da função (já que t é static).
+    if (t.empty()){ // Evita refazer os emplaces a cada chamada da função (já que "t" é "static").
 
         // Int (0 - 31):
         // - $zero/$0 (0).
@@ -114,15 +125,15 @@ bool InstructionMips32::IdentifyType(
     std::string op{tokens[0]};
     for (char& c : op) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
-    if (Contains(LOADS, op))            type = INSTRUCTION_TYPE::LOAD;
-    else if (Contains(STORES, op))      type = INSTRUCTION_TYPE::STORE;
-    else if (Contains(INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
-    else if (Contains(BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
-    else if (Contains(INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
-    else if (Contains(INT_DIV, op))     type = INSTRUCTION_TYPE::INT_DIV;
-    else if (Contains(FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
-    else if (Contains(FLOAT_MUL, op))   type = INSTRUCTION_TYPE::FLOAT_MUL;
-    else if (Contains(FLOAT_DIV, op))   type = INSTRUCTION_TYPE::FLOAT_DIV;
+    if (ContainsOpcode(LOADS, op))            type = INSTRUCTION_TYPE::LOAD;
+    else if (ContainsOpcode(STORES, op))      type = INSTRUCTION_TYPE::STORE;
+    else if (ContainsOpcode(INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
+    else if (ContainsOpcode(BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
+    else if (ContainsOpcode(INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
+    else if (ContainsOpcode(INT_DIV, op))     type = INSTRUCTION_TYPE::INT_DIV;
+    else if (ContainsOpcode(FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
+    else if (ContainsOpcode(FLOAT_MUL, op))   type = INSTRUCTION_TYPE::FLOAT_MUL;
+    else if (ContainsOpcode(FLOAT_DIV, op))   type = INSTRUCTION_TYPE::FLOAT_DIV;
     else return false;
 
     return true;
@@ -136,6 +147,7 @@ std::vector<std::string> InstructionMips32::SplitInstruction(
     std::vector<std::string> tokens;
     std::string current;
     for (char c : str) {
+        // Começou ou finalizou um token.
         if (c == ',' || c == ' ' || c == '(' || c == ')' || c == '\t') {
             // Ignora os espaços repetidos.
             if (!current.empty()) {
@@ -158,7 +170,8 @@ void InstructionMips32::NormalizeInstruction(
     std::vector<std::string>& tokens
 ){
     for (size_t i = 0; i < tokens.size(); ++i) {
-        // Labels de desvio são case-sensitive: só opcode e registradores viram minúsculo.
+        // Labels de desvio são case-sensitive.
+        // - Só OpCode e registradores viram minúsculo.
         if (type == INSTRUCTION_TYPE::BRANCH && i > 0 && !IsRegister(tokens[i], RegisterTable())) continue;
         for (char& c : tokens[i]) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
@@ -166,6 +179,8 @@ void InstructionMips32::NormalizeInstruction(
     std::string normalized = tokens[0];
     while (normalized.length() < biggest_instruction) normalized += ' ';
 
+    // Instruções no modelo: 4 tokens fixos com o último elemento entre parênteses
+    // - inst $reg1, imd($reg2)
     if (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE) {
         // Proteção contra linha truncada (ex.: "lw $t0, 4" sem a base).
         if (tokens.size() < 4) {
@@ -174,11 +189,11 @@ void InstructionMips32::NormalizeInstruction(
             std::abort();
         }
         normalized += tokens[1] + ", " + tokens[2] + "(" + tokens[3] + ")";
-    } else if (type == INSTRUCTION_TYPE::BRANCH) {
-        for (size_t i = 1; i < tokens.size(); ++i)
-            normalized += (i == 1 ? "" : ", ") + tokens[i];
-    } else {
-        for (size_t i = 1; i < tokens.size(); ++i)
+    }
+    // Instruções no modelo: número de tokens e objetos variados (registradores, labels, imediatos, etc.) apenas separados por vírgula
+    // - inst obj1, obj2, ...
+    else {
+        for (size_t i{1}; i < tokens.size(); ++i)
             normalized += (i == 1 ? "" : ", ") + tokens[i];
     }
     instruction_string = normalized;
@@ -189,7 +204,8 @@ void InstructionMips32::SetAttributes(
     const std::vector<std::string>& tokens
 ){
     dest_registers.clear();
-    source_registers.clear();
+    ex_source_registers.clear();
+    mem_source_registers.clear();
 
     // Instruções de 4 tokens:
     if (tokens.size() > 3) {
@@ -199,7 +215,7 @@ void InstructionMips32::SetAttributes(
         // - tokens[2] é o deslocamento (sempre imediato) - ignorado.
         if (type == INSTRUCTION_TYPE::LOAD) {
             dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
+            ex_source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
             return;
         }
         // "sw $t0, 4($t1)":
@@ -207,8 +223,8 @@ void InstructionMips32::SetAttributes(
         // - Sem destino.
         // - tokens[2] é o deslocamento (sempre imediato) - ignorado.
         else if (type == INSTRUCTION_TYPE::STORE) {
-            source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
+            mem_source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            ex_source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
             return;
         }
         // "beq $t0, $t1, LOOP" / "bne $t0, $t1, LOOP":
@@ -217,9 +233,9 @@ void InstructionMips32::SetAttributes(
         // - tokens[3] é o sempre o label - ignorado.
         else if (type == INSTRUCTION_TYPE::BRANCH) {
             if (IsRegister(tokens[1], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                ex_source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             if (IsRegister(tokens[2], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+                ex_source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
             return;
         }
         // Aritmética - "add $t0, $t1, $t2" / "addi $t0, $t1, 5":
@@ -228,9 +244,9 @@ void InstructionMips32::SetAttributes(
         else {
             dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             if (IsRegister(tokens[2], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+                ex_source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
             if (IsRegister(tokens[3], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
+                ex_source_registers.push_back(LookupRegister(tokens[3], instruction_string, RegisterTable()));
             return;
         }
     }
@@ -242,7 +258,7 @@ void InstructionMips32::SetAttributes(
         if (tokens[0] == "jalr") {
             if (IsRegister(tokens[1], RegisterTable()) && IsRegister(tokens[2], RegisterTable())) {
                 dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
-                source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+                ex_source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
             }
             return;
         }
@@ -252,7 +268,7 @@ void InstructionMips32::SetAttributes(
         else if (tokens[0] == "bltzal" || tokens[0] == "bgezal") {
             dest_registers.push_back(Register('R', 31));
             if (IsRegister(tokens[1], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                ex_source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             return;
         }
         // "bnez $t0, LOOP" (e beqz/bgtz/bltz/bgez/blez):
@@ -260,7 +276,7 @@ void InstructionMips32::SetAttributes(
         // - Sem destino.
         else if (type == INSTRUCTION_TYPE::BRANCH) {
             if (IsRegister(tokens[1], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                ex_source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             return;
         }
         // "lui $t0, 5" / "abs.s $f0, $f1" (dest + imediato ou dest + fonte única):
@@ -269,7 +285,7 @@ void InstructionMips32::SetAttributes(
         else {
             dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             if (IsRegister(tokens[2], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+                ex_source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
             return;
         }
     }
@@ -288,7 +304,7 @@ void InstructionMips32::SetAttributes(
         else if (tokens[0] == "jalr") {
             if (IsRegister(tokens[1], RegisterTable())) {
                 dest_registers.push_back(Register('R', 31));
-                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                ex_source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             }
             return;
         }
@@ -297,7 +313,7 @@ void InstructionMips32::SetAttributes(
         // - Sem destino.
         else if (tokens[0] == "jr") {
             if (IsRegister(tokens[1], RegisterTable()))
-                source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                ex_source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             return;
         }
         // "j LOOP":
@@ -315,9 +331,7 @@ void InstructionMips32::SetAttributes(
 // Verifica se os destinos e fontes correspondem à sintaxe da linguagem.
 // - Aborta em caso contrário, sem possibilidade de escrita incorreta.
 void InstructionMips32::ValidateInstruction(
-    const std::vector<std::string>& tokens,
-    const std::vector<int>&         expected_dests,
-    const std::vector<int>&         expected_srcs
+    const std::vector<std::string>& tokens
 
 ){
 

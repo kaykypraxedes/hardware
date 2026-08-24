@@ -55,7 +55,7 @@ latencias_mem 1 1
 
 # Instrucoes do programa (uma por linha, termina com END_PROG)
 programa
-LD F0, 0(R1)
+L.D F0, 0(R1)
 ADD.D F0, F0, F6
 DIV.D F2, F2, F0
 L.D F0, 8(R1)
@@ -63,7 +63,7 @@ DIV.D F4, F0, F8
 S.D F4, 16(R1)
 DADDIU R1, R1, #24
 BNEZ R1, loop
-LD F0, 0(R1)
+L.D F0, 0(R1)
 ADD.D F0, F0, F6
 DIV.D F2, F2, F0
 L.D F0, 8(R1)

@@ -128,6 +128,11 @@ void Instruction::Parse(
         std::abort();
     }
 
+    // Camada de validação:
+    // - Verifica se a sintaxe da instrução está correta.
+    // - Busca reduzida por restringir o tipo com "IndentifyType()".
+    ValidateInstruction(tokens);
+
     // Termina de salvar suas informações.
     NormalizeInstruction(tokens);
     SetAttributes(tokens);

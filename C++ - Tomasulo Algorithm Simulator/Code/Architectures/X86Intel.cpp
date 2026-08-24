@@ -1,9 +1,28 @@
-/* Instruction/InstructionX86Intel.cpp */
-#include "headers/InstructionX86Intel.h"
+/* Architectures/X86Intel.cpp */
+#include "headers/X86Intel.h"
 #include <string>
 #include <vector>
 
 namespace processor {
+
+static Register LookupRegister(
+    const std::string& name,
+    const std::string& instruction, // Puramente para debugging em caso de erro (não é obrigatório para o funcionamento).
+    const std::unordered_map<std::string, Register>& table
+){
+    auto it{table.find(name)};
+
+    // Verifica se o registrador está dentro da tabela:
+    // - O método "find()" retorna "end()" se não encontra o elemento.
+    if (it == table.end()) {
+        std::cerr <<
+            "[ERRO] Registrador inválido: \n" <<
+            "- Nome: " << name << '\n' <<
+            "- Instrução: " << instruction << '\n';
+        std::abort();
+    }
+    return it->second;
+}
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
 static const int biggest_instruction{9};
@@ -48,17 +67,9 @@ static const std::vector<std::string> NO_FLAGS_COPY
     {"movsx", "movzx", "not", "cvtsi2ss", "cvttss2si", "addss", "addsd", "subss", "subsd", "sqrtss", "addps", "subps", "mulps", "divps", "mulss", "mulsd", "divss", "divsd", "pxor", "pand", "por"};
 
 
-// Verifica se o opcode existe (está na tabela).
-static bool Contains(
-    const std::vector<std::string>& vec,
-    const std::string&              op
-){
-    return std::find(vec.begin(), vec.end(), op) != vec.end();
-}
-
 // Verifica se é uma cópia de registrador/imediato da família MOV (sem memória).
 static bool IsMOVCopy(const std::vector<std::string>& tokens) {
-    return Contains(MOVS, tokens[0]) &&
+    return ContainsOpcode(MOVS, tokens[0]) &&
            !(tokens.size() > 1 && tokens[1].front() == '[') &&
            !(tokens.size() > 2 && tokens[2].front() == '[');
 }
@@ -270,14 +281,14 @@ bool InstructionX86Intel::IdentifyType(
     std::string op{tokens[0]};
     for (char& c : op) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
-    if (Contains(MOVS, op))             type = IdentifyMOVType(tokens);
-    else if (Contains(INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
-    else if (Contains(BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
-    else if (Contains(INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
-    else if (Contains(INT_DIV, op))     type = INSTRUCTION_TYPE::INT_DIV;
-    else if (Contains(FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
-    else if (Contains(FLOAT_MUL, op))   type = INSTRUCTION_TYPE::FLOAT_MUL;
-    else if (Contains(FLOAT_DIV, op))   type = INSTRUCTION_TYPE::FLOAT_DIV;
+    if (ContainsOpcode(MOVS, op))             type = IdentifyMOVType(tokens);
+    else if (ContainsOpcode(INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
+    else if (ContainsOpcode(BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
+    else if (ContainsOpcode(INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
+    else if (ContainsOpcode(INT_DIV, op))     type = INSTRUCTION_TYPE::INT_DIV;
+    else if (ContainsOpcode(FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
+    else if (ContainsOpcode(FLOAT_MUL, op))   type = INSTRUCTION_TYPE::FLOAT_MUL;
+    else if (ContainsOpcode(FLOAT_DIV, op))   type = INSTRUCTION_TYPE::FLOAT_DIV;
     else return false;
 
     return true;
@@ -339,22 +350,23 @@ void InstructionX86Intel::SetAttributes(
     const std::vector<std::string>& tokens
 ){
     dest_registers.clear();
-    source_registers.clear();
+    ex_source_registers.clear();
+    mem_source_registers.clear();
 
     // No x86 Intel, o primeiro operando costuma ser o Destino/Fonte (ex: add eax ebx -> eax = eax + ebx)
     if (type == INSTRUCTION_TYPE::BRANCH) {
         // "je end" (e demais JCC):
         // - Fonte   = EFLAGS ('G', 80).
         // - Sem destino.
-        if (Contains(JCC, tokens[0]))
-            source_registers.push_back(Register('G', 80));
+        if (ContainsOpcode(JCC, tokens[0]))
+            ex_source_registers.push_back(Register('G', 80));
 
         // "call foo" / "ret":
         // - Fonte   = rsp implícito ('L', 6).
         // - Destino = rsp implícito ('L', 6).
         if (tokens[0] == "call" || tokens[0] == "ret") {
             PushWithMasked(dest_registers,   Register('L', 6));
-            PushWithMasked(source_registers, Register('L', 6));
+            PushWithMasked(ex_source_registers, Register('L', 6));
         }
 
         // "jmp rax" / "call [rbx]" (indiretos):
@@ -364,7 +376,7 @@ void InstructionX86Intel::SetAttributes(
             std::string op{tokens[1]};
             for (char& c : op) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             if (op.front() == '[' || IsRegister(op, RegisterTable()))
-                PushOperandSources(source_registers, tokens[1], instruction_string);
+                PushOperandSources(ex_source_registers, tokens[1], instruction_string);
         }
     }
     // LOAD - "mov eax, [ebx+4]":
@@ -377,7 +389,7 @@ void InstructionX86Intel::SetAttributes(
             std::abort();
         }
         PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        PushOperandSources(source_registers, tokens[2], instruction_string);
+        PushOperandSources(ex_source_registers, tokens[2], instruction_string);
     }
     // STORE - "mov [ebx+4], eax":
     // - Fontes   = tokens[2] (dado) e registradores do endereço (tokens[1]);
@@ -388,8 +400,8 @@ void InstructionX86Intel::SetAttributes(
             "Instrução: "<< instruction_string << '\n';
             std::abort();
         }
-        PushWithMasked(source_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
-        PushOperandSources(source_registers, tokens[1], instruction_string);
+        PushWithMasked(mem_source_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
+        PushOperandSources(ex_source_registers, tokens[1], instruction_string);
     }
     // "cmp eax, ebx" / "test" / "comiss" / "ucomiss":
     // - Fontes   = tokens[1] (e tokens[2], quando houver), reg ou memória;
@@ -402,9 +414,9 @@ void InstructionX86Intel::SetAttributes(
             std::abort();
         }
         PushWithMasked(dest_registers, Register('G', 80));
-        PushOperandSources(source_registers, tokens[1], instruction_string);
+        PushOperandSources(ex_source_registers, tokens[1], instruction_string);
         if (tokens.size() > 2)
-            PushOperandSources(source_registers, tokens[2], instruction_string);
+            PushOperandSources(ex_source_registers, tokens[2], instruction_string);
     }
     else if (tokens[0] == "div" || tokens[0] == "idiv" || tokens[0] == "mul" ||
                (tokens[0] == "imul" && tokens.size() == 2)) {
@@ -418,7 +430,7 @@ void InstructionX86Intel::SetAttributes(
             "Instrução: "<< instruction_string << '\n';
             std::abort();
         }
-        PushOperandSources(source_registers, tokens[1], instruction_string);
+        PushOperandSources(ex_source_registers, tokens[1], instruction_string);
 
         // Resolve a largura do par implícito a partir da classe do operando:
         // - 'B' (8 bits)  -> só ax;
@@ -431,10 +443,10 @@ void InstructionX86Intel::SetAttributes(
         const bool is_8bit   = (cls == 'B');
 
         PushWithMasked(dest_registers,   Register(pair_type, 0, pair_mask));
-        PushWithMasked(source_registers, Register(pair_type, 0, pair_mask));
+        PushWithMasked(ex_source_registers, Register(pair_type, 0, pair_mask));
         if (!is_8bit) {
             PushWithMasked(dest_registers,   Register(pair_type, 2, pair_mask));
-            PushWithMasked(source_registers, Register(pair_type, 2, pair_mask));
+            PushWithMasked(ex_source_registers, Register(pair_type, 2, pair_mask));
         }
     }
     // "push ebx":
@@ -451,14 +463,14 @@ void InstructionX86Intel::SetAttributes(
             std::abort();
         }
         if (tokens[0] == "push") {
-            PushOperandSources(source_registers, tokens[1], instruction_string);
+            PushOperandSources(ex_source_registers, tokens[1], instruction_string);
         } else if (tokens[1].front() == '[') {
-            PushOperandSources(source_registers, tokens[1], instruction_string);
+            PushOperandSources(ex_source_registers, tokens[1], instruction_string);
         } else {
             PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
         }
         PushWithMasked(dest_registers,   Register('L', 6));
-        PushWithMasked(source_registers, Register('L', 6));
+        PushWithMasked(ex_source_registers, Register('L', 6));
     }
     // "lea eax, [ebx+4]":
     // - Fontes   = registradores do endereço (tokens[2]);
@@ -471,7 +483,7 @@ void InstructionX86Intel::SetAttributes(
             std::abort();
         }
         PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-        PushOperandSources(source_registers, tokens[2], instruction_string);
+        PushOperandSources(ex_source_registers, tokens[2], instruction_string);
     }
     // Aritmética - "add eax, ebx" (INT e SSE):
     // - Fontes   = tokens[2] e tokens[1] (RMW, exceto escritas puras);
@@ -485,23 +497,21 @@ void InstructionX86Intel::SetAttributes(
         PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
         // RMW: o destino antigo vira fonte (toda aritmética lê o destino, exceto
         // escritas puras como movsx/cvtsi2ss e cópias MOV).
-        if (!IsMOVCopy(tokens) && !Contains(PURE_WRITE, tokens[0]))
-            PushWithMasked(source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+        if (!IsMOVCopy(tokens) && !ContainsOpcode(PURE_WRITE, tokens[0]))
+            PushWithMasked(ex_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
         // EFLAGS: destino extra apenas para opcodes que setam flags no x86 real
         // (SSE/AVX não setam; ver NO_FLAGS_COPY).
-        if (!IsMOVCopy(tokens) && !Contains(NO_FLAGS_COPY, tokens[0]))
+        if (!IsMOVCopy(tokens) && !ContainsOpcode(NO_FLAGS_COPY, tokens[0]))
             PushWithMasked(dest_registers, Register('G', 80));
         if (tokens.size() > 2)
-            PushOperandSources(source_registers, tokens[2], instruction_string);
+            PushOperandSources(ex_source_registers, tokens[2], instruction_string);
     }
 }
 
 // Verifica se os destinos e fontes correspondem à sintaxe da linguagem.
 // - Aborta em caso contrário, sem possibilidade de escrita incorreta.
 void InstructionX86Intel::ValidateInstruction(
-    const std::vector<std::string>& tokens,
-    const std::vector<int>&         expected_dests,
-    const std::vector<int>&         expected_srcs
+    const std::vector<std::string>& tokens
 
 ){
     if (tokens.empty()) return;
@@ -558,7 +568,7 @@ void InstructionX86Intel::ValidateInstruction(
             std::abort();
         }
     }
-    else if (Contains(MOVS, op)) {
+    else if (ContainsOpcode(MOVS, op)) {
         if (tokens.size() < 3) {
             std::cerr << "[ERRO] Instrução 'mov' malformada (requer destino e fonte):\n"
                         << "Instrução: " << instruction_string << '\n';

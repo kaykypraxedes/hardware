@@ -1,7 +1,7 @@
 /* tb_Processor.cpp /*/
 // Testbench de integração de Processor.cpp
 #include "../headers/Processor.h"
-#include "../headers/Instruction.h"
+#include "../headers/Architecture.h"
 #include "tb_Helpers.h"
 #include <vector>
 

@@ -17,11 +17,11 @@
 #include <cstdlib>   // para std::abort
 #include <iostream>  // para std::cerr
 // Arquiteturas suportadas:
-#include "../Instruction/headers/ArchSimplified.h"
-#include "../Instruction/headers/Arm64.h"
-#include "../Instruction/headers/Mips32.h"
-#include "../Instruction/headers/RiscV.h"
-#include "../Instruction/headers/X86Intel.h"
+#include "../Architectures/headers/ArchSimplified.h"
+#include "../Architectures/headers/Arm64.h"
+#include "../Architectures/headers/Mips32.h"
+#include "../Architectures/headers/RiscV.h"
+#include "../Architectures/headers/X86Intel.h"
 
 namespace processor {
 

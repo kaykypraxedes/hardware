@@ -26,17 +26,41 @@ namespace processor {
 // ─── HELPERS ──────────────────────────────────────────────────────
 
 /**
- * ATENÇÃO: A função deve ser declarada em cada um dos módulos que
- * importa esse módulo.
+ * ATENÇÃO: A função deve ser declarada em cada um dos códigos das
+ * subclasses de "Instruction" (versão própria).
  *
- * Ele só tem de realmente ser definido nos
- * códigos das subclasses de "Instruction" (versão própria).
+ * Gera warning por não ser definido em "Architecture.cpp" e em
+ * outros módulos que importam esse header.
+ *
+ * O warning é ignorado pela diretiva.
  */
-// Gera warning (por não ser definido em "Instruction.cpp"), que é ignorado pela diretiva.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
+
+/**
+ * @brief Cria uma tabela com todos os registradores, flags e
+ * mascaras característicos de cada arquitetura e retorna ela pronta.
+ *
+ * @details Após a primeira criação, ele passa a retornar apenas a
+ * tabela (evita realizar a operação a cada chamada).
+ *
+ * @return static const std::unordered_map<std::string, Register>& -
+ * Tabela completa com os registradores da arquitetura.
+ */
 static const std::unordered_map<std::string, Register>& RegisterTable();
 #pragma GCC diagnostic pop
+
+/**
+ * ATENÇÃO: O método "MakeCDB()" não pode ser declarado "static"
+ * nesse header para ser implementado em cada um dos programas
+ * (o que parece uma ótima ideia para evitar reescrita de código
+ * em cada header a princípio).
+ *
+ * O "InstructionFactory" não chama com base em uma arquitetura
+ * específica (o método de diferenciação é se ele está dentro da
+ * classe - onde ele é declarado "static", e chamado pelo namespace
+ * da sua especificação).
+ */
 
 // Não são "static" para não forçar uma reimplementação em cada .cpp (são iguais).
 
@@ -77,9 +101,9 @@ void FillCDB(
  * função "RegisterTable()", desse módulo).
  * )
  *
- * @param const std::string& - Nome alvo.
- * @param const std::unordered_map<std::string, Register>& - Tabela
- * do "RegisterTable()".
+ * @param const std::string& token - Nome alvo.
+ * @param const std::unordered_map<std::string, Register>& table -
+ * Tabela do "RegisterTable()".
  *
  * @return true - Encontrou o nome na tabela (é um registrador).
  * @return false - Não encontrou (não é um registrador).
@@ -288,21 +312,19 @@ class Instruction {
 
         // Métodos virtuais (cada arquitetura deve implementar sua versão):
         virtual std::vector<std::string> SplitInstruction(
-            const std::string&
+            const std::string& str
         ) const = 0;
         virtual bool IdentifyType(
-            const std::vector<std::string>&
+            const std::vector<std::string>& tokens
+        ) = 0;
+        virtual void ValidateInstruction(
+            const std::vector<std::string>& tokens
         ) = 0;
         virtual void NormalizeInstruction(
             std::vector<std::string>& tokens
         ) = 0;
         virtual void SetAttributes(
             const std::vector<std::string>& tokens
-        ) = 0;
-        virtual void ValidateInstruction(
-            const std::vector<std::string>&,
-            const std::vector<int>&,
-            const std::vector<int>&
         ) = 0;
 };
 

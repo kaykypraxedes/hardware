@@ -3,6 +3,7 @@
 #ifndef TB_HELPERS_H
 #define TB_HELPERS_H
 
+#include "../headers/Components.h"
 #include <cstddef>
 #include <iostream>
 #include <ratio>

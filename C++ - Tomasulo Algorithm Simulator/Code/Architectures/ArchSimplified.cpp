@@ -12,6 +12,49 @@
  * arquitetura e organização interna).
  */
 
+// ─── ENUM ─────────────────────────────────────────────────────────
+
+/**
+ * @brief Agrupa as instruções por seu tipo de sintaxe (resumo de
+ * código para estruturas de atribuição e verificação identicas).
+ */
+enum class OP_SHAPE {
+    // ── LOAD ──────────────────────────────────────────────────────
+    LOAD_INT,        // IREG,        OFF(IREG)   [lw,lb,lh,lbu,lhu,ld,lwu,ll]
+    LOAD_FLOAT,      // FREG,        OFF(IREG)   [l.d,l.s]
+    LOAD_ANY,        // IREG/FREG,   OFF(IREG)   [load]
+
+    // ── STORE ─────────────────────────────────────────────────────
+    STORE_INT,       // IREG,        OFF(IREG)   [sw,sb,sh,sd,sc]
+    STORE_FLOAT,     // FREG,        OFF(IREG)   [s.d,s.s]
+    STORE_ANY,       // IREG/FREG,   OFF(IREG)   [store]
+
+    // ── BRANCH ────────────────────────────────────────────────────
+    BR_2REG_LABEL,       // rs, rt, label               [beq,bne]
+    BR_1REG_LABEL,       // rs, label                   [bnez,beqz,bgtz,bltz,bgez,blez]
+    BR_1REG_LABEL_LINK,  // rs, label   (+ "ra" dest)   [bltzal,bgezal]
+    BR_LABEL,            // label                       [j]
+    BR_LABEL_LINK,       // label       (+ "ra" dest)   [jal]
+    BR_1REG,             // rs                          [jr]
+    BR_JALR,             // (rs) OU (rd, rs) — duas sintaxes  [jalr]
+
+    // ── INT_BASIC ─────────────────────────────────────────────────
+    INT_3REG,            // rd, rs, rt                  [add..dsltu, sllv/srlv/srav — 18 opcodes]
+    INT_2REG_IMM_S,      // rt, rs, imm (com sinal)     [addi..dsltiu — 8 opcodes]
+    INT_2REG_IMM_U,      // rt, rs, imm (sem sinal / shamt) [andi,ori,xori,sll,srl,sra,dsll,dsrl,dsra — 9 opcodes]
+    INT_1REG_IMM,        // rt, imm  (sem rs)           [lui]
+    INT_1REG_LO,         // rd  (fonte implícita LO)    [mflo]
+    INT_1REG_HI,         // rd  (fonte implícita HI)    [mfhi]
+
+    // ── INT_MUL / INT_DIV ─────────────────────────────────────────
+    MULDIV_2REG_HILO,    // rs, rt  -> dest implícito HI/LO  [mult,multu,dmult,dmultu,div,divu,ddiv,ddivu]
+    MUL_3REG,            // rd, rs, rt                  [mul]
+
+    // ── FLOAT ─────────────────────────────────────────────────────
+    FLOAT_3REG,          // fd, fs, ft                  [add.d,add.s,sub.d,sub.s,mul.d,mul.s,div.d,div.s]
+    FLOAT_2REG,          // fd, fs (unário/conversão)   [abs.s,neg.s,sqrt.s,cvt.* — 9 opcodes]
+};
+
 namespace processor {
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
@@ -25,7 +68,7 @@ static const std::vector<std::string> STORES
     {"store", "sw", "sb", "sh", "s.d", "s.s", "sd", "sc"};
 
 static const std::vector<std::string> INT_BASIC
-    {"add", "addi", "addu", "addiu", "daddu", "daddiu", "sub", "subi", "subu", "dsubu", "and", "andi", "or", "ori", "xor", "xori", "nor", "lui", "sll", "srl", "sra", "sllv", "srlv", "srav", "dsll", "dsrl", "dsra", "slt", "slti", "sltu", "sltiu", "dslt", "dslti", "dsltu", "dsltiu"};
+    {"add", "addi", "addu", "addiu", "daddu", "daddiu", "sub", "subi", "subu", "dsubu", "and", "andi", "or", "ori", "xor", "xori", "nor", "lui", "sll", "srl", "sra", "sllv", "srlv", "srav", "dsll", "dsrl", "dsra", "slt", "slti", "sltu", "sltiu", "dslt", "dslti", "dsltu", "dsltiu", "mflo", "mfhi"};
 
 static const std::vector<std::string> BRANCHES
     {"beq", "bne", "bnez", "beqz", "bgtz", "bltz", "bgez", "blez", "bltzal", "bgezal", "j", "jal", "jr", "jalr"};
@@ -181,6 +224,68 @@ static const Register& LookupReg(
     return it->second;
 }
 
+static const std::unordered_map<std::string, OP_SHAPE> OPCODE_SHAPE {
+    // LOAD
+    {"lw", OP_SHAPE::LOAD_INT}, {"lb", OP_SHAPE::LOAD_INT}, {"lh", OP_SHAPE::LOAD_INT},
+    {"lbu", OP_SHAPE::LOAD_INT}, {"lhu", OP_SHAPE::LOAD_INT}, {"ld", OP_SHAPE::LOAD_INT},
+    {"lwu", OP_SHAPE::LOAD_INT}, {"ll", OP_SHAPE::LOAD_INT},
+    {"l.d", OP_SHAPE::LOAD_FLOAT}, {"l.s", OP_SHAPE::LOAD_FLOAT},
+    {"load", OP_SHAPE::LOAD_ANY},
+
+    // STORE
+    {"sw", OP_SHAPE::STORE_INT}, {"sb", OP_SHAPE::STORE_INT}, {"sh", OP_SHAPE::STORE_INT},
+    {"sd", OP_SHAPE::STORE_INT}, {"sc", OP_SHAPE::STORE_INT},
+    {"s.d", OP_SHAPE::STORE_FLOAT}, {"s.s", OP_SHAPE::STORE_FLOAT},
+    {"store", OP_SHAPE::STORE_ANY},
+
+    // BRANCH
+    {"beq", OP_SHAPE::BR_2REG_LABEL}, {"bne", OP_SHAPE::BR_2REG_LABEL},
+    {"bnez", OP_SHAPE::BR_1REG_LABEL}, {"beqz", OP_SHAPE::BR_1REG_LABEL},
+    {"bgtz", OP_SHAPE::BR_1REG_LABEL}, {"bltz", OP_SHAPE::BR_1REG_LABEL},
+    {"bgez", OP_SHAPE::BR_1REG_LABEL}, {"blez", OP_SHAPE::BR_1REG_LABEL},
+    {"bltzal", OP_SHAPE::BR_1REG_LABEL_LINK}, {"bgezal", OP_SHAPE::BR_1REG_LABEL_LINK},
+    {"j", OP_SHAPE::BR_LABEL}, {"jal", OP_SHAPE::BR_LABEL_LINK},
+    {"jr", OP_SHAPE::BR_1REG}, {"jalr", OP_SHAPE::BR_JALR},
+
+    // INT_BASIC
+    {"add", OP_SHAPE::INT_3REG}, {"addu", OP_SHAPE::INT_3REG}, {"daddu", OP_SHAPE::INT_3REG},
+    {"sub", OP_SHAPE::INT_3REG}, {"subu", OP_SHAPE::INT_3REG}, {"dsubu", OP_SHAPE::INT_3REG},
+    {"and", OP_SHAPE::INT_3REG}, {"or", OP_SHAPE::INT_3REG}, {"xor", OP_SHAPE::INT_3REG},
+    {"nor", OP_SHAPE::INT_3REG},
+    {"sllv", OP_SHAPE::INT_3REG}, {"srlv", OP_SHAPE::INT_3REG}, {"srav", OP_SHAPE::INT_3REG},
+    {"slt", OP_SHAPE::INT_3REG}, {"sltu", OP_SHAPE::INT_3REG},
+    {"dslt", OP_SHAPE::INT_3REG}, {"dsltu", OP_SHAPE::INT_3REG},
+
+    {"addi", OP_SHAPE::INT_2REG_IMM_S}, {"addiu", OP_SHAPE::INT_2REG_IMM_S},
+    {"daddiu", OP_SHAPE::INT_2REG_IMM_S}, {"subi", OP_SHAPE::INT_2REG_IMM_S},
+    {"slti", OP_SHAPE::INT_2REG_IMM_S}, {"sltiu", OP_SHAPE::INT_2REG_IMM_S},
+    {"dslti", OP_SHAPE::INT_2REG_IMM_S}, {"dsltiu", OP_SHAPE::INT_2REG_IMM_S},
+
+    {"andi", OP_SHAPE::INT_2REG_IMM_U}, {"ori", OP_SHAPE::INT_2REG_IMM_U}, {"xori", OP_SHAPE::INT_2REG_IMM_U},
+    {"sll", OP_SHAPE::INT_2REG_IMM_U}, {"srl", OP_SHAPE::INT_2REG_IMM_U}, {"sra", OP_SHAPE::INT_2REG_IMM_U},
+    {"dsll", OP_SHAPE::INT_2REG_IMM_U}, {"dsrl", OP_SHAPE::INT_2REG_IMM_U}, {"dsra", OP_SHAPE::INT_2REG_IMM_U},
+
+    {"lui", OP_SHAPE::INT_1REG_IMM},
+    {"mflo", OP_SHAPE::INT_1REG_LO}, {"mfhi", OP_SHAPE::INT_1REG_HI},
+
+    // INT_MUL / INT_DIV
+    {"mult", OP_SHAPE::MULDIV_2REG_HILO}, {"multu", OP_SHAPE::MULDIV_2REG_HILO},
+    {"dmult", OP_SHAPE::MULDIV_2REG_HILO}, {"dmultu", OP_SHAPE::MULDIV_2REG_HILO},
+    {"div", OP_SHAPE::MULDIV_2REG_HILO}, {"divu", OP_SHAPE::MULDIV_2REG_HILO},
+    {"ddiv", OP_SHAPE::MULDIV_2REG_HILO}, {"ddivu", OP_SHAPE::MULDIV_2REG_HILO},
+    {"mul", OP_SHAPE::MUL_3REG},
+
+    // FLOAT
+    {"add.d", OP_SHAPE::FLOAT_3REG}, {"add.s", OP_SHAPE::FLOAT_3REG},
+    {"sub.d", OP_SHAPE::FLOAT_3REG}, {"sub.s", OP_SHAPE::FLOAT_3REG},
+    {"mul.d", OP_SHAPE::FLOAT_3REG}, {"mul.s", OP_SHAPE::FLOAT_3REG},
+    {"div.d", OP_SHAPE::FLOAT_3REG}, {"div.s", OP_SHAPE::FLOAT_3REG},
+    {"abs.s", OP_SHAPE::FLOAT_2REG}, {"neg.s", OP_SHAPE::FLOAT_2REG}, {"sqrt.s", OP_SHAPE::FLOAT_2REG},
+    {"cvt.s.w", OP_SHAPE::FLOAT_2REG}, {"cvt.d.w", OP_SHAPE::FLOAT_2REG},
+    {"cvt.s.d", OP_SHAPE::FLOAT_2REG}, {"cvt.d.s", OP_SHAPE::FLOAT_2REG},
+    {"cvt.w.s", OP_SHAPE::FLOAT_2REG}, {"cvt.w.d", OP_SHAPE::FLOAT_2REG},
+};
+
 // ==================================================================
 // === CLASSE =======================================================
 // ==================================================================
@@ -267,447 +372,86 @@ void InstructionSimplified::ValidateInstruction(
 ){
     const std::string op{ToLower(tokens[0])};
 
-    switch (type) {
-        case INSTRUCTION_TYPE::LOAD: {
-            if (op == "load") {
-                if (tokens.size() == 4 &&
-                    (IsIntReg(tokens[1]) || IsFloatReg(tokens[1])) &&
-                    IsOffset(tokens[2]) &&
-                    IsIntReg(tokens[3]))
+    // Não deveria falhar: "IdentifyType()" já garantiu que "op"
+    // pertence a uma das categorias conhecidas, e todo opcode
+    // presente nas categorias tem uma entrada em OPCODE_SHAPE.
+    const auto it{OPCODE_SHAPE.find(op)};
+    if (it == OPCODE_SHAPE.end()) {
+        std::cerr << "[ERRO] Opcode reconhecido em IdentifyType() mas ausente em OPCODE_SHAPE: " << op << '\n';
+        std::abort();
+    }
 
-                    return;
-            }
-            else if (op == "lw") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "lb") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "lh") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "lbu") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "lhu") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "ld") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "lwu") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "ll") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "l.d") {
-                if (tokens.size() == 4 && IsFloatReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "l.s") {
-                if (tokens.size() == 4 && IsFloatReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
+    bool ok{false};
+    switch (it->second) {
+        // ── Load/Store: destino/fonte int, float ou genérico(int/float) ──
+        case OP_SHAPE::LOAD_INT:
+        case OP_SHAPE::STORE_INT:
+            ok = tokens.size() == 4 && IsIntReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]);
             break;
-        }
-        case INSTRUCTION_TYPE::STORE: {
-            // ── rt, imm(rs) — valor inteiro ─────────────────────────
-            if (op == "sw") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "sb") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "sh") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "sd") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "sc") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-
-            // ── ft, imm(rs) — valor float ───────────────────────────
-            else if (op == "s.d") {
-                if (tokens.size() == 4 && IsFloatReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "s.s") {
-                if (tokens.size() == 4 && IsFloatReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-
-            // ── rt/ft, imm(rs) — genérico (valor inteiro OU float) ──
-            else if (op == "store") {
-                if (tokens.size() == 4 && (IsIntReg(tokens[1]) || IsFloatReg(tokens[1])) && IsOffset(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
+        case OP_SHAPE::LOAD_FLOAT:
+        case OP_SHAPE::STORE_FLOAT:
+            ok = tokens.size() == 4 && IsFloatReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]);
             break;
-        }
-        case INSTRUCTION_TYPE::BRANCH: {
-            // ── rs, rt, label ────────────────────────────────────────
-            if (op == "beq") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsLabel(tokens[3]))
-                    return;
-            }
-            else if (op == "bne") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsLabel(tokens[3]))
-                    return;
-            }
-
-            // ── rs, label (comparação implícita com zero) ────────────
-            else if (op == "bnez") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsLabel(tokens[2]))
-                    return;
-            }
-            else if (op == "beqz") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsLabel(tokens[2]))
-                    return;
-            }
-            else if (op == "bgtz") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsLabel(tokens[2]))
-                    return;
-            }
-            else if (op == "bltz") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsLabel(tokens[2]))
-                    return;
-            }
-            else if (op == "bgez") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsLabel(tokens[2]))
-                    return;
-            }
-            else if (op == "blez") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsLabel(tokens[2]))
-                    return;
-            }
-            else if (op == "bltzal") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsLabel(tokens[2]))
-                    return;
-            }
-            else if (op == "bgezal") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsLabel(tokens[2]))
-                    return;
-            }
-
-            // ── label (sem registrador) ───────────────────────────────
-            else if (op == "j") {
-                if (tokens.size() == 2 && IsLabel(tokens[1]))
-                    return;
-            }
-            else if (op == "jal") {
-                if (tokens.size() == 2 && IsLabel(tokens[1]))
-                    return;
-            }
-
-            // ── rs (sem label) ─────────────────────────────────────────
-            else if (op == "jr") {
-                if (tokens.size() == 2 && IsIntReg(tokens[1]))
-                    return;
-            }
-
-            // ── jalr: duas sintaxes válidas — (rs) ou (rd, rs) ─────────
-            else if (op == "jalr") {
-                if (tokens.size() == 2 && IsIntReg(tokens[1]))
-                    return;
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]))
-                    return;
-            }
+        case OP_SHAPE::LOAD_ANY:
+        case OP_SHAPE::STORE_ANY:
+            ok = tokens.size() == 4 && (IsIntReg(tokens[1]) || IsFloatReg(tokens[1])) &&
+                 IsOffset(tokens[2]) && IsIntReg(tokens[3]);
             break;
-        }
-        case INSTRUCTION_TYPE::INT_BASIC: {
-            // ── rd, rs, rt (3 registradores inteiros) ──────────────
-            if (op == "add") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "addu") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "daddu") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "sub") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "subu") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "dsubu") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "and") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "or") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "xor") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "nor") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "slt") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "sltu") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "dslt") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "dsltu") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "sllv") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "srlv") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
-            else if (op == "srav") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
 
-            // ── rt/rd, rs, imm (2 registradores inteiros + imediato) ──
-            else if (op == "addi") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], true))
-                    return;
-            }
-            else if (op == "addiu") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], true))
-                    return;
-            }
-            else if (op == "daddiu") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], true))
-                    return;
-            }
-            else if (op == "subi") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], true))
-                    return;
-            }
-            else if (op == "slti") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], true))
-                    return;
-            }
-            else if (op == "sltiu") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], true))
-                    return;
-            }
-            else if (op == "dslti") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], true))
-                    return;
-            }
-            else if (op == "dsltiu") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], true))
-                    return;
-            }
-            else if (op == "andi") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], false))
-                    return;
-            }
-            else if (op == "ori") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], false))
-                    return;
-            }
-            else if (op == "xori") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], false))
-                    return;
-            }
+        // ── Branch ──────────────────────────────────────────────────
+        case OP_SHAPE::BR_2REG_LABEL:
+            ok = tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsLabel(tokens[3]);
+            break;
+        case OP_SHAPE::BR_1REG_LABEL:
+        case OP_SHAPE::BR_1REG_LABEL_LINK:
+            ok = tokens.size() == 3 && IsIntReg(tokens[1]) && IsLabel(tokens[2]);
+            break;
+        case OP_SHAPE::BR_LABEL:
+        case OP_SHAPE::BR_LABEL_LINK:
+            ok = tokens.size() == 2 && IsLabel(tokens[1]);
+            break;
+        case OP_SHAPE::BR_1REG:
+            ok = tokens.size() == 2 && IsIntReg(tokens[1]);
+            break;
+        case OP_SHAPE::BR_JALR:
+            ok = (tokens.size() == 2 && IsIntReg(tokens[1])) ||
+                 (tokens.size() == 3 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]));
+            break;
 
-            // ── rd, rt, shamt (shift por valor imediato) ───────────
-            if (op == "sll") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], false))
-                    return;
-            }
-            else if (op == "srl") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], false))
-                    return;
-            }
-            else if (op == "sra") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], false))
-                    return;
-            }
-            else if (op == "dsll") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], false))
-                    return;
-            }
-            else if (op == "dsrl") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], false))
-                    return;
-            }
-            else if (op == "dsra") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], false))
-                    return;
-            }
+        // ── Int básico ──────────────────────────────────────────────
+        case OP_SHAPE::INT_3REG:
+        case OP_SHAPE::MUL_3REG:
+            ok = tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]);
+            break;
+        case OP_SHAPE::INT_2REG_IMM_S:
+            ok = tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], true);
+            break;
+        case OP_SHAPE::INT_2REG_IMM_U:
+            ok = tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsImmediate(tokens[3], false);
+            break;
+        case OP_SHAPE::INT_1REG_IMM:
+            ok = tokens.size() == 3 && IsIntReg(tokens[1]) && IsImmediate(tokens[2], false);
+            break;
+        case OP_SHAPE::INT_1REG_LO:
+        case OP_SHAPE::INT_1REG_HI:
+            ok = tokens.size() == 2 && IsIntReg(tokens[1]);
+            break;
 
-            // ── rt, imm (sem rs) ────────────────────────────────────
-            else if (op == "lui") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsImmediate(tokens[2], false))
-                    return;
-            }
+        // ── Mul/Div implícitos em HI/LO ─────────────────────────────
+        case OP_SHAPE::MULDIV_2REG_HILO:
+            ok = tokens.size() == 3 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]);
             break;
-        }
-        case INSTRUCTION_TYPE::INT_MUL: {
-            // ── rs, rt (resultado implícito em HI/LO — não modelado) ──
-            if (op == "mult") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]))
-                    return;
-            }
-            else if (op == "multu") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]))
-                    return;
-            }
-            else if (op == "dmult") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]))
-                    return;
-            }
-            else if (op == "dmultu") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]))
-                    return;
-            }
 
-            // ── rd, rs, rt (resultado direto no registrador) ────────
-            else if (op == "mul") {
-                if (tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]))
-                    return;
-            }
+        // ── Float ───────────────────────────────────────────────────
+        case OP_SHAPE::FLOAT_3REG:
+            ok = tokens.size() == 4 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]) && IsFloatReg(tokens[3]);
             break;
-        }
-        case INSTRUCTION_TYPE::INT_DIV: {
-            // ── rs, rt (quociente/resto implícito em HI/LO — não modelado) ──
-            if (op == "div") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]))
-                    return;
-            }
-            else if (op == "divu") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]))
-                    return;
-            }
-            else if (op == "ddiv") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]))
-                    return;
-            }
-            else if (op == "ddivu") {
-                if (tokens.size() == 3 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]))
-                    return;
-            }
-            break;
-        }
-        case INSTRUCTION_TYPE::FLOAT_BASIC: {
-            // ── fd, fs, ft (3 registradores float) ──────────────────
-            if (op == "add.d") {
-                if (tokens.size() == 4 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]) && IsFloatReg(tokens[3]))
-                    return;
-            }
-            else if (op == "add.s") {
-                if (tokens.size() == 4 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]) && IsFloatReg(tokens[3]))
-                    return;
-            }
-            else if (op == "sub.d") {
-                if (tokens.size() == 4 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]) && IsFloatReg(tokens[3]))
-                    return;
-            }
-            else if (op == "sub.s") {
-                if (tokens.size() == 4 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]) && IsFloatReg(tokens[3]))
-                    return;
-            }
-
-            // ── fd, fs (unário / conversão) ──────────────────────────
-            if (op == "abs.s") {
-                if (tokens.size() == 3 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]))
-                    return;
-            }
-            else if (op == "neg.s") {
-                if (tokens.size() == 3 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]))
-                    return;
-            }
-            else if (op == "sqrt.s") {
-                if (tokens.size() == 3 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]))
-                    return;
-            }
-            else if (op == "cvt.s.w") {
-                if (tokens.size() == 3 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]))
-                    return;
-            }
-            else if (op == "cvt.d.w") {
-                if (tokens.size() == 3 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]))
-                    return;
-            }
-            else if (op == "cvt.s.d") {
-                if (tokens.size() == 3 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]))
-                    return;
-            }
-            else if (op == "cvt.d.s") {
-                if (tokens.size() == 3 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]))
-                    return;
-            }
-            else if (op == "cvt.w.s") {
-                if (tokens.size() == 3 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]))
-                    return;
-            }
-            else if (op == "cvt.w.d") {
-                if (tokens.size() == 3 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]))
-                    return;
-            }
-            break;
-        }
-        case INSTRUCTION_TYPE::FLOAT_MUL: {
-            if (op == "mul.d") {
-                if (tokens.size() == 4 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]) && IsFloatReg(tokens[3]))
-                    return;
-            }
-            else if (op == "mul.s") {
-                if (tokens.size() == 4 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]) && IsFloatReg(tokens[3]))
-                    return;
-            }
-            break;
-        }
-        case INSTRUCTION_TYPE::FLOAT_DIV: {
-            if (op == "div.d") {
-                if (tokens.size() == 4 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]) && IsFloatReg(tokens[3]))
-                    return;
-            }
-            else if (op == "div.s") {
-                if (tokens.size() == 4 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]) && IsFloatReg(tokens[3]))
-                    return;
-            }
-            break;
-        }
-        default: // Demais casos (inválidos).
+        case OP_SHAPE::FLOAT_2REG:
+            ok = tokens.size() == 3 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]);
             break;
     }
+
+    if (ok) return;
 
     // Nenhum dos testes acima retornou:
     // - Sintaxe inválida para o opcode.
@@ -756,550 +500,110 @@ void InstructionSimplified::SetAttributes(
     // tokens[0] já normalizado (minúsculo) por "NormalizeInstruction()".
     const std::string& op{tokens[0]};
 
-    switch (type) {
-        case INSTRUCTION_TYPE::LOAD: {
-            // Endereço (rs, base) é necessário em EX (cálculo do endereço).
-            // Destino é sempre "dest_registers" (int OU float, conforme o opcode).
-            if (op == "lw") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "lb") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "lh") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "lbu") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "lhu") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "ld") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "lwu") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "ll") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "l.d") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "l.s") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "load") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            break;
-        }
-        case INSTRUCTION_TYPE::STORE: {
-            // Endereço (rs, base) é necessário em EX (cálculo do endereço).
-            // Valor armazenado só precisa estar pronto em MEM (momento da escrita) -> mem_source_registers.
-            // Store não escreve em nenhum registrador (sem dest_registers).
-            if (op == "sw") {
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                mem_source_registers.push_back(LookupReg(tokens[1]));
-                return;
-            }
-            else if (op == "sb") {
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                mem_source_registers.push_back(LookupReg(tokens[1]));
-                return;
-            }
-            else if (op == "sh") {
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                mem_source_registers.push_back(LookupReg(tokens[1]));
-                return;
-            }
-            else if (op == "sd") {
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                mem_source_registers.push_back(LookupReg(tokens[1]));
-                return;
-            }
-            else if (op == "sc") {
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                mem_source_registers.push_back(LookupReg(tokens[1]));
-                return;
-            }
-            else if (op == "s.d") {
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                mem_source_registers.push_back(LookupReg(tokens[1]));
-                return;
-            }
-            else if (op == "s.s") {
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                mem_source_registers.push_back(LookupReg(tokens[1]));
-                return;
-            }
-            else if (op == "store") {
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                mem_source_registers.push_back(LookupReg(tokens[1]));
-                return;
-            }
-            break;
-        }
-        case INSTRUCTION_TYPE::BRANCH: {
-            if (op == "beq") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "bne") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "bnez") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                return;
-            }
-            else if (op == "beqz") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                return;
-            }
-            else if (op == "bgtz") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                return;
-            }
-            else if (op == "bltz") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                return;
-            }
-            else if (op == "bgez") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                return;
-            }
-            else if (op == "blez") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                return;
-            }
-            else if (op == "bltzal") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                dest_registers.push_back(LookupReg("ra")); // Escreve o endereço de retorno implicitamente.
-                return;
-            }
-            else if (op == "bgezal") {
+    // Não deveria falhar: "ValidateInstruction()" já garantiu que
+    // "op" está em OPCODE_SHAPE.
+    const auto it{OPCODE_SHAPE.find(op)};
+    if (it == OPCODE_SHAPE.end()) {
+        std::cerr << "[ERRO] Opcode validado mas ausente em OPCODE_SHAPE: " << op << '\n';
+        std::abort();
+    }
+
+    switch (it->second) {
+        // ── Load: endereço (base) em EX, destino int ou float ───────
+        case OP_SHAPE::LOAD_INT:
+        case OP_SHAPE::LOAD_FLOAT:
+        case OP_SHAPE::LOAD_ANY:
+            dest_registers.push_back(LookupReg(tokens[1]));
+            ex_source_registers.push_back(LookupReg(tokens[3]));
+            return;
+
+        // ── Store: endereço (base) em EX, valor armazenado em MEM ───
+        case OP_SHAPE::STORE_INT:
+        case OP_SHAPE::STORE_FLOAT:
+        case OP_SHAPE::STORE_ANY:
+            ex_source_registers.push_back(LookupReg(tokens[3]));
+            mem_source_registers.push_back(LookupReg(tokens[1]));
+            return;
+
+        // ── Branch ───────────────────────────────────────────────────
+        case OP_SHAPE::BR_2REG_LABEL:
+            ex_source_registers.push_back(LookupReg(tokens[1]));
+            ex_source_registers.push_back(LookupReg(tokens[2]));
+            return;
+        case OP_SHAPE::BR_1REG_LABEL:
+            ex_source_registers.push_back(LookupReg(tokens[1]));
+            return;
+        case OP_SHAPE::BR_1REG_LABEL_LINK:
+            ex_source_registers.push_back(LookupReg(tokens[1]));
+            dest_registers.push_back(LookupReg("ra")); // Escreve o endereço de retorno implicitamente.
+            return;
+        case OP_SHAPE::BR_LABEL:
+            return; // Sem registradores envolvidos.
+        case OP_SHAPE::BR_LABEL_LINK:
+            dest_registers.push_back(LookupReg("ra")); // Escreve o endereço de retorno implicitamente.
+            return;
+        case OP_SHAPE::BR_1REG:
+            ex_source_registers.push_back(LookupReg(tokens[1]));
+            return;
+        case OP_SHAPE::BR_JALR:
+            if (tokens.size() == 2) {
+                // rs apenas -> rd = "ra" implícito.
                 ex_source_registers.push_back(LookupReg(tokens[1]));
                 dest_registers.push_back(LookupReg("ra"));
                 return;
             }
-            else if (op == "j") {
-                return; // Sem registradores envolvidos.
-            }
-            else if (op == "jal") {
-                dest_registers.push_back(LookupReg("ra")); // Escreve o endereço de retorno implicitamente.
-                return;
-            }
-            else if (op == "jr") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                return;
-            }
-            else if (op == "jalr") {
-                if (tokens.size() == 2) {
-                    // rs apenas -> rd = "ra" implícito.
-                    ex_source_registers.push_back(LookupReg(tokens[1]));
-                    dest_registers.push_back(LookupReg("ra"));
-                    return;
-                }
-                // rd, rs explícitos.
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            break;
-        }
-        case INSTRUCTION_TYPE::INT_BASIC: {
-            // ── rd, rs, rt (3 registradores inteiros) ──────────────
-            if (op == "add") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "addu") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "daddu") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "sub") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "subu") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "dsubu") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "and") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "or") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "xor") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "nor") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "slt") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "sltu") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "dslt") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "dsltu") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "sllv") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "srlv") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "srav") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
+            // rd, rs explícitos.
+            dest_registers.push_back(LookupReg(tokens[1]));
+            ex_source_registers.push_back(LookupReg(tokens[2]));
+            return;
 
-            // ── rt/rd, rs, imm (imm não é registrador -> não gera dependência) ──
-            else if (op == "addi") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "addiu") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "daddiu") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "subi") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "andi") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "ori") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "xori") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "slti") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "sltiu") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "dslti") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "dsltiu") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
+        // ── Int básico / mul de resultado direto ────────────────────
+        case OP_SHAPE::INT_3REG:
+        case OP_SHAPE::MUL_3REG:
+            dest_registers.push_back(LookupReg(tokens[1]));
+            ex_source_registers.push_back(LookupReg(tokens[2]));
+            ex_source_registers.push_back(LookupReg(tokens[3]));
+            return;
+        case OP_SHAPE::INT_2REG_IMM_S:
+        case OP_SHAPE::INT_2REG_IMM_U:
+            // imm/shamt não é registrador -> não gera dependência de dado.
+            dest_registers.push_back(LookupReg(tokens[1]));
+            ex_source_registers.push_back(LookupReg(tokens[2]));
+            return;
+        case OP_SHAPE::INT_1REG_IMM:
+            dest_registers.push_back(LookupReg(tokens[1]));
+            return;
+        case OP_SHAPE::INT_1REG_LO:
+            dest_registers.push_back(LookupReg(tokens[1]));
+            ex_source_registers.push_back(LookupReg("lo"));
+            return;
+        case OP_SHAPE::INT_1REG_HI:
+            dest_registers.push_back(LookupReg(tokens[1]));
+            ex_source_registers.push_back(LookupReg("hi"));
+            return;
 
-            // ── rd, rt, shamt (shift por valor imediato) ───────────
-            else if (op == "sll") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "srl") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "sra") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "dsll") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "dsrl") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "dsra") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
+        // ── Mul/Div com resultado implícito em HI/LO ────────────────
+        case OP_SHAPE::MULDIV_2REG_HILO:
+            dest_registers.push_back(LookupReg("lo"));
+            dest_registers.push_back(LookupReg("hi"));
+            ex_source_registers.push_back(LookupReg(tokens[1]));
+            ex_source_registers.push_back(LookupReg(tokens[2]));
+            return;
 
-            // ── rt, imm (sem rs -> nenhum registrador fonte) ───────
-            else if (op == "lui") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                return;
-            }
-            break;
-        }
-        case INSTRUCTION_TYPE::INT_MUL: {
-            // HI/LO não são modelados nesta arquitetura (sem registrador
-            // especial) -> resultado de mult/multu/dmult/dmultu não gera
-            // "dest_registers" rastreável.
-            if (op == "mult") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "multu") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "dmult") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "dmultu") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "mul") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            break;
-        }
-        case INSTRUCTION_TYPE::INT_DIV: {
-            // Mesma observação do INT_MUL: quociente/resto ficam em HI/LO,
-            // não modelados -> sem "dest_registers".
-            if (op == "div") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "divu") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "ddiv") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "ddivu") {
-                ex_source_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            break;
-        }
-        case INSTRUCTION_TYPE::FLOAT_BASIC: {
-            if (op == "add.d") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "add.s") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "sub.d") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "sub.s") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "abs.s") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "neg.s") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "sqrt.s") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "cvt.s.w") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "cvt.d.w") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "cvt.s.d") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "cvt.d.s") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "cvt.w.s") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            else if (op == "cvt.w.d") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                return;
-            }
-            break;
-        }
-        case INSTRUCTION_TYPE::FLOAT_MUL: {
-            if (op == "mul.d") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "mul.s") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            break;
-        }
-        case INSTRUCTION_TYPE::FLOAT_DIV: {
-            if (op == "div.d") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            else if (op == "div.s") {
-                dest_registers.push_back(LookupReg(tokens[1]));
-                ex_source_registers.push_back(LookupReg(tokens[2]));
-                ex_source_registers.push_back(LookupReg(tokens[3]));
-                return;
-            }
-            break;
-        }
-        default: // Casos inválidos (não deveria chegar aqui).
-            break;
+        // ── Float ────────────────────────────────────────────────────
+        case OP_SHAPE::FLOAT_3REG:
+            dest_registers.push_back(LookupReg(tokens[1]));
+            ex_source_registers.push_back(LookupReg(tokens[2]));
+            ex_source_registers.push_back(LookupReg(tokens[3]));
+            return;
+        case OP_SHAPE::FLOAT_2REG:
+            dest_registers.push_back(LookupReg(tokens[1]));
+            ex_source_registers.push_back(LookupReg(tokens[2]));
+            return;
     }
 
-    // Não deveria chegar aqui: "ValidateInstruction()" já garantiu
-    // que o opcode pertence a um dos casos tratados acima.
-    std::cerr << "[ERRO] Opcode validado mas não tratado em SetAttributes(): " << op << '\n';
+    // Não deveria chegar aqui: todo OP_SHAPE tem um "case" acima.
+    std::cerr << "[ERRO] Forma (OP_SHAPE) validada mas não tratada em SetAttributes(): " << op << '\n';
     std::abort();
 }
 
