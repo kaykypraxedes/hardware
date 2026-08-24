@@ -1,14 +1,13 @@
-/* Architectures/headers/Mips32.h */
-#ifndef MIPS32_H     // Include guard
-#define MIPS32_H
+/* Architectures/headers/Mips64.h */
+#ifndef MIPS64_H     // Include guard
+#define MIPS64_H
 #include "../../headers/Architecture.h"
-#include <algorithm> // para std::find
-#include <cctype>    // para std::toupper
+#include <cctype>    // para std::tolower
 
 namespace processor {
 
 // ─── CLASSE ───────────────────────────────────────────────────────
-class InstructionMips32 : public Instruction { // Herança da classe Instruction.
+class InstructionMips64 : public Instruction { // Herança da classe Instruction.
     public:
         // Método estático:
         // Monta o CDB (vetor de registradores físicos) da arquitetura.
@@ -16,7 +15,7 @@ class InstructionMips32 : public Instruction { // Herança da classe Instruction
 
         // Construtor:
         // - explicit para impedir o cast implícito.
-        explicit InstructionMips32(
+        explicit InstructionMips64(
             const int = -1
         );
 

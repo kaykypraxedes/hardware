@@ -19,7 +19,7 @@
 // Arquiteturas suportadas:
 #include "../Architectures/headers/ArchSimplified.h"
 #include "../Architectures/headers/Arm64.h"
-#include "../Architectures/headers/Mips32.h"
+#include "../Architectures/headers/Mips64.h"
 #include "../Architectures/headers/RiscV.h"
 #include "../Architectures/headers/X86Intel.h"
 
@@ -77,7 +77,7 @@ class InstructionFactory {
                         inst = std::make_unique<InstructionSimplified>(current_position);
                         break;
                     case ARCHITECTURE::MIPS_32:
-                        inst = std::make_unique<InstructionMips32>(current_position);
+                        inst = std::make_unique<InstructionMips64>(current_position);
                         break;
                     case ARCHITECTURE::X86_INTEL:
                         inst = std::make_unique<InstructionX86Intel>(current_position);
@@ -124,7 +124,7 @@ class InstructionFactory {
         ){
             switch (arch) {
                 case ARCHITECTURE::SIMPLIFIED: return InstructionSimplified::MakeCDB();
-                case ARCHITECTURE::MIPS_32:    return InstructionMips32::MakeCDB();
+                case ARCHITECTURE::MIPS_32:    return InstructionMips64::MakeCDB();
                 case ARCHITECTURE::X86_INTEL:  return InstructionX86Intel::MakeCDB();
                 case ARCHITECTURE::ARM_64:     return InstructionArm64::MakeCDB();
                 case ARCHITECTURE::RISC_V:     return InstructionRiscV::MakeCDB();

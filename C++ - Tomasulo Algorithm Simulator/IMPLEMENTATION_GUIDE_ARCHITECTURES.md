@@ -10,21 +10,23 @@ de dados por enquanto.
 
 ## Como usar este documento
 
-O documento está dividido em duas partes:
-
-- **Parte 1 — Metodologia Geral**: válida para qualquer arquitetura
+- **Metodologia Geral**: válida para qualquer arquitetura
   nova. Não deveria precisar ser reescrita a cada arquitetura —
   só refinada quando surgir uma lição nova (como aconteceu com o
   padrão de agrupamento `OP_SHAPE`, extraído do MIPS Simplificado).
-- **Parte 2 — Estado Atual**: dados, decisões e status específicos
-  da arquitetura em foco no momento. Essa parte é reescrita/zerada
-  a cada nova arquitetura.
 
 ---
 
 # PARTE 1 — Metodologia Geral (válida para qualquer arquitetura)
 
 ## Metodologia adotada
+
+0. **Manter a coerência de escrita de código e documentação**
+  - É de extrema importância manter a organização e padronização dos 
+    documentos, mantendo a eficiência e confiança das funções já 
+    implementadas (mais fácil entender o todo sem aprender o funcionamento 
+    específico em cada arquivo, além de evitar reinventar a roda, ganhando 
+    tempo e tendo menos esforço).
 
 1. **Levantar a sintaxe completa e o comportamento esperado** de
    cada instrução antes de tocar em código (documento de

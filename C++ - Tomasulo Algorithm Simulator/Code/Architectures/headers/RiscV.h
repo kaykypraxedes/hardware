@@ -2,8 +2,7 @@
 #ifndef RISCV_H      // Include guard
 #define INSTRUCTION_RISCV_H
 #include "../../headers/Architecture.h"
-#include <algorithm> // para std::find
-#include <cctype>    // para std::toupper
+#include <cctype>    // para std::tolower
 
 namespace processor {
 

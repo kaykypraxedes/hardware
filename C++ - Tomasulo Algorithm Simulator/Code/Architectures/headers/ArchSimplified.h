@@ -2,8 +2,7 @@
 #ifndef ARCH_SIMPLIFIED_H // Include guard
 #define ARCH_SIMPLIFIED_H
 #include "../../headers/Architecture.h"
-#include <algorithm>      // para std::find
-#include <cctype>         // para std::toupper
+#include <cctype>         // para std::tolower
 
 namespace processor {
 

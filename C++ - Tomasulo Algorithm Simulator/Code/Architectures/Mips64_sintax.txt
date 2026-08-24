@@ -1,0 +1,205 @@
+ARQUITETURA MIPS64
+
+LEGENDA
+-----------------------------------------------------------------
+  IREG        = registrador inteiro (ex: R1, R2, ...).
+  FREG        = registrador de ponto flutuante (ex: F1, F2, ...).
+  MREG        = registradores HI/LO.
+  IMM         = valor imediato (constante numerica).
+  IMMU        = valor imediato "unsigned".
+  OFF         = valor imediato (utilizado no offset de
+                instruções de memória).
+  LABEL       = rotulo / label de destino (endereco simbolico)
+  IMM(IREG)   = modo de enderecamento base+offset: um imediato de
+                deslocamento seguido do registrador base entre
+                parenteses.
+
+  "a/b"       = a barra indica que a posicao aceita mais de um
+                tipo/sintaxe.
+
+  Quando o mesmo opcode tem sintaxes estruturalmente muito
+  diferentes, cada variante e listada em uma linha separada.
+
+  Comentarios de observacao comportamental vem apos "#" e nao fazem
+  parte da sintaxe.
+
+
+LOADS
+-----------------------------------------------------------------
+# IREG, OFF(IREG)
+lw       IREG, OFF(IREG)
+lb       IREG, OFF(IREG)
+lh       IREG, OFF(IREG)
+lbu      IREG, OFF(IREG)          # variante unsigned de lb
+lhu      IREG, OFF(IREG)          # variante unsigned de lh
+ld       IREG, OFF(IREG)          # load doubleword (64-bit)
+lwu      IREG, OFF(IREG)          # load word unsigned (32-bit para 64-bit reg)
+ll       IREG, OFF(IREG)          # load linked (uso atomico)
+
+# FREG, OFF(IREG)
+l.d      FREG, OFF(IREG)          # destino float; base de endereco sempre int
+l.s      FREG, OFF(IREG)
+
+
+STORES
+-----------------------------------------------------------------
+# IREG, OFF(IREG)
+sw       IREG, OFF(IREG)
+sb       IREG, OFF(IREG)
+sh       IREG, OFF(IREG)
+sd       IREG, OFF(IREG)          # store doubleword (64-bit)
+sc       IREG, OFF(IREG)          # store conditional (uso atomico)
+
+# FREG, OFF(IREG)
+s.d      FREG, OFF(IREG)          # fonte float; base de endereco sempre int
+s.s      FREG, OFF(IREG)
+
+
+INT_BASIC
+-----------------------------------------------------------------
+# IREG, IREG, IREG
+add      IREG, IREG, IREG         # rd, rs, rt
+addu     IREG, IREG, IREG
+daddu    IREG, IREG, IREG         # versao doubleword de addu
+sub      IREG, IREG, IREG
+subu     IREG, IREG, IREG
+dsubu    IREG, IREG, IREG         # versao doubleword de subu
+and      IREG, IREG, IREG
+or       IREG, IREG, IREG
+xor      IREG, IREG, IREG
+nor      IREG, IREG, IREG
+sllv     IREG, IREG, IREG         # rd, rt, rs (shift amount em registrador)
+srlv     IREG, IREG, IREG
+srav     IREG, IREG, IREG
+slt      IREG, IREG, IREG         # rd, rs, rt
+sltu     IREG, IREG, IREG
+dslt     IREG, IREG, IREG         # versao doubleword
+dsltu    IREG, IREG, IREG         # versao doubleword unsigned
+
+# IREG, IREG, IMM
+addi     IREG, IREG, IMM          # rt, rs, imm
+addiu    IREG, IREG, IMM
+daddiu   IREG, IREG, IMM          # versao doubleword de addiu
+slti     IREG, IREG, IMM          # rt, rs, imm
+sltiu    IREG, IREG, IMM
+dslti    IREG, IREG, IMM          # versao doubleword
+dsltiu   IREG, IREG, IMM          # versao doubleword unsigned
+
+# IREG, IREG, IMMU
+andi     IREG, IREG, IMMU
+ori      IREG, IREG, IMMU
+xori     IREG, IREG, IMMU
+sll      IREG, IREG, IMMU         # rd, rt, shamt (shift amount imediato)
+srl      IREG, IREG, IMMU
+sra      IREG, IREG, IMMU
+dsll     IREG, IREG, IMMU         # versao doubleword de sll
+dsrl     IREG, IREG, IMMU
+dsra     IREG, IREG, IMMU
+
+# IREG, IMMU
+lui      IREG, IMMU               # rt, imm - SEM registrador rs
+
+# IREG
+mflo     IREG + lo/lo             # rd - fonte implícita: LO.
+mfhi     IREG + hi/lo             # rd - fonte implícita: HI.
+mtlo     IREG + lo/lo             # rs - destino implícito: LO.
+mthi     IREG + hi/lo             # rs - destino implícito: HI.
+
+
+BRANCHES
+-----------------------------------------------------------------
+# IREG, IREG, LABEL
+beq      IREG, IREG, LABEL
+bne      IREG, IREG, LABEL
+
+# IREG, LABEL
+bnez     IREG, LABEL              # compara com zero implicito
+beqz     IREG, LABEL
+bgtz     IREG, LABEL
+bltz     IREG, LABEL
+bgez     IREG, LABEL
+blez     IREG, LABEL
+bltzal   IREG, LABEL + ra         # tambem escreve endereco de retorno em "ra"
+bgezal   IREG, LABEL + ra         # idem
+
+# IREG, IREG
+jalr     IREG, IREG               # rd, rs explicitos
+
+# IREG
+jalr     IREG + ra                # rs apenas; rd = $ra implicito
+jr       IREG                     # so registrador, sem label
+
+# LABEL
+jal      LABEL + ra               # sem registrador; escreve $ra implicitamente
+j        LABEL                    # sem registrador
+
+
+INT_MUL
+-----------------------------------------------------------------
+# IREG, IREG, IREG
+mul      IREG, IREG, IREG         # rd, rs, rt
+
+# IREG, IREG
+mult     IREG, IREG + hi/lo       # rs, rt -> resultado (produto) em HI/LO implicito
+multu    IREG, IREG + hi/lo       # idem, sem sinal
+dmult    IREG, IREG + hi/lo       # versao doubleword de mult
+dmultu   IREG, IREG + hi/lo
+
+
+INT_DIV
+-----------------------------------------------------------------
+# IREG, IREG
+div      IREG, IREG + hi/lo       # rs, rt -> quociente/resto em HI/LO implicito
+divu     IREG, IREG + hi/lo
+ddiv     IREG, IREG + hi/lo       # versao doubleword de div
+ddivu    IREG, IREG + hi/lo
+
+
+FLOAT_BASIC
+-----------------------------------------------------------------
+# FREG, FREG, FREG
+add.d    FREG, FREG, FREG         # fd, fs, ft
+add.s    FREG, FREG, FREG
+sub.d    FREG, FREG, FREG
+sub.s    FREG, FREG, FREG
+
+# FREG, FREG
+abs.s    FREG, FREG               # fd, fs (unario, single)
+abs.d    FREG, FREG               # fd, fs (unario, double)
+neg.s    FREG, FREG
+neg.d    FREG, FREG
+sqrt.s   FREG, FREG
+sqrt.d   FREG, FREG
+cvt.s.w  FREG, FREG               # fd, fs - conversao word -> single
+cvt.d.w  FREG, FREG               # word -> double
+cvt.s.d  FREG, FREG               # double -> single
+cvt.d.s  FREG, FREG               # single -> double
+cvt.w.s  FREG, FREG               # single -> word
+cvt.w.d  FREG, FREG               # double -> word
+
+# FREG, FREG
+c.le.s   FREG, FREG               # fs, ft (seta flag condition implicita)
+c.lt.s   FREG, FREG
+c.eq.s   FREG, FREG
+c.le.d   FREG, FREG
+c.lt.d   FREG, FREG
+c.eq.d   FREG, FREG
+
+
+FLOAT_MUL
+-----------------------------------------------------------------
+# FREG, FREG, FREG
+mul.d    FREG, FREG, FREG
+mul.s    FREG, FREG, FREG
+
+
+FLOAT_DIV
+-----------------------------------------------------------------
+# FREG, FREG, FREG
+div.d    FREG, FREG, FREG
+div.s    FREG, FREG, FREG
+
+
+=================================================================
+ 9 categorias principais
+=================================================================

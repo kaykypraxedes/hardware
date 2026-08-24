@@ -2,7 +2,7 @@
 #ifndef ARM64_H   // Include guard
 #define ARM64_H
 #include "../../headers/Architecture.h"
-#include <cctype> // para std::toupper
+#include <cctype> // para std::tolower
 
 namespace processor {
 
