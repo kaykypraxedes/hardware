@@ -1,0 +1,654 @@
+/* tb_X86Intel.cpp */
+// Testbench completo e isolado de X86Intel.cpp
+#include "../Architectures/headers/X86Intel.h"
+#include "tb_Helpers.h"
+#include <iostream>
+#include <fcntl.h>      // open() e O_WRONLY.
+#include <set>          // std::set.
+#include <signal.h>     // SIGABRT.
+#include <sys/wait.h>   // waitpid(), WIFSIGNALED() e WTERMSIG().
+#include <tuple>        // std::tuple.
+#include <unistd.h>     // fork(), dup2(), close(), _exit() e descritores POSIX.
+#include <vector>
+
+using namespace processor;
+
+// Função customizada para o testbench verificar type, id E máscara simultaneamente.
+static bool has_mask(const std::vector<Register>& regs, char type, int id, int mask) {
+    for (const auto& r : regs) {
+        if (r.GetType() == type && r.GetId() == id && r.GetMask() == mask) return true;
+    }
+    return false;
+}
+
+static bool has_any_flag(const std::vector<Register>& regs) {
+    for (const auto& reg : regs)
+        if (reg.GetType() == 'G' && reg.GetId() >= 80 && reg.GetId() <= 85) return true;
+    return false;
+}
+
+static bool has_all_flags(const std::vector<Register>& regs) {
+    for (int id{80}; id <= 85; id++)
+        if (!has_mask(regs, 'G', id, 0xFF)) return false;
+    return true;
+}
+
+static bool has_unique_registers(const std::vector<Register>& regs) {
+    std::set<std::tuple<char, int, int>> identities;
+    for (const auto& reg : regs)
+        identities.emplace(reg.GetType(), reg.GetId(), reg.GetMask());
+    return identities.size() == regs.size();
+}
+
+// Verifica se uma instrução inválida encerra o parser com SIGABRT:
+// - O processo filho silencia a mensagem esperada e executa Parse().
+// - O processo pai aguarda o filho e valida a causa exata do encerramento.
+static bool parse_aborts(const std::string& instruction) {
+    std::cout.flush();
+    std::cerr.flush();
+    const pid_t child{fork()};
+    if (child == 0) {
+        const int null_fd{open("/dev/null", O_WRONLY)};
+        if (null_fd >= 0) {
+            dup2(null_fd, STDERR_FILENO);
+            close(null_fd);
+        }
+        InstructionX86Intel parsed(0);
+        parsed.Parse(instruction);
+        _exit(0);
+    }
+    if (child < 0) return false;
+    int status{};
+    if (waitpid(child, &status, 0) != child) return false;
+    return WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
+}
+
+// Ids físicos desta arquitetura (ver RegisterTable() em X86Intel.cpp):
+static constexpr int REG_A{0};
+static constexpr int REG_B{1};
+static constexpr int REG_C{2};
+static constexpr int REG_D{3};
+static constexpr int REG_SP{6};
+static constexpr int XMM0{32};
+static constexpr int XMM1{33};
+static constexpr int CF{80};
+
+int main() {
+
+    // ════════════════════════════════════════════════════════════════════
+    // 1. PARSE E NORMALIZAÇÃO DE STRINGS
+    // ════════════════════════════════════════════════════════════════════
+
+    print_title("1. PARSE E NORMALIZAÇÃO DE STRINGS");
+
+    section("1.1 Espaçamento variado e case-insensitive");
+    {
+        InstructionX86Intel a(0);
+        a.Parse("ADD EAX, EBX");
+        InstructionX86Intel b(0);
+        b.Parse("add   eax , ebx");
+        InstructionX86Intel c(0);
+        c.Parse("AdD\teax,\tEBX");
+
+        check("opcode e registradores são normalizados para minúsculo",
+            a.GetInstructionString() == b.GetInstructionString() &&
+            b.GetInstructionString() == c.GetInstructionString());
+    }
+
+    section("1.2 Normalização (instruction_string)");
+    {
+        InstructionX86Intel a(0);
+        a.Parse("cvttss2si eax, xmm0");
+        check("Opcodes grandes definem o padding (cvttss2si tem 9 chars)",
+            a.GetInstructionString().find("cvttss2si eax, xmm0") != std::string::npos);
+
+        InstructionX86Intel b(0);
+        b.Parse("mov rax, [rbx + 4]");
+        check("Colchetes e operandos são reconstruídos fielmente",
+            b.GetInstructionString().find("mov       rax, [rbx + 4]") != std::string::npos);
+    }
+
+    section("1.3 Extração complexa de memória");
+    {
+        InstructionX86Intel a(0);
+        a.Parse("mov eax, [rax + rbx*4 + 8]");
+        check("extrai rax e rbx de dentro dos colchetes, ignorando 4 e 8",
+            has_mask(a.GetExSourceRegisters(), 'L', REG_A, 0xFF) &&
+            has_mask(a.GetExSourceRegisters(), 'L', REG_B, 0xFF));
+    }
+
+    section("1.4 Reconstrução de string com imediatos e memória complexa");
+        {
+            InstructionX86Intel i1(0);
+            i1.Parse("mov rcx, [rax+rbx*4+8]");
+
+            check("Preserva a formatação interna dos colchetes (imediatos e multiplicadores)",
+                i1.GetInstructionString().find("mov       rcx, [rax + rbx * 4 + 8]") != std::string::npos);
+
+            InstructionX86Intel i2(0);
+            i2.Parse("add eax, -15");
+
+            check("Preserva imediatos puros (negativos e constantes) na remontagem",
+                i2.GetInstructionString().find("add       eax, -15") != std::string::npos);
+        }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 2. TESTES DE MASCARAMENTO E SOBREPOSIÇÃO FÍSICA
+    // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("2. TESTES DE MASCARAMENTO E SOBREPOSIÇÃO FÍSICA");
+
+    section("2.1 Isolamento de registradores parciais (al vs ah)");
+    {
+        InstructionX86Intel i1(0);
+        i1.Parse("add al, 5");
+        check("add al (0x01) bloqueia ele mesmo, ax (0x03), eax (0x0F) e rax (0xFF)",
+            has_mask(i1.GetDestRegisters(), 'B', REG_A, 0x01) &&
+            has_mask(i1.GetDestRegisters(), 'W', REG_A, 0x03) &&
+            has_mask(i1.GetDestRegisters(), 'R', REG_A, 0x0F) &&
+            has_mask(i1.GetDestRegisters(), 'L', REG_A, 0xFF));
+
+        check("add al (0x01) NÃO deve bloquear o ah (0x02) livre",
+            !has_mask(i1.GetDestRegisters(), 'B', REG_A, 0x02));
+
+        InstructionX86Intel i2(0);
+        i2.Parse("add ah, 5");
+        check("add ah (0x02) NÃO deve bloquear o al (0x01)",
+            !has_mask(i2.GetDestRegisters(), 'B', REG_A, 0x01));
+    }
+
+    section("2.2 Escrita cheia bloqueia todos os parciais (eax)");
+    {
+        InstructionX86Intel i(0);
+        i.Parse("mov eax, 5");
+        check("mov eax (0x0F) bloqueia rax, eax, ax, ah e al mutuamente",
+            has_mask(i.GetDestRegisters(), 'L', REG_A, 0xFF) &&
+            has_mask(i.GetDestRegisters(), 'R', REG_A, 0x0F) &&
+            has_mask(i.GetDestRegisters(), 'W', REG_A, 0x03) &&
+            has_mask(i.GetDestRegisters(), 'B', REG_A, 0x01) &&
+            has_mask(i.GetDestRegisters(), 'B', REG_A, 0x02));
+    }
+
+    section("2.3 Auditoria tabelada de todos os aliases GPR");
+    {
+        struct ALIAS_CASE {
+            std::string name;
+            char        type;
+            int         id;
+            int         mask;
+        };
+
+        const char* l64[]  = {"rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rsp", "rbp"};
+        const char* r32[]  = {"eax", "ebx", "ecx", "edx", "esi", "edi", "esp", "ebp"};
+        const char* w16[]  = {"ax",  "bx",  "cx",  "dx",  "si",  "di",  "sp",  "bp"};
+        const char* low8[] = {"al",  "bl",  "cl",  "dl",  "sil", "dil", "spl", "bpl"};
+        const char* high8[] = {"ah", "bh", "ch", "dh"};
+
+        bool base_aliases_ok{true};
+        for (int id{}; id < 8; id++) {
+            const ALIAS_CASE aliases[] = {
+                {l64[id],  'L', id, 0xFF},
+                {r32[id],  'R', id, 0x0F},
+                {w16[id],  'W', id, 0x03},
+                {low8[id], 'B', id, 0x01}
+            };
+            for (const auto& alias : aliases) {
+                InstructionX86Intel instruction(0);
+                instruction.Parse(std::string("mov ") + alias.name + ", 1");
+                base_aliases_ok = base_aliases_ok && has_mask(
+                    instruction.GetDestRegisters(), alias.type, alias.id, alias.mask
+                );
+            }
+        }
+        for (int id{}; id < 4; id++) {
+            InstructionX86Intel instruction(0);
+            instruction.Parse(std::string("mov ") + high8[id] + ", 1");
+            base_aliases_ok = base_aliases_ok &&
+                has_mask(instruction.GetDestRegisters(), 'B', id, 0x02);
+        }
+        check("A/B/C/D/SI/DI/SP/BP possuem aliases e máscaras corretos", base_aliases_ok);
+
+        bool extended_aliases_ok{true};
+        for (int id{8}; id < 16; id++) {
+            const std::string stem{"r" + std::to_string(id)};
+            const ALIAS_CASE aliases[] = {
+                {stem,       'L', id, 0xFF},
+                {stem + "d", 'R', id, 0x0F},
+                {stem + "w", 'W', id, 0x03},
+                {stem + "b", 'B', id, 0x01}
+            };
+            for (const auto& alias : aliases) {
+                InstructionX86Intel instruction(0);
+                instruction.Parse(std::string("mov ") + alias.name + ", 1");
+                extended_aliases_ok = extended_aliases_ok && has_mask(
+                    instruction.GetDestRegisters(), alias.type, alias.id, alias.mask
+                );
+            }
+        }
+        check("R8-R15 possuem aliases L/R/W/B e ids compartilhados", extended_aliases_ok);
+    }
+
+    section("2.4 Matriz low8/high8 e ausência de duplicatas");
+    {
+        const char* low8[]  = {"al", "bl", "cl", "dl"};
+        const char* high8[] = {"ah", "bh", "ch", "dh"};
+        bool byte_matrix_ok{true};
+        for (int id{}; id < 4; id++) {
+            InstructionX86Intel low_instruction(0);
+            low_instruction.Parse(std::string("add ") + low8[id] + ", 1");
+            InstructionX86Intel high_instruction(0);
+            high_instruction.Parse(std::string("add ") + high8[id] + ", 1");
+
+            byte_matrix_ok = byte_matrix_ok &&
+                !has_mask(low_instruction.GetDestRegisters(), 'B', id, 0x02) &&
+                !has_mask(high_instruction.GetDestRegisters(), 'B', id, 0x01) &&
+                has_unique_registers(low_instruction.GetDestRegisters()) &&
+                has_unique_registers(high_instruction.GetDestRegisters());
+        }
+        check("low8/high8 de A/B/C/D permanecem independentes", byte_matrix_ok);
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 3. O POLIMORFISMO DA FAMÍLIA MOV
+    // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("3. O POLIMORFISMO DA FAMÍLIA MOV");
+
+    section("3.1 MOV como ALU (Reg-Reg / Reg-Imm)");
+    {
+        InstructionX86Intel rr(0);
+        rr.Parse("mov eax, ebx");
+        check("mov reg, reg: GetInstructionType() == INT_BASIC",
+            rr.GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC);
+        check("mov reg, reg: dest == {eax} (não escreve flags)",
+            has_mask(rr.GetDestRegisters(), 'R', REG_A, 0x0F) && !has_any_flag(rr.GetDestRegisters()));
+        check("mov reg, reg: ex_source == {ebx} (NÃO LÊ o eax antes de gravar)",
+            has_mask(rr.GetExSourceRegisters(), 'R', REG_B, 0x0F) && !has_mask(rr.GetExSourceRegisters(), 'R', REG_A, 0x0F));
+    }
+
+    section("3.2 MOV como LOAD (Reg-Mem)");
+    {
+        InstructionX86Intel ld(0);
+        ld.Parse("mov eax, [rbx]");
+        check("mov reg, [mem]: GetInstructionType() == LOAD",
+            ld.GetInstructionType() == INSTRUCTION_TYPE::LOAD);
+        check("mov reg, [mem]: dest == {eax}, ex_source == {ebx}",
+            has_mask(ld.GetDestRegisters(), 'R', REG_A, 0x0F) && has_mask(ld.GetExSourceRegisters(), 'R', REG_B, 0x0F));
+    }
+
+    section("3.3 MOV como STORE (Mem-Reg e Mem-Imm)");
+    {
+        InstructionX86Intel st(0);
+        st.Parse("mov [rax], ebx");
+        check("mov [mem], reg: GetInstructionType() == STORE",
+            st.GetInstructionType() == INSTRUCTION_TYPE::STORE);
+        check("mov [mem], reg: mem_source == {ebx}, ex_source == {eax}",
+            has_mask(st.GetMemSourceRegisters(), 'R', REG_B, 0x0F) && has_mask(st.GetExSourceRegisters(), 'R', REG_A, 0x0F));
+
+        InstructionX86Intel sti(0);
+        sti.Parse("mov [rax], 10");
+        check("mov [mem], imm: imediato não gera dependência em mem_source",
+            sti.GetMemSourceRegisters().empty());
+    }
+
+    section("3.4 MOVSX / MOVZX (Pure Write & Size Change)");
+    {
+        InstructionX86Intel ms(0);
+        ms.Parse("movsx eax, bl");
+        check("movsx (reg, reg): INT_BASIC, dest == {eax}, ex_source == {bl}",
+            ms.GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC &&
+            has_mask(ms.GetDestRegisters(), 'R', REG_A, 0x0F) && has_mask(ms.GetExSourceRegisters(), 'B', REG_B, 0x01));
+        check("movsx (reg, reg): NÃO LÊ o destino antes (Pure Write)",
+            !has_mask(ms.GetExSourceRegisters(), 'R', REG_A, 0x0F));
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 4. INT_BASIC E DEPENDÊNCIAS DO EFLAGS
+    // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("4. INT_BASIC E DEPENDÊNCIAS DE FLAGS");
+
+    section("4.1 ADD padrão (2 operandos destrutivos)");
+    {
+        InstructionX86Intel i(0);
+        i.Parse("add eax, ebx");
+        check("add: dest inclui eax e as seis flags rastreadas",
+            has_mask(i.GetDestRegisters(), 'R', REG_A, 0x0F) && has_all_flags(i.GetDestRegisters()));
+        check("add: ex_source == {eax, ebx} (lê destino e fonte)",
+            has_mask(i.GetExSourceRegisters(), 'R', REG_A, 0x0F) && has_mask(i.GetExSourceRegisters(), 'R', REG_B, 0x0F));
+    }
+
+    section("4.2 Read-Modify-Write em Memória (add [mem], reg)");
+    {
+        InstructionX86Intel i(0);
+        i.Parse("add [rax], ebx");
+        check("add [mem]: ex_source precisa puxar a base da memória (eax) E o valor (ebx)",
+            has_mask(i.GetExSourceRegisters(), 'R', REG_A, 0x0F) && has_mask(i.GetExSourceRegisters(), 'R', REG_B, 0x0F));
+    }
+
+    section("4.3 ADC (Soma com Carry) - Lê CF");
+    {
+        InstructionX86Intel i(0);
+        i.Parse("adc eax, ebx");
+        check("adc: ex_source inclui CF anterior",
+            has_mask(i.GetExSourceRegisters(), 'G', CF, 0xFF));
+    }
+
+    section("4.4 NOT / INC - Exceções e unários");
+    {
+        InstructionX86Intel i(0);
+        i.Parse("not eax");
+        check("not: NÃO altera flags", !has_any_flag(i.GetDestRegisters()));
+
+        InstructionX86Intel inc(0);
+        inc.Parse("inc eax");
+        check("inc: afeta flags rastreadas e o próprio EAX",
+            has_mask(inc.GetDestRegisters(), 'R', REG_A, 0x0F) && has_all_flags(inc.GetDestRegisters()));
+    }
+
+    section("4.5 CMP e TEST - Apenas afetam Flags");
+    {
+        InstructionX86Intel i(0);
+        i.Parse("cmp eax, ebx");
+        check("cmp: dest contém somente flags (não sobrescreve eax)",
+            has_all_flags(i.GetDestRegisters()) && !has_mask(i.GetDestRegisters(), 'R', REG_A, 0x0F));
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 5. LEA VS MEMORY ACCESS
+    // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("5. LEA (Load Effective Address)");
+
+    section("5.1 LEA - Cálculo puro sem acessar RAM");
+    {
+        InstructionX86Intel i(0);
+        i.Parse("lea eax, [rbx + rcx]");
+        check("lea: GetInstructionType() == INT_BASIC (Não é LOAD!)",
+            i.GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC);
+        check("lea: dest == {eax}, ex_source == {ebx, ecx} (sem flags)",
+            has_mask(i.GetDestRegisters(), 'R', REG_A, 0x0F) &&
+            !has_any_flag(i.GetDestRegisters()) &&
+            has_mask(i.GetExSourceRegisters(), 'R', REG_B, 0x0F) &&
+            has_mask(i.GetExSourceRegisters(), 'R', REG_C, 0x0F));
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 6. STACK OPERATIONS (PUSH / POP)
+    // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("6. STACK OPERATIONS (RSP IMPLÍCITO)");
+
+    section("6.1 PUSH - Escreve na pilha e decrementa RSP");
+    {
+        InstructionX86Intel i(0);
+        i.Parse("push rax");
+        check("push: dest == {rsp} (L, 6), mem_source == {rax} (L, 0)",
+            has_mask(i.GetDestRegisters(), 'L', REG_SP, 0xFF) && has_mask(i.GetMemSourceRegisters(), 'L', REG_A, 0xFF));
+    }
+
+    section("6.2 POP - Lê da pilha e incrementa RSP");
+    {
+        InstructionX86Intel i(0);
+        i.Parse("pop rax");
+        check("pop: dest == {rsp, rax}",
+            has_mask(i.GetDestRegisters(), 'L', REG_SP, 0xFF) && has_mask(i.GetDestRegisters(), 'L', REG_A, 0xFF));
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 7. IMPLICIT MULTIPLY / DIVIDE
+    // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("7. MULTIPLY / DIVIDE (REGISTRADORES IMPLÍCITOS)");
+
+    section("7.1 MUL - 1 operando (32-bit: EAX:EDX)");
+    {
+        InstructionX86Intel i(0);
+        i.Parse("mul ebx");
+        check("mul: GetInstructionType() == INT_MUL", i.GetInstructionType() == INSTRUCTION_TYPE::INT_MUL);
+        check("mul: dest inclui eax, edx e flags rastreadas",
+            has_mask(i.GetDestRegisters(), 'R', REG_A, 0x0F) &&
+            has_mask(i.GetDestRegisters(), 'R', REG_D, 0x0F) &&
+            has_all_flags(i.GetDestRegisters()));
+    }
+
+    section("7.2 DIV - 1 operando (Leitura implícita)");
+    {
+        InstructionX86Intel i(0);
+        i.Parse("div ebx");
+        check("div: ex_source == {eax, edx, ebx}",
+            has_mask(i.GetExSourceRegisters(), 'R', REG_A, 0x0F) &&
+            has_mask(i.GetExSourceRegisters(), 'R', REG_D, 0x0F) &&
+            has_mask(i.GetExSourceRegisters(), 'R', REG_B, 0x0F));
+    }
+
+    section("7.3 IMUL - 2 operandos (Multiplicação Moderna)");
+    {
+        InstructionX86Intel i(0);
+        i.Parse("imul eax, ebx");
+        check("imul (2 op): dest inclui eax e flags (NÃO usa edx)",
+            has_mask(i.GetDestRegisters(), 'R', REG_A, 0x0F) &&
+            has_all_flags(i.GetDestRegisters()) &&
+            !has_mask(i.GetDestRegisters(), 'R', REG_D, 0x0F));
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 8. BRANCHES E CALL/RET
+    // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("8. BRANCHES E SUB-ROTINAS");
+
+    section("8.1 JMP - Incondicional Direto e Indireto");
+    {
+        InstructionX86Intel j1(0);
+        j1.Parse("jmp LABEL");
+        check("jmp LABEL: não possui registradores dependentes", j1.GetExSourceRegisters().empty());
+
+        InstructionX86Intel j2(0);
+        j2.Parse("jmp eax");
+        check("jmp reg (Indireto): ex_source == {eax}", has_mask(j2.GetExSourceRegisters(), 'R', REG_A, 0x0F));
+    }
+
+    section("8.2 JCC (Ex: je, jne) - Condicionais");
+    {
+        InstructionX86Intel i(0);
+        i.Parse("je LABEL");
+        check("je: ex_source inclui flags rastreadas", has_all_flags(i.GetExSourceRegisters()));
+    }
+
+    section("8.3 CALL e RET - Pilha Implícita");
+    {
+        InstructionX86Intel call(0);
+        call.Parse("call LABEL");
+        check("call: dest == {rsp}, ex_source == {rsp}",
+            has_mask(call.GetDestRegisters(), 'L', REG_SP, 0xFF) && has_mask(call.GetExSourceRegisters(), 'L', REG_SP, 0xFF));
+
+        InstructionX86Intel ret(0);
+        ret.Parse("ret");
+        check("ret: dest == {rsp}, ex_source == {rsp}",
+            has_mask(ret.GetDestRegisters(), 'L', REG_SP, 0xFF) && has_mask(ret.GetExSourceRegisters(), 'L', REG_SP, 0xFF));
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 9. SIMD / FLOAT
+    // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("9. SIMD E FLOAT (SSE)");
+
+    section("9.1 ADDSS e MULPS - Aritmética SIMD");
+    {
+        InstructionX86Intel i(0);
+        i.Parse("addss xmm0, xmm1");
+        check("addss: dest == {xmm0}, ex_source == {xmm0, xmm1}",
+            has_mask(i.GetDestRegisters(), 'F', XMM0, 0xFF) &&
+            has_mask(i.GetExSourceRegisters(), 'F', XMM0, 0xFF) &&
+            has_mask(i.GetExSourceRegisters(), 'F', XMM1, 0xFF));
+        check("addss: NÃO altera flags", !has_any_flag(i.GetDestRegisters()));
+    }
+
+    section("9.2 CVTTSS2SI - Escrita pura Float para Int");
+    {
+        InstructionX86Intel i(0);
+        i.Parse("cvttss2si eax, xmm0");
+        check("cvttss2si: dest == {eax} (sem ler o eax antigo)",
+            has_mask(i.GetDestRegisters(), 'R', REG_A, 0x0F) && !has_mask(i.GetExSourceRegisters(), 'R', REG_A, 0x0F));
+        check("cvttss2si: ex_source == {xmm0}",
+            has_mask(i.GetExSourceRegisters(), 'F', XMM0, 0xFF));
+    }
+
+    section("9.3 COMISS - Comparação SIMD -> flags");
+    {
+        InstructionX86Intel i(0);
+        i.Parse("comiss xmm0, xmm1");
+        check("comiss: dest inclui flags, ex_source == {xmm0, xmm1}",
+            has_all_flags(i.GetDestRegisters()) &&
+            has_mask(i.GetExSourceRegisters(), 'F', XMM0, 0xFF) &&
+            has_mask(i.GetExSourceRegisters(), 'F', XMM1, 0xFF));
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // 10. BANCO FÍSICO E FAIXAS DE IMPRESSÃO
+    // ═════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("10. BANCO FÍSICO E FAIXAS DE IMPRESSÃO");
+
+    section("10.1 Slots esperados, identidade e isolamento");
+    {
+        const CDB cdb{InstructionX86Intel::MakeCDB()};
+        check("CDB x86 possui exatamente 90 slots", cdb.registers.size() == 90);
+        check("Cada slot possui identidade (type,id,mask) única", has_unique_registers(cdb.registers));
+
+        bool xmm_ok{true};
+        for (int id{32}; id < 48; id++)
+            xmm_ok = xmm_ok && has_mask(cdb.registers, 'F', id, 0xFF);
+        check("XMM0-XMM15 existem e ocupam slots distintos", xmm_ok);
+
+        bool flags_ok{true};
+        for (int id{80}; id <= 85; id++)
+            flags_ok = flags_ok && has_mask(cdb.registers, 'G', id, 0xFF);
+        check("CF/PF/AF/ZF/SF/OF existem em slots independentes", flags_ok);
+    }
+
+    section("10.2 print_banks cobre o CDB uma vez e sem overflow");
+    {
+        const CDB cdb{InstructionX86Intel::MakeCDB()};
+        std::vector<bool> covered(cdb.registers.size(), false);
+        bool ranges_ok{true};
+        for (const auto& bank : cdb.print_banks) {
+            if (bank.base < 0 || bank.count < 0 ||
+                static_cast<size_t>(bank.base + bank.count) > cdb.registers.size()) {
+                ranges_ok = false;
+                continue;
+            }
+            for (int position{bank.base}; position < bank.base + bank.count; position++) {
+                if (covered[position]) ranges_ok = false;
+                covered[position] = true;
+            }
+        }
+        for (const bool slot_covered : covered)
+            if (!slot_covered) ranges_ok = false;
+        check("print_banks possui ranges válidos, sem sobreposição ou omissão", ranges_ok);
+    }
+
+    std::cout << "\n";
+    print_title("11. TOKENIZER E OPERANDOS TIPADOS");
+
+    section("11.1 Normalização canônica e endereçamento válido");
+    {
+        const std::vector<std::pair<std::string, std::string>> cases{
+            {" MOV RAX , [ RBP-8 ] ", "mov       rax, [rbp - 8]"},
+            {"mov rax,[rbx+r14]", "mov       rax, [rbx + r14]"},
+            {"mov rax, [r15+r14*8+2147483647]", "mov       rax, [r15 + r14 * 8 + 2147483647]"},
+            {"mov rax, [r14*2-0x10]", "mov       rax, [r14 * 2 - 0x10]"},
+            {"mov rax, [0x7fffffffffffffff]", "mov       rax, [0x7fffffffffffffff]"},
+            {"mov rax, [-9223372036854775808]", "mov       rax, [-9223372036854775808]"},
+            {"mov rax, [rip+32]", "mov       rax, [rip + 32]"},
+            {"mov rax, [rip+MinhaLabel]", "mov       rax, [rip + MinhaLabel]"},
+            {"mov rax, QWORD PTR [rsp]", "mov       rax, qword ptr [rsp]"},
+            {"mov xmm0, XMMWORD ptr [rax]", "mov       xmm0, xmmword ptr [rax]"},
+            {"jmp MinhaLabel", "jmp       MinhaLabel"},
+            {"add rax, 0xffffffffffffffff", "add       rax, 0xffffffffffffffff"},
+            {"add rax, -0x8000000000000000", "add       rax, -0x8000000000000000"}
+        };
+        bool canonical{true};
+        for (const auto& [input, expected] : cases) {
+            InstructionX86Intel first(0);
+            first.Parse(input);
+            InstructionX86Intel second(0);
+            second.Parse(first.GetInstructionString());
+            canonical = canonical && first.GetInstructionString() == expected &&
+                        second.GetInstructionString() == expected;
+        }
+        check("formas válidas normalizam de modo exato e estável", canonical);
+    }
+
+    section("11.2 Fontes de endereço e ciclo de vida de Parse");
+    {
+        InstructionX86Intel address(0);
+        address.Parse("mov rcx, [rax+rbx*4+10]");
+        check("base e index entram uma vez; escala e deslocamento não viram fontes",
+            has_mask(address.GetExSourceRegisters(), 'L', REG_A, 0xFF) &&
+            has_mask(address.GetExSourceRegisters(), 'L', REG_B, 0xFF) &&
+            has_unique_registers(address.GetExSourceRegisters()));
+
+        address.SetExLatency(99);
+        address.SetMemLatency(99);
+        address.Parse("jmp NovoAlvo");
+        check("segundo Parse substitui texto, tipo, latências e dependências",
+            address.GetInstructionString() == "jmp       NovoAlvo" &&
+            address.GetInstructionType() == INSTRUCTION_TYPE::BRANCH &&
+            address.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::BRANCH)] &&
+            address.GetMemLatency() == 0 && address.GetDestRegisters().empty() &&
+            address.GetExSourceRegisters().empty() && address.GetMemSourceRegisters().empty());
+    }
+
+    section("11.3 Rejeição determinística de sintaxe malformada");
+    {
+        std::vector<std::string> invalid{
+            "", " \t ", ",", "add rax rbx", "add , rax", "add rax,,rbx", "add rax,",
+            "mov rax, [rbx", "mov rax, rbx]", "mov rax, [[rbx]]", "mov rax, [rbx]]",
+            "mov rax, []", "mov rax, [rbx+]", "mov rax, [rbx++4]", "mov rax, [rbx*]",
+            "mov rax, [4*rbx]", "mov rax, [rbx*3]", "mov rax, [rax+rbx+rcx]", "mov rax, [rax+rbx+8]",
+            "mov rax, [eax]", "mov rax, [ax]", "mov rax, [al]", "mov rax, [xmm0]",
+            "mov rax, [cf]", "mov rax, [rax+rsp]", "mov rax, [rax+r12*2]",
+            "mov rax, [rip+rbx]", "mov rax, [rip+One+Two]", "mov rax, [fs:rax]",
+            "mov rax, [Label]", "mov rax, byte [rbx]", "mov rax, ptr [rbx]",
+            "add rax, +1", "add rax, --1", "add rax, 0x", "add rax, 12abc",
+            "add rax, 18446744073709551616", "add rax, -9223372036854775809",
+            "mov rax, [9223372036854775808]", "mov rax, [-9223372036854775809]",
+            "jmp 9Label", "jmp Bad-Label", "mov rax, [rax@rbx]"
+        };
+        invalid.push_back(std::string("add rax, 1\0junk", 15));
+        invalid.push_back(std::string("jmp A") + static_cast<char>(0xFF));
+        bool rejected{true};
+        for (const std::string& input : invalid) {
+            const bool did_abort{parse_aborts(input)};
+            if (!did_abort) std::cout << "  Entrada aceita indevidamente: " << input << '\n';
+            rejected = rejected && did_abort;
+        }
+        check("vírgulas, colchetes, caracteres, literais e endereços inválidos abortam", rejected);
+    }
+
+    section("11.4 Entrada grande permanece processável");
+    {
+        const std::string padding(200000, ' ');
+        InstructionX86Intel instruction(0);
+        instruction.Parse(padding + "mov rax, [rbx+r14*8+16]" + padding);
+        check("espaçamento grande produz saída canônica determinística",
+            instruction.GetInstructionString() == "mov       rax, [rbx + r14 * 8 + 16]");
+    }
+
+    std::cout << "\n-----------------------------\n";
+    std::cout << "Resultado: " << passed << " OK, " << failed << " FALHOU\n";
+
+    return failed ? 1 : 0;
+}
