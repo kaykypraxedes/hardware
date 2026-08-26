@@ -107,6 +107,14 @@ Instruction::Instruction(
 void Instruction::Parse(
     const std::string& str
 ){
+    instruction_string.clear();
+    type = INSTRUCTION_TYPE::INVALID;
+    ex_latency = 0;
+    mem_latency = 0;
+    dest_registers.clear();
+    ex_source_registers.clear();
+    mem_source_registers.clear();
+
     // Verifica se foi passado uma string vazia.
     if (str.empty()) {
         std::cerr << "[ERRO] String vazia passada como instrução!\n";

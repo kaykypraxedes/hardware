@@ -226,20 +226,20 @@ static const Register& LookupReg(
 
 static const std::unordered_map<std::string, OP_SHAPE> OPCODE_SHAPE {
     // LOAD
-    {"lw", OP_SHAPE::LOAD_INT}, {"lb", OP_SHAPE::LOAD_INT}, {"lh", OP_SHAPE::LOAD_INT},
-    {"lbu", OP_SHAPE::LOAD_INT}, {"lhu", OP_SHAPE::LOAD_INT}, {"ld", OP_SHAPE::LOAD_INT},
-    {"lwu", OP_SHAPE::LOAD_INT}, {"ll", OP_SHAPE::LOAD_INT},
+    {"lw", OP_SHAPE::LOAD_INT},    {"lb", OP_SHAPE::LOAD_INT},  {"lh", OP_SHAPE::LOAD_INT},
+    {"lbu", OP_SHAPE::LOAD_INT},   {"lhu", OP_SHAPE::LOAD_INT}, {"ld", OP_SHAPE::LOAD_INT},
+    {"lwu", OP_SHAPE::LOAD_INT},   {"ll", OP_SHAPE::LOAD_INT},
     {"l.d", OP_SHAPE::LOAD_FLOAT}, {"l.s", OP_SHAPE::LOAD_FLOAT},
     {"load", OP_SHAPE::LOAD_ANY},
 
     // STORE
-    {"sw", OP_SHAPE::STORE_INT}, {"sb", OP_SHAPE::STORE_INT}, {"sh", OP_SHAPE::STORE_INT},
-    {"sd", OP_SHAPE::STORE_INT}, {"sc", OP_SHAPE::STORE_INT},
+    {"sw", OP_SHAPE::STORE_INT},    {"sb", OP_SHAPE::STORE_INT}, {"sh", OP_SHAPE::STORE_INT},
+    {"sd", OP_SHAPE::STORE_INT},    {"sc", OP_SHAPE::STORE_INT},
     {"s.d", OP_SHAPE::STORE_FLOAT}, {"s.s", OP_SHAPE::STORE_FLOAT},
     {"store", OP_SHAPE::STORE_ANY},
 
     // BRANCH
-    {"beq", OP_SHAPE::BR_2REG_LABEL}, {"bne", OP_SHAPE::BR_2REG_LABEL},
+    {"beq", OP_SHAPE::BR_2REG_LABEL},  {"bne", OP_SHAPE::BR_2REG_LABEL},
     {"bnez", OP_SHAPE::BR_1REG_LABEL}, {"beqz", OP_SHAPE::BR_1REG_LABEL},
     {"bgtz", OP_SHAPE::BR_1REG_LABEL}, {"bltz", OP_SHAPE::BR_1REG_LABEL},
     {"bgez", OP_SHAPE::BR_1REG_LABEL}, {"blez", OP_SHAPE::BR_1REG_LABEL},
@@ -248,39 +248,39 @@ static const std::unordered_map<std::string, OP_SHAPE> OPCODE_SHAPE {
     {"jr", OP_SHAPE::BR_1REG}, {"jalr", OP_SHAPE::BR_JALR},
 
     // INT_BASIC
-    {"add", OP_SHAPE::INT_3REG}, {"addu", OP_SHAPE::INT_3REG}, {"daddu", OP_SHAPE::INT_3REG},
-    {"sub", OP_SHAPE::INT_3REG}, {"subu", OP_SHAPE::INT_3REG}, {"dsubu", OP_SHAPE::INT_3REG},
-    {"and", OP_SHAPE::INT_3REG}, {"or", OP_SHAPE::INT_3REG}, {"xor", OP_SHAPE::INT_3REG},
+    {"add", OP_SHAPE::INT_3REG},  {"addu", OP_SHAPE::INT_3REG}, {"daddu", OP_SHAPE::INT_3REG},
+    {"sub", OP_SHAPE::INT_3REG},  {"subu", OP_SHAPE::INT_3REG}, {"dsubu", OP_SHAPE::INT_3REG},
+    {"and", OP_SHAPE::INT_3REG},  {"or", OP_SHAPE::INT_3REG},   {"xor", OP_SHAPE::INT_3REG},
     {"nor", OP_SHAPE::INT_3REG},
     {"sllv", OP_SHAPE::INT_3REG}, {"srlv", OP_SHAPE::INT_3REG}, {"srav", OP_SHAPE::INT_3REG},
-    {"slt", OP_SHAPE::INT_3REG}, {"sltu", OP_SHAPE::INT_3REG},
+    {"slt", OP_SHAPE::INT_3REG},  {"sltu", OP_SHAPE::INT_3REG},
     {"dslt", OP_SHAPE::INT_3REG}, {"dsltu", OP_SHAPE::INT_3REG},
 
-    {"addi", OP_SHAPE::INT_2REG_IMM_S}, {"addiu", OP_SHAPE::INT_2REG_IMM_S},
+    {"addi", OP_SHAPE::INT_2REG_IMM_S},  {"addiu", OP_SHAPE::INT_2REG_IMM_S},
     {"daddiu", OP_SHAPE::INT_2REG_IMM_S}, {"subi", OP_SHAPE::INT_2REG_IMM_S},
-    {"slti", OP_SHAPE::INT_2REG_IMM_S}, {"sltiu", OP_SHAPE::INT_2REG_IMM_S},
-    {"dslti", OP_SHAPE::INT_2REG_IMM_S}, {"dsltiu", OP_SHAPE::INT_2REG_IMM_S},
+    {"slti", OP_SHAPE::INT_2REG_IMM_S},   {"sltiu", OP_SHAPE::INT_2REG_IMM_S},
+    {"dslti", OP_SHAPE::INT_2REG_IMM_S},  {"dsltiu", OP_SHAPE::INT_2REG_IMM_S},
 
-    {"andi", OP_SHAPE::INT_2REG_IMM_U}, {"ori", OP_SHAPE::INT_2REG_IMM_U}, {"xori", OP_SHAPE::INT_2REG_IMM_U},
-    {"sll", OP_SHAPE::INT_2REG_IMM_U}, {"srl", OP_SHAPE::INT_2REG_IMM_U}, {"sra", OP_SHAPE::INT_2REG_IMM_U},
+    {"andi", OP_SHAPE::INT_2REG_IMM_U}, {"ori", OP_SHAPE::INT_2REG_IMM_U},  {"xori", OP_SHAPE::INT_2REG_IMM_U},
+    {"sll", OP_SHAPE::INT_2REG_IMM_U},  {"srl", OP_SHAPE::INT_2REG_IMM_U},  {"sra", OP_SHAPE::INT_2REG_IMM_U},
     {"dsll", OP_SHAPE::INT_2REG_IMM_U}, {"dsrl", OP_SHAPE::INT_2REG_IMM_U}, {"dsra", OP_SHAPE::INT_2REG_IMM_U},
 
     {"lui", OP_SHAPE::INT_1REG_IMM},
     {"mflo", OP_SHAPE::INT_1REG_LO}, {"mfhi", OP_SHAPE::INT_1REG_HI},
 
     // INT_MUL / INT_DIV
-    {"mult", OP_SHAPE::MULDIV_2REG_HILO}, {"multu", OP_SHAPE::MULDIV_2REG_HILO},
+    {"mult", OP_SHAPE::MULDIV_2REG_HILO},  {"multu", OP_SHAPE::MULDIV_2REG_HILO},
     {"dmult", OP_SHAPE::MULDIV_2REG_HILO}, {"dmultu", OP_SHAPE::MULDIV_2REG_HILO},
-    {"div", OP_SHAPE::MULDIV_2REG_HILO}, {"divu", OP_SHAPE::MULDIV_2REG_HILO},
-    {"ddiv", OP_SHAPE::MULDIV_2REG_HILO}, {"ddivu", OP_SHAPE::MULDIV_2REG_HILO},
+    {"div", OP_SHAPE::MULDIV_2REG_HILO},   {"divu", OP_SHAPE::MULDIV_2REG_HILO},
+    {"ddiv", OP_SHAPE::MULDIV_2REG_HILO},  {"ddivu", OP_SHAPE::MULDIV_2REG_HILO},
     {"mul", OP_SHAPE::MUL_3REG},
 
     // FLOAT
-    {"add.d", OP_SHAPE::FLOAT_3REG}, {"add.s", OP_SHAPE::FLOAT_3REG},
-    {"sub.d", OP_SHAPE::FLOAT_3REG}, {"sub.s", OP_SHAPE::FLOAT_3REG},
-    {"mul.d", OP_SHAPE::FLOAT_3REG}, {"mul.s", OP_SHAPE::FLOAT_3REG},
-    {"div.d", OP_SHAPE::FLOAT_3REG}, {"div.s", OP_SHAPE::FLOAT_3REG},
-    {"abs.s", OP_SHAPE::FLOAT_2REG}, {"neg.s", OP_SHAPE::FLOAT_2REG}, {"sqrt.s", OP_SHAPE::FLOAT_2REG},
+    {"add.d", OP_SHAPE::FLOAT_3REG},   {"add.s", OP_SHAPE::FLOAT_3REG},
+    {"sub.d", OP_SHAPE::FLOAT_3REG},   {"sub.s", OP_SHAPE::FLOAT_3REG},
+    {"mul.d", OP_SHAPE::FLOAT_3REG},   {"mul.s", OP_SHAPE::FLOAT_3REG},
+    {"div.d", OP_SHAPE::FLOAT_3REG},   {"div.s", OP_SHAPE::FLOAT_3REG},
+    {"abs.s", OP_SHAPE::FLOAT_2REG},   {"neg.s", OP_SHAPE::FLOAT_2REG}, {"sqrt.s", OP_SHAPE::FLOAT_2REG},
     {"cvt.s.w", OP_SHAPE::FLOAT_2REG}, {"cvt.d.w", OP_SHAPE::FLOAT_2REG},
     {"cvt.s.d", OP_SHAPE::FLOAT_2REG}, {"cvt.d.s", OP_SHAPE::FLOAT_2REG},
     {"cvt.w.s", OP_SHAPE::FLOAT_2REG}, {"cvt.w.d", OP_SHAPE::FLOAT_2REG},
@@ -296,6 +296,7 @@ CDB InstructionSimplified::MakeCDB() {
     // Monta o CDB com os registradores físicos:
     // - ids 0-31:  'R'.
     // - ids 32-63: 'F'.
+    // - ids 64-65: 'M'.
     CDB cdb;
     // Como não existem aliases de hardware, todos os registradores recebem a mascara default (0xFF - Integral).
     FillCDB(cdb, 'R', 0,  32); // Faixa de int.
@@ -372,9 +373,7 @@ void InstructionSimplified::ValidateInstruction(
 ){
     const std::string op{ToLower(tokens[0])};
 
-    // Não deveria falhar: "IdentifyType()" já garantiu que "op"
-    // pertence a uma das categorias conhecidas, e todo opcode
-    // presente nas categorias tem uma entrada em OPCODE_SHAPE.
+    // Não deveria falhar: "IdentifyType()" já garantiu que "op" pertence a uma das categorias conhecidas.
     const auto it{OPCODE_SHAPE.find(op)};
     if (it == OPCODE_SHAPE.end()) {
         std::cerr << "[ERRO] Opcode reconhecido em IdentifyType() mas ausente em OPCODE_SHAPE: " << op << '\n';
@@ -383,7 +382,7 @@ void InstructionSimplified::ValidateInstruction(
 
     bool ok{false};
     switch (it->second) {
-        // ── Load/Store: destino/fonte int, float ou genérico(int/float) ──
+        // Load/Store:
         case OP_SHAPE::LOAD_INT:
         case OP_SHAPE::STORE_INT:
             ok = tokens.size() == 4 && IsIntReg(tokens[1]) && IsOffset(tokens[2]) && IsIntReg(tokens[3]);
@@ -398,7 +397,7 @@ void InstructionSimplified::ValidateInstruction(
                  IsOffset(tokens[2]) && IsIntReg(tokens[3]);
             break;
 
-        // ── Branch ──────────────────────────────────────────────────
+        // Branch:
         case OP_SHAPE::BR_2REG_LABEL:
             ok = tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsLabel(tokens[3]);
             break;
@@ -418,7 +417,7 @@ void InstructionSimplified::ValidateInstruction(
                  (tokens.size() == 3 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]));
             break;
 
-        // ── Int básico ──────────────────────────────────────────────
+        // Int sem HI/LO:
         case OP_SHAPE::INT_3REG:
         case OP_SHAPE::MUL_3REG:
             ok = tokens.size() == 4 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]) && IsIntReg(tokens[3]);
@@ -437,12 +436,12 @@ void InstructionSimplified::ValidateInstruction(
             ok = tokens.size() == 2 && IsIntReg(tokens[1]);
             break;
 
-        // ── Mul/Div implícitos em HI/LO ─────────────────────────────
+        // Int com HI/LO:
         case OP_SHAPE::MULDIV_2REG_HILO:
             ok = tokens.size() == 3 && IsIntReg(tokens[1]) && IsIntReg(tokens[2]);
             break;
 
-        // ── Float ───────────────────────────────────────────────────
+        // Float:
         case OP_SHAPE::FLOAT_3REG:
             ok = tokens.size() == 4 && IsFloatReg(tokens[1]) && IsFloatReg(tokens[2]) && IsFloatReg(tokens[3]);
             break;
@@ -500,8 +499,7 @@ void InstructionSimplified::SetAttributes(
     // tokens[0] já normalizado (minúsculo) por "NormalizeInstruction()".
     const std::string& op{tokens[0]};
 
-    // Não deveria falhar: "ValidateInstruction()" já garantiu que
-    // "op" está em OPCODE_SHAPE.
+    // Não deveria falhar: "ValidateInstruction()" já garantiu que "op" pertence a uma das categorias conhecidas.
     const auto it{OPCODE_SHAPE.find(op)};
     if (it == OPCODE_SHAPE.end()) {
         std::cerr << "[ERRO] Opcode validado mas ausente em OPCODE_SHAPE: " << op << '\n';
@@ -509,7 +507,7 @@ void InstructionSimplified::SetAttributes(
     }
 
     switch (it->second) {
-        // ── Load: endereço (base) em EX, destino int ou float ───────
+        // Load:
         case OP_SHAPE::LOAD_INT:
         case OP_SHAPE::LOAD_FLOAT:
         case OP_SHAPE::LOAD_ANY:
@@ -517,7 +515,7 @@ void InstructionSimplified::SetAttributes(
             ex_source_registers.push_back(LookupReg(tokens[3]));
             return;
 
-        // ── Store: endereço (base) em EX, valor armazenado em MEM ───
+        // Store:
         case OP_SHAPE::STORE_INT:
         case OP_SHAPE::STORE_FLOAT:
         case OP_SHAPE::STORE_ANY:
@@ -525,7 +523,7 @@ void InstructionSimplified::SetAttributes(
             mem_source_registers.push_back(LookupReg(tokens[1]));
             return;
 
-        // ── Branch ───────────────────────────────────────────────────
+        // Branch:
         case OP_SHAPE::BR_2REG_LABEL:
             ex_source_registers.push_back(LookupReg(tokens[1]));
             ex_source_registers.push_back(LookupReg(tokens[2]));
@@ -557,7 +555,7 @@ void InstructionSimplified::SetAttributes(
             ex_source_registers.push_back(LookupReg(tokens[2]));
             return;
 
-        // ── Int básico / mul de resultado direto ────────────────────
+        // Int sem HI/LO:
         case OP_SHAPE::INT_3REG:
         case OP_SHAPE::MUL_3REG:
             dest_registers.push_back(LookupReg(tokens[1]));
@@ -573,6 +571,8 @@ void InstructionSimplified::SetAttributes(
         case OP_SHAPE::INT_1REG_IMM:
             dest_registers.push_back(LookupReg(tokens[1]));
             return;
+
+        // Int com HI/LO:
         case OP_SHAPE::INT_1REG_LO:
             dest_registers.push_back(LookupReg(tokens[1]));
             ex_source_registers.push_back(LookupReg("lo"));
@@ -581,8 +581,6 @@ void InstructionSimplified::SetAttributes(
             dest_registers.push_back(LookupReg(tokens[1]));
             ex_source_registers.push_back(LookupReg("hi"));
             return;
-
-        // ── Mul/Div com resultado implícito em HI/LO ────────────────
         case OP_SHAPE::MULDIV_2REG_HILO:
             dest_registers.push_back(LookupReg("lo"));
             dest_registers.push_back(LookupReg("hi"));
@@ -590,7 +588,7 @@ void InstructionSimplified::SetAttributes(
             ex_source_registers.push_back(LookupReg(tokens[2]));
             return;
 
-        // ── Float ────────────────────────────────────────────────────
+        // Float:
         case OP_SHAPE::FLOAT_3REG:
             dest_registers.push_back(LookupReg(tokens[1]));
             ex_source_registers.push_back(LookupReg(tokens[2]));

@@ -1,0 +1,465 @@
+ARQUITETURA X86-64 INTEL — CONTRATO DE SINTAXE DO SIMULADOR
+===============================================================================
+
+1. ESCOPO
+-------------------------------------------------------------------------------
+
+Este arquivo é normativo: descreve todas e somente as formas que o simulador
+deve aceitar para a arquitetura X86_INTEL.
+
+Alvo suportado:
+
+- Modo x86-64 de usuário.
+- Sintaxe Intel: destino antes da fonte e memória entre colchetes.
+- Registradores inteiros de propósito geral e XMM0-XMM15.
+- Famílias necessárias à simulação Tomasulo descritas abaixo.
+- Operações SSE escalares, packed single e packed double listadas abaixo.
+
+Escopo deliberadamente reduzido. Não são suportados:
+
+- A ISA x86/x86-64 inteira.
+- AVX, AVX2, AVX-512, x87, MMX e AMX.
+- Registradores YMM, ZMM, K, ST, MMX, controle, debug, segmento e tile.
+- Instruções privilegiadas, de sistema, atômicas, string e I/O.
+- Prefixos escritos explicitamente: LOCK, REP, REPE, REPNE, REX e overrides.
+- Segment override, por exemplo fs:[rax].
+- Endereçamento de 16 ou 32 bits.
+- Expressões gerais de assembler, relocations e múltiplos símbolos.
+- Valores reais, cache, alinhamento e exceções de memória.
+
+Uma instrução ausente deste arquivo é rejeitada, mesmo que exista em hardware
+x86-64 real.
+
+
+2. REGRAS LÉXICAS
+-------------------------------------------------------------------------------
+
+- Opcode e registradores são case-insensitive e normalizados para minúsculo.
+- Labels preservam a caixa original.
+- Vírgula é obrigatória entre operandos.
+- Espaços e tabs podem cercar opcode, vírgula e operadores de endereço.
+- Vírgula ausente, repetida ou final é inválida.
+- Comentários, directives, prefixes e múltiplas instruções na mesma linha não
+  fazem parte da string passada a Parse().
+
+Inteiros:
+
+- Decimal: 0, 15, -8.
+- Hexadecimal: 0x0, 0x7f, -0x20.
+- Prefixo '+' não é aceito em literal isolado.
+- O valor deve caber na largura permitida pela forma da instrução.
+- Overflow e tokens parcialmente numéricos são inválidos.
+
+Labels:
+
+- Primeiro caractere: A-Z, a-z ou '_'.
+- Demais caracteres: A-Z, a-z, 0-9 ou '_'.
+- Nome igual a registrador não é label.
+- Label direto é aceito somente onde este contrato usa REL.
+
+
+3. CLASSES DE REGISTRADORES E OPERANDOS
+-------------------------------------------------------------------------------
+
+GPR8
+  al, bl, cl, dl, ah, bh, ch, dh,
+  sil, dil, spl, bpl, r8b-r15b.
+
+GPR16
+  ax, bx, cx, dx, si, di, sp, bp, r8w-r15w.
+
+GPR32
+  eax, ebx, ecx, edx, esi, edi, esp, ebp, r8d-r15d.
+
+GPR64
+  rax, rbx, rcx, rdx, rsi, rdi, rsp, rbp, r8-r15.
+
+XMM
+  xmm0-xmm15.
+
+FLAGS
+  CF, PF, AF, ZF, SF e OF são recursos implícitos separados.
+  RFLAGS não é aceito como operando explícito neste subconjunto.
+
+Notação usada nas formas:
+
+  r8/r16/r32/r64       registrador inteiro da largura indicada
+  rN                   mesma largura N em todos os operandos da forma
+  imm8/16/32/64        imediato com restrição da largura indicada
+  imm                  imediato cuja restrição é definida pela instrução
+  rel                  label de destino direto
+  m8/16/32/64/128      memória com largura indicada
+  r/mN                 registrador ou memória de largura N
+  xmm/mN               XMM ou memória de largura N
+
+Restrições de aliases:
+
+- Escrever GPR32 zera os 32 bits superiores do GPR64 correspondente.
+- Escrever GPR16, low-byte ou high-byte preserva os demais bits.
+- AH/BH/CH/DH não podem aparecer numa forma que também exija REX: operandos
+  R8-R15, SIL/DIL/SPL/BPL ou operando inteiro de 64 bits.
+- Operandos inteiros binários comuns têm a mesma largura, salvo extensões e
+  conversões explicitamente descritas.
+
+
+4. OPERANDO DE MEMÓRIA
+-------------------------------------------------------------------------------
+
+Gramática suportada:
+
+  [base]
+  [base + displacement]
+  [base + index]
+  [base + index * scale]
+  [base + index * scale + displacement]
+  [index * scale]
+  [index * scale + displacement]
+  [displacement]
+  [rip + displacement]
+  [rip + label]
+
+Componentes:
+
+- base: exatamente um GPR64.
+- index: exatamente um GPR64, exceto rsp e r12.
+- scale: 1, 2, 4 ou 8; só existe quando há index.
+- displacement: inteiro decimal ou hexadecimal com sinal opcional por operador.
+- rip: base especial somente nas duas formas RIP-relative; nunca usa index.
+- label: um símbolo somente na forma [rip + label].
+
+São inválidos:
+
+- Mais de uma base ou de um index.
+- Scale diferente de 1, 2, 4 ou 8.
+- Registrador usado como scale ou displacement.
+- GPR8/GPR16/GPR32 no endereço.
+- Operadores ausentes, repetidos ou no fim.
+- Colchetes vazios, ausentes, invertidos, aninhados ou não balanceados.
+- Dois operandos de memória na mesma instrução comum.
+
+Qualificadores de tamanho:
+
+  byte ptr    m8
+  word ptr    m16
+  dword ptr   m32
+  qword ptr   m64
+  xmmword ptr m128
+
+Qualificador é obrigatório quando nenhum registrador ou opcode determina o
+tamanho, incluindo MOV memória-imediato, ALU unária em memória e MUL/DIV/IDIV
+com memória. É opcional quando outro operando ou o opcode determina a largura.
+
+
+5. FLAGS E RECURSOS IMPLÍCITOS
+-------------------------------------------------------------------------------
+
+- ADD/SUB/CMP/NEG escrevem CF, PF, AF, ZF, SF e OF.
+- ADC/SBB leem CF e escrevem CF, PF, AF, ZF, SF e OF.
+- AND/OR/XOR/TEST limpam CF e OF, escrevem PF, ZF e SF; AF fica indefinida.
+- INC/DEC escrevem PF, AF, ZF, SF e OF; preservam CF.
+- NOT não lê nem escreve flags.
+- Shifts escrevem CF, PF, ZF e SF quando count != 0. OF só é definido para
+  count == 1; AF fica indefinida. Count == 0 preserva flags.
+- ROL/ROR escrevem CF; OF só é definido para count == 1.
+- RCL/RCR leem e escrevem CF; OF só é definido para count == 1.
+- MUL/IMUL escrevem CF e OF; demais status flags ficam indefinidas.
+- DIV/IDIV deixam status flags indefinidas e não produzem flags rastreadas.
+- COMISS/UCOMISS escrevem ZF, PF e CF e limpam OF, SF e AF.
+- Outras instruções SSE deste contrato não escrevem flags.
+
+Flags indefinidas não são tratadas como resultados úteis no CDB.
+
+
+6. TRANSFERÊNCIA DE DADOS
+-------------------------------------------------------------------------------
+
+MOV — escrita pura do destino:
+
+  mov r8,  r8
+  mov r16, r16
+  mov r32, r32
+  mov r64, r64
+
+  mov r8,  imm8
+  mov r16, imm16
+  mov r32, imm32
+  mov r64, imm64
+
+  mov r8,  m8
+  mov r16, m16
+  mov r32, m32
+  mov r64, m64
+
+  mov m8,  r8
+  mov m16, r16
+  mov m32, r32
+  mov m64, r64
+
+  mov byte ptr  [mem], imm8
+  mov word ptr  [mem], imm16
+  mov dword ptr [mem], imm32
+  mov qword ptr [mem], imm32
+
+Na última forma, imm32 é estendido com sinal para 64 bits. MOV r64, imm64 aceita
+o literal completo. MOV nunca aceita memória-memória.
+
+Extensão:
+
+  movsx  r16, r/m8
+  movsx  r32, r/m8
+  movsx  r32, r/m16
+  movsx  r64, r/m8
+  movsx  r64, r/m16
+
+  movzx  r16, r/m8
+  movzx  r32, r/m8
+  movzx  r32, r/m16
+  movzx  r64, r/m8
+  movzx  r64, r/m16
+
+  movsxd r64, r/m32
+
+MOVD/MOVQ:
+
+  movd xmm, r/m32
+  movd r/m32, xmm
+  movq xmm, r/m64
+  movq r/m64, xmm
+  movq xmm, xmm/m64
+
+MOVQ não é alias para MOV entre dois GPR64 neste contrato.
+
+Movimentação SSE:
+
+  movaps xmm, xmm/m128
+  movaps m128, xmm
+  movups xmm, xmm/m128
+  movups m128, xmm
+  movss  xmm, xmm/m32
+  movss  m32, xmm
+  movsd  xmm, xmm/m64
+  movsd  m64, xmm
+
+MOVAPS exige alinhamento real de 16 bytes, mas alinhamento/fault não é simulado.
+MOVSS/MOVSD entre XMM preservam lanes superiores do destino. Loads escalares de
+memória zeram as lanes superiores conforme a forma legacy. O simulador rastreia
+o XMM inteiro como um único recurso.
+
+
+7. ALU INTEIRA
+-------------------------------------------------------------------------------
+
+Para ADD, SUB, AND, OR, XOR, ADC e SBB:
+
+  op rN, rN
+  op rN, mN
+  op mN, rN
+  op rN, imm
+  op mN, imm
+
+N pertence a {8,16,32,64}. Imediato deve ser codificável pela forma x86-64:
+imm8 para formas de byte; imm8 sign-extended ou imm16/imm32 conforme N; forma
+r/m64 usa imm8 ou imm32 estendido com sinal. Memória-memória é inválida.
+
+Comparação:
+
+  cmp  rN, rN|mN|imm
+  cmp  mN, rN|imm
+  test rN, rN|imm
+  test mN, rN|imm
+
+CMP/TEST apenas leem operandos e escrevem flags. Não escrevem o primeiro
+operando.
+
+Unárias read-modify-write:
+
+  inc r/m8|16|32|64
+  dec r/m8|16|32|64
+  not r/m8|16|32|64
+  neg r/m8|16|32|64
+
+Shift e rotate:
+
+  shl r/mN, 1       sal r/mN, 1
+  shr r/mN, 1       sar r/mN, 1
+  rol r/mN, 1       ror r/mN, 1
+  rcl r/mN, 1       rcr r/mN, 1
+
+  shl/sal/shr/sar/rol/ror/rcl/rcr r/mN, imm8
+  shl/sal/shr/sar/rol/ror/rcl/rcr r/mN, cl
+
+Nenhum registrador diferente de CL é aceito como count.
+
+Endereço efetivo:
+
+  lea r16, mem
+  lea r32, mem
+  lea r64, mem
+
+LEA calcula endereço; não lê o valor da memória e não escreve flags.
+
+
+8. STACK
+-------------------------------------------------------------------------------
+
+  push r64
+  push m64
+  push imm8
+  push imm32
+
+  pop r64
+  pop m64
+
+PUSH lê e escreve RSP e escreve memória. POP lê memória e lê/escreve RSP.
+Formas de 16 bits e prefixes explícitos ficam fora do escopo.
+
+
+9. MULTIPLICAÇÃO E DIVISÃO INTEIRA
+-------------------------------------------------------------------------------
+
+Forma de um operando:
+
+  mul  r/m8|16|32|64
+  imul r/m8|16|32|64
+  div  r/m8|16|32|64
+  idiv r/m8|16|32|64
+
+Recursos implícitos por largura:
+
+- 8 bits: MUL/IMUL leem AL e escrevem AX. DIV/IDIV leem AX e escrevem AL/AH.
+- 16 bits: leem AX ou DX:AX e escrevem DX:AX.
+- 32 bits: leem EAX ou EDX:EAX e escrevem EDX:EAX.
+- 64 bits: leem RAX ou RDX:RAX e escrevem RDX:RAX.
+
+IMUL explícito:
+
+  imul r16, r/m16
+  imul r32, r/m32
+  imul r64, r/m64
+
+  imul r16, r/m16, imm8|imm16
+  imul r32, r/m32, imm8|imm32
+  imul r64, r/m64, imm8|imm32
+
+Nas formas de dois e três operandos, somente o destino explícito é escrito.
+
+
+10. CONTROLE DE FLUXO
+-------------------------------------------------------------------------------
+
+Incondicional:
+
+  jmp rel
+  jmp r/m64
+
+Sub-rotina:
+
+  call rel
+  call r/m64
+  ret
+  ret imm16
+
+CALL/RET leem e escrevem RSP. CALL escreve endereço de retorno na pilha; RET lê
+o endereço da pilha. REL é endereço resolvido e não cria fonte de registrador.
+
+Jumps condicionais, todos com operando REL:
+
+  jo                         lê OF
+  jno                        lê OF
+  jb / jc / jnae             lê CF
+  jae / jnb / jnc            lê CF
+  je / jz                    lê ZF
+  jne / jnz                  lê ZF
+  jbe / jna                  lê CF, ZF
+  ja / jnbe                  lê CF, ZF
+  js                         lê SF
+  jns                        lê SF
+  jp / jpe                   lê PF
+  jnp / jpo                  lê PF
+  jl / jnge                  lê SF, OF
+  jge / jnl                  lê SF, OF
+  jle / jng                  lê ZF, SF, OF
+  jg / jnle                  lê ZF, SF, OF
+
+Aliases são preservados como opcode informado; não são convertidos a um nome
+canônico diferente.
+
+
+11. SSE — ARITMÉTICA, LÓGICA E CONVERSÕES
+-------------------------------------------------------------------------------
+
+Aritmética escalar:
+
+  addss xmm, xmm/m32       addsd xmm, xmm/m64
+  subss xmm, xmm/m32       subsd xmm, xmm/m64
+  mulss xmm, xmm/m32       mulsd xmm, xmm/m64
+  divss xmm, xmm/m32       divsd xmm, xmm/m64
+  sqrtss xmm, xmm/m32      sqrtsd xmm, xmm/m64
+
+Aritmética packed:
+
+  addps xmm, xmm/m128      addpd xmm, xmm/m128
+  subps xmm, xmm/m128      subpd xmm, xmm/m128
+  mulps xmm, xmm/m128      mulpd xmm, xmm/m128
+  divps xmm, xmm/m128      divpd xmm, xmm/m128
+  sqrtps xmm, xmm/m128     sqrtpd xmm, xmm/m128
+
+Lógica packed inteira:
+
+  pxor xmm, xmm/m128
+  pand xmm, xmm/m128
+  por  xmm, xmm/m128
+
+Conversões:
+
+  cvtsi2ss  xmm, r/m32
+  cvtsi2ss  xmm, r/m64
+  cvttss2si r32, xmm/m32
+  cvttss2si r64, xmm/m32
+
+Comparações:
+
+  comiss  xmm, xmm/m32
+  ucomiss xmm, xmm/m32
+
+Instruções legacy escalares que preservam lanes superiores leem o valor antigo
+do XMM destino para fins de dependência. Loads que arquiteturalmente zeram lanes
+superiores são escrita pura. O simulador não representa valores individuais de
+lanes.
+
+
+12. LIMITAÇÕES DE MEMÓRIA E PIPELINE
+-------------------------------------------------------------------------------
+
+- Endereço usa base/index como fontes EX; scale/displacement não são registros.
+- STORE usa o registrador de valor como fonte MEM.
+- Uma operação read-modify-write em memória lê e escreve o mesmo operando de
+  memória, mas o simulador não renomeia endereços nem valores da RAM.
+- Alias analysis entre dois endereços não é realizado.
+- Alinhamento, page fault, divide error e demais exceções não são simulados.
+- Flags indefinidas não criam produtores rastreados.
+
+
+13. EXEMPLOS QUE DEVEM SER REJEITADOS
+-------------------------------------------------------------------------------
+
+  add rax rbx                    # vírgula ausente
+  add rax,, rbx                  # vírgula repetida
+  add rax, ebx                   # larguras diferentes
+  add [rax], [rbx]               # memória-memória
+  mov rax, eax                   # larguras diferentes
+  movq rax, rbx                  # MOVQ não transfere GPR-GPR
+  movaps xmm0, eax               # classe/largura incorreta
+  movsx eax, rbx                 # fonte não é menor
+  shl rax, rbx                   # count registrador deve ser CL
+  lea rax, rbx                   # fonte deve ser endereço
+  mul [rax]                      # tamanho de memória ambíguo
+  mov [rax], 1                   # tamanho de memória ambíguo
+  jz rax                         # Jcc aceita somente REL
+  [rax + rbx * 3]                # scale inválido
+  [rax + rbx + rcx]              # registradores demais
+  [eax + ebx]                    # address-size 32 fora do escopo
+  fs:[rax]                       # segment override fora do escopo
+  vaddps ymm0, ymm1, ymm2        # AVX fora do escopo
+
+===============================================================================
