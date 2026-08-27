@@ -55,4 +55,5 @@ Desktop.ini
 *.log
 
 # --- IA ---
-AI/
+*.agents/
+*.codex/

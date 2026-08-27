@@ -1,14 +1,68 @@
-/* tb_Helpers.cpp */
+/* tb_Helpers.h */
 // Módulo auxiliar para todos os testbenchs
 #ifndef TB_HELPERS_H
 #define TB_HELPERS_H
 
 #include "../headers/Components.h"
+#include <cerrno>       // errno e EINTR.
 #include <cstddef>
+#include <fcntl.h>      // open() e O_WRONLY.
 #include <iostream>
 #include <ratio>
+#include <signal.h>     // SIGABRT.
 #include <string>
+#include <sys/wait.h>   // waitpid(), WIFSIGNALED() e WTERMSIG().
+#include <unistd.h>     // fork(), dup2(), close(), _exit() e descritores POSIX.
 #include <vector>
+
+// ─── HELPERS ──────────────────────────────────────────────────────
+
+/**
+ * @brief Executa uma operação isolada e confirma encerramento por SIGABRT.
+ *
+ * @details O filho redireciona apenas o stderr esperado para /dev/null. O pai
+ * aguarda mesmo quando waitpid() é interrompido e aceita somente SIGABRT;
+ * retorno normal ou falha da infraestrutura permanecem falhas observáveis.
+ *
+ * @tparam OPERATION Tipo invocável sem argumentos.
+ *
+ * @param operation Operação sem argumentos executada no processo filho.
+ *
+ * @return true quando a operação encerra o filho com SIGABRT.
+ */
+template <typename OPERATION>
+static bool Aborts(
+    const OPERATION& operation
+) {
+    // Evita duplicar saída ainda armazenada nos buffers após fork().
+    std::cout.flush();
+    std::cerr.flush();
+
+    const pid_t child{fork()};
+    if (child == 0) {
+        // Silencia somente a mensagem esperada da operação inválida.
+        const int null_fd{open("/dev/null", O_WRONLY)};
+        if (null_fd < 0) _exit(1);
+        if (dup2(null_fd, STDERR_FILENO) < 0) {
+            close(null_fd);
+            _exit(1);
+        }
+        if (close(null_fd) < 0) _exit(1);
+
+        operation();
+        _exit(0);
+    }
+    if (child < 0) return false;
+
+    // Espera o filho sem transformar interrupção temporária em falha.
+    int status{};
+    pid_t waited{};
+    do {
+        waited = waitpid(child, &status, 0);
+    } while (waited < 0 && errno == EINTR);
+
+    return waited == child && WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
+}
 
 static int passed = 0, failed = 0;
 

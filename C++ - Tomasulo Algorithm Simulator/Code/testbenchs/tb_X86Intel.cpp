@@ -3,12 +3,10 @@
 #include "../Architectures/headers/X86Intel.h"
 #include "tb_Helpers.h"
 #include <iostream>
-#include <fcntl.h>      // open() e O_WRONLY.
+#include <limits>       // std::numeric_limits.
 #include <set>          // std::set.
-#include <signal.h>     // SIGABRT.
-#include <sys/wait.h>   // waitpid(), WIFSIGNALED() e WTERMSIG().
+#include <sstream>      // std::ostringstream.
 #include <tuple>        // std::tuple.
-#include <unistd.h>     // fork(), dup2(), close(), _exit() e descritores POSIX.
 #include <vector>
 
 using namespace processor;
@@ -40,27 +38,52 @@ static bool has_unique_registers(const std::vector<Register>& regs) {
     return identities.size() == regs.size();
 }
 
-// Verifica se uma instrução inválida encerra o parser com SIGABRT:
-// - O processo filho silencia a mensagem esperada e executa Parse().
-// - O processo pai aguarda o filho e valida a causa exata do encerramento.
-static bool parse_aborts(const std::string& instruction) {
-    std::cout.flush();
-    std::cerr.flush();
-    const pid_t child{fork()};
-    if (child == 0) {
-        const int null_fd{open("/dev/null", O_WRONLY)};
-        if (null_fd >= 0) {
-            dup2(null_fd, STDERR_FILENO);
-            close(null_fd);
-        }
-        InstructionX86Intel parsed(0);
-        parsed.Parse(instruction);
-        _exit(0);
+// Confirma que as fontes pertencem exatamente às famílias físicas esperadas.
+static bool HasOnlyRegisterFamilies(
+    const std::vector<Register>& regs,
+    const std::set<int>&         expected_ids
+) {
+    std::set<int> found_ids;
+    for (const Register& reg : regs) {
+        if (expected_ids.find(reg.GetId()) == expected_ids.end()) return false;
+        found_ids.insert(reg.GetId());
     }
-    if (child < 0) return false;
-    int status{};
-    if (waitpid(child, &status, 0) != child) return false;
-    return WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
+    return found_ids == expected_ids;
+}
+
+// Compara todos os aliases de GPR64 e os slots independentes XMM/flags esperados.
+static bool HasExactRegisterFamilies(
+    const std::vector<Register>& regs,
+    const std::set<int>&         expected_gpr_ids,
+    const std::set<int>&         expected_xmm_ids = {},
+    const std::set<int>&         expected_flag_ids = {}
+) {
+    std::set<std::tuple<char, int, int>> expected;
+
+    // Uma dependência GPR64 bloqueia todos os aliases sobrepostos da família.
+    for (const int id : expected_gpr_ids) {
+        expected.emplace('L', id, 0xFF);
+        expected.emplace('R', id, 0x0F);
+        expected.emplace('W', id, 0x03);
+        expected.emplace('B', id, 0x01);
+        if (id < 4) expected.emplace('B', id, 0x02);
+    }
+    for (const int id : expected_xmm_ids) expected.emplace('F', id, 0xFF);
+    for (const int id : expected_flag_ids) expected.emplace('G', id, 0xFF);
+
+    std::set<std::tuple<char, int, int>> found;
+    for (const Register& reg : regs)
+        found.emplace(reg.GetType(), reg.GetId(), reg.GetMask());
+    return found == expected && found.size() == regs.size();
+}
+
+// Produz spelling hexadecimal portável para os limites do tipo unsigned long.
+static std::string ToHexLiteral(
+    unsigned long magnitude
+) {
+    std::ostringstream stream;
+    stream << "0x" << std::hex << magnitude;
+    return stream.str();
 }
 
 // Ids físicos desta arquitetura (ver RegisterTable() em X86Intel.cpp):
@@ -69,6 +92,9 @@ static constexpr int REG_B{1};
 static constexpr int REG_C{2};
 static constexpr int REG_D{3};
 static constexpr int REG_SP{6};
+static constexpr int REG_BP{7};
+static constexpr int X86_R14_ID{14};
+static constexpr int X86_R15_ID{15};
 static constexpr int XMM0{32};
 static constexpr int XMM1{33};
 static constexpr int CF{80};
@@ -564,15 +590,46 @@ int main() {
 
     section("11.1 Normalização canônica e endereçamento válido");
     {
+        const unsigned long negative_limit{
+            static_cast<unsigned long>(std::numeric_limits<long>::max()) + 1
+        };
+        const std::string long_max{std::to_string(std::numeric_limits<long>::max())};
+        const std::string long_min_magnitude{std::to_string(negative_limit)};
+        const std::string long_max_hex{ToHexLiteral(static_cast<unsigned long>(std::numeric_limits<long>::max()))};
+        const std::string long_min_hex{ToHexLiteral(negative_limit)};
         const std::vector<std::pair<std::string, std::string>> cases{
+            {"mov rdx, [rax]", "mov       rdx, [rax]"},
+            {"mov rdx, [r15]", "mov       rdx, [r15]"},
+            {"mov rdx, [rsp]", "mov       rdx, [rsp]"},
+            {"mov rdx, [r12+rbx]", "mov       rdx, [r12 + rbx]"},
+            {"mov rdx, [rax+10]", "mov       rdx, [rax + 10]"},
             {" MOV RAX , [ RBP-8 ] ", "mov       rax, [rbp - 8]"},
             {"mov rax,[rbx+r14]", "mov       rax, [rbx + r14]"},
+            {"mov rdx, [rax+rbx*1]", "mov       rdx, [rax + rbx]"},
+            {"mov rdx, [rax+rbx*2]", "mov       rdx, [rax + rbx * 2]"},
+            {"mov rdx, [rax+rbx*4]", "mov       rdx, [rax + rbx * 4]"},
+            {"mov rdx, [rax+rbx*8]", "mov       rdx, [rax + rbx * 8]"},
+            {"mov rdx, [rax+rbx*1+10]", "mov       rdx, [rax + rbx * 1 + 10]"},
+            {"mov rdx, [rax+rbx*4-10]", "mov       rdx, [rax + rbx * 4 - 10]"},
             {"mov rax, [r15+r14*8+2147483647]", "mov       rax, [r15 + r14 * 8 + 2147483647]"},
+            {"mov rdx, [rax+rax*2]", "mov       rdx, [rax + rax * 2]"},
+            {"mov rdx, [r14*1]", "mov       rdx, [r14 * 1]"},
+            {"mov rdx, [r14*2+10]", "mov       rdx, [r14 * 2 + 10]"},
             {"mov rax, [r14*2-0x10]", "mov       rax, [r14 * 2 - 0x10]"},
-            {"mov rax, [0x7fffffffffffffff]", "mov       rax, [0x7fffffffffffffff]"},
-            {"mov rax, [-9223372036854775808]", "mov       rax, [-9223372036854775808]"},
+            {"mov rdx, [" + long_max + "]", "mov       rdx, [" + long_max + "]"},
+            {"mov rdx, [-" + long_min_magnitude + "]", "mov       rdx, [-" + long_min_magnitude + "]"},
+            {"mov rdx, [" + long_max_hex + "]", "mov       rdx, [" + long_max_hex + "]"},
+            {"mov rdx, [-" + long_min_hex + "]", "mov       rdx, [-" + long_min_hex + "]"},
             {"mov rax, [rip+32]", "mov       rax, [rip + 32]"},
+            {"mov rax, [rip-32]", "mov       rax, [rip - 32]"},
+            {"mov rax, [rip+" + long_max + "]", "mov       rax, [rip + " + long_max + "]"},
+            {"mov rax, [rip-" + long_min_magnitude + "]", "mov       rax, [rip - " + long_min_magnitude + "]"},
+            {"mov rax, [rip+" + long_max_hex + "]", "mov       rax, [rip + " + long_max_hex + "]"},
+            {"mov rax, [rip-" + long_min_hex + "]", "mov       rax, [rip - " + long_min_hex + "]"},
             {"mov rax, [rip+MinhaLabel]", "mov       rax, [rip + MinhaLabel]"},
+            {"mov al, BYTE ptr [rbx]", "mov       al, byte ptr [rbx]"},
+            {"mov ax, WoRd PtR [rbx]", "mov       ax, word ptr [rbx]"},
+            {"mov eax, DWORD PTR [rbx]", "mov       eax, dword ptr [rbx]"},
             {"mov rax, QWORD PTR [rsp]", "mov       rax, qword ptr [rsp]"},
             {"mov xmm0, XMMWORD ptr [rax]", "mov       xmm0, xmmword ptr [rax]"},
             {"jmp MinhaLabel", "jmp       MinhaLabel"},
@@ -591,14 +648,98 @@ int main() {
         check("formas válidas normalizam de modo exato e estável", canonical);
     }
 
-    section("11.2 Fontes de endereço e ciclo de vida de Parse");
+    section("11.2 Tipos escalares e limites nativos");
+    {
+        const unsigned long negative_limit{
+            static_cast<unsigned long>(std::numeric_limits<long>::max()) + 1
+        };
+        const std::string unsigned_max{
+            std::to_string(std::numeric_limits<unsigned long>::max())
+        };
+        const std::string signed_min_magnitude{std::to_string(negative_limit)};
+        const std::vector<std::pair<std::string, std::string>> cases{
+            {"add RaX, 00042", "add       rax, 42"},
+            {"add rax, -00042", "add       rax, -42"},
+            {"add rax, 0X000A", "add       rax, 0xa"},
+            {"add rax, -0X000A", "add       rax, -0xa"},
+            {"add rax, " + unsigned_max, "add       rax, " + unsigned_max},
+            {"add rax, -" + signed_min_magnitude,
+             "add       rax, -" + signed_min_magnitude},
+            {"jmp _MinhaLabel123", "jmp       _MinhaLabel123"}
+        };
+        bool parsed{true};
+        for (const auto& [input, expected] : cases) {
+            InstructionX86Intel instruction(0);
+            instruction.Parse(input);
+            parsed = parsed && instruction.GetInstructionString() == expected;
+        }
+        check("registradores, labels e limites decimais/hexadecimais são canônicos", parsed);
+
+        InstructionX86Intel register_target(0);
+        register_target.Parse("jmp RaX");
+        check("registrador conhecido nunca é reclassificado como label",
+            has_mask(register_target.GetExSourceRegisters(), 'L', REG_A, 0xFF));
+    }
+
+    section("11.3 Fontes de endereço e ciclo de vida de Parse");
     {
         InstructionX86Intel address(0);
         address.Parse("mov rcx, [rax+rbx*4+10]");
-        check("base e index entram uma vez; escala e deslocamento não viram fontes",
-            has_mask(address.GetExSourceRegisters(), 'L', REG_A, 0xFF) &&
-            has_mask(address.GetExSourceRegisters(), 'L', REG_B, 0xFF) &&
+        check("componentes são armazenados e somente base/index viram fontes",
+            address.GetInstructionString() == "mov       rcx, [rax + rbx * 4 + 10]" &&
+            HasOnlyRegisterFamilies(address.GetExSourceRegisters(), {REG_A, REG_B}) &&
             has_unique_registers(address.GetExSourceRegisters()));
+
+        InstructionX86Intel same_family(0);
+        same_family.Parse("mov rcx, [rax+rax*2]");
+        check("base e index da mesma família não duplicam dependências",
+            HasOnlyRegisterFamilies(same_family.GetExSourceRegisters(), {REG_A}) &&
+            has_unique_registers(same_family.GetExSourceRegisters()));
+
+        InstructionX86Intel store(0);
+        store.Parse("mov [rax+rbx*4+10], rcx");
+        check("STORE separa fontes de endereço em EX e valor armazenado em MEM",
+            store.GetDestRegisters().empty() &&
+            HasOnlyRegisterFamilies(store.GetExSourceRegisters(), {REG_A, REG_B}) &&
+            HasOnlyRegisterFamilies(store.GetMemSourceRegisters(), {REG_C}) &&
+            has_unique_registers(store.GetExSourceRegisters()) &&
+            has_unique_registers(store.GetMemSourceRegisters()));
+
+        InstructionX86Intel lea(0);
+        lea.Parse("lea rcx, [rax+rbx*4+10]");
+        check("LEA consome endereço tipado sem acesso MEM ou flags",
+            lea.GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC &&
+            HasOnlyRegisterFamilies(lea.GetDestRegisters(), {REG_C}) &&
+            HasOnlyRegisterFamilies(lea.GetExSourceRegisters(), {REG_A, REG_B}) &&
+            lea.GetMemSourceRegisters().empty() && !has_any_flag(lea.GetDestRegisters()));
+
+        InstructionX86Intel call(0);
+        call.Parse("call [rax+rbx*4+10]");
+        check("CALL indireto consome rsp, base e index tipados",
+            call.GetInstructionType() == INSTRUCTION_TYPE::BRANCH &&
+            HasOnlyRegisterFamilies(call.GetDestRegisters(), {REG_SP}) &&
+            HasOnlyRegisterFamilies(call.GetExSourceRegisters(), {REG_SP, REG_A, REG_B}) &&
+            call.GetMemSourceRegisters().empty());
+
+        InstructionX86Intel jump(0);
+        jump.Parse("jmp [rax+rbx*4+10]");
+        check("JMP indireto consome somente base e index tipados",
+            jump.GetInstructionType() == INSTRUCTION_TYPE::BRANCH &&
+            jump.GetDestRegisters().empty() &&
+            HasOnlyRegisterFamilies(jump.GetExSourceRegisters(), {REG_A, REG_B}) &&
+            jump.GetMemSourceRegisters().empty());
+
+        InstructionX86Intel sse_memory(0);
+        sse_memory.Parse("comiss xmm0, [rax+rbx*4+10]");
+        check("SSE com memória também consome base/index pelo helper tipado",
+            HasOnlyRegisterFamilies(sse_memory.GetExSourceRegisters(), {XMM0, REG_A, REG_B}) &&
+            has_all_flags(sse_memory.GetDestRegisters()) &&
+            sse_memory.GetMemSourceRegisters().empty());
+
+        InstructionX86Intel rip_relative(0);
+        rip_relative.Parse("mov rcx, [rip+MinhaLabel]");
+        check("RIP e label relativa não viram fontes renomeáveis",
+            rip_relative.GetExSourceRegisters().empty());
 
         address.SetExLatency(99);
         address.SetMemLatency(99);
@@ -611,40 +752,314 @@ int main() {
             address.GetExSourceRegisters().empty() && address.GetMemSourceRegisters().empty());
     }
 
-    section("11.3 Rejeição determinística de sintaxe malformada");
+    section("11.4 Rejeição determinística de sintaxe malformada");
     {
+        const unsigned long negative_limit{
+            static_cast<unsigned long>(std::numeric_limits<long>::max()) + 1
+        };
+        const unsigned long negative_overflow{negative_limit + 1};
         std::vector<std::string> invalid{
+            // F001, F004 e F006: entrada vazia, separadores e caracteres proibidos.
             "", " \t ", ",", "add rax rbx", "add , rax", "add rax,,rbx", "add rax,",
+            "add rax, {rbx}", "add rax, (rbx)", "add rax, rbx;", "add rax, %rbx",
+            "add rax, $1", "add rax, \"rbx\"", "add rax, 'rbx'",
+
+            // F005 e F020-F026: colchetes e estrutura interna de memória.
             "mov rax, [rbx", "mov rax, rbx]", "mov rax, [[rbx]]", "mov rax, [rbx]]",
-            "mov rax, []", "mov rax, [rbx+]", "mov rax, [rbx++4]", "mov rax, [rbx*]",
-            "mov rax, [4*rbx]", "mov rax, [rbx*3]", "mov rax, [rax+rbx+rcx]", "mov rax, [rax+rbx+8]",
+            "mov rax, []", "mov rax, [   ]", "mov rax, [rbx+]", "mov rax, [+rbx]",
+            "mov rax, [rbx*]", "mov rax, [*rbx]", "mov rax, [rbx++4]", "mov rax, [rbx--8]",
+            "mov rax, [rbx+-8]", "mov rax, [rbx**4]", "mov rax, [4*rbx]",
+            "mov rax, [rbx*0]", "mov rax, [rbx*3]", "mov rax, [rbx*16]",
+            "mov rax, [rax*rbx]", "mov rax, [4*8]", "mov rax, [rax+8*rbx]",
+            "mov rax, [rax+rbx+rcx]", "mov rax, [rax+rbx+8]", "mov rax, [rax+rbx*4+rcx]",
+
+            // A03/A16/A18 e F027-F030: classe/largura, SIB, RIP e símbolos.
             "mov rax, [eax]", "mov rax, [ax]", "mov rax, [al]", "mov rax, [xmm0]",
-            "mov rax, [cf]", "mov rax, [rax+rsp]", "mov rax, [rax+r12*2]",
-            "mov rax, [rip+rbx]", "mov rax, [rip+One+Two]", "mov rax, [fs:rax]",
-            "mov rax, [Label]", "mov rax, byte [rbx]", "mov rax, ptr [rbx]",
-            "add rax, +1", "add rax, --1", "add rax, 0x", "add rax, 12abc",
+            "mov rax, [cf]", "mov rax, [eflags]", "mov rax, [rax+ebx]",
+            "mov rax, [rax+rsp]", "mov rax, [rax+rsp*2]", "mov rax, [rax+r12]",
+            "mov rax, [rax+r12*2]", "mov rax, [rip]", "mov rax, [rip*2]",
+            "mov rax, [rip+rbx]", "mov rax, [rip+rip]", "mov rax, [rip+One+Two]",
+            "mov rax, [fs:rax]", "mov rax, [Label]", "mov rax, byte [rbx]",
+            "mov rax, qword [rbx]", "mov rax, ptr [rbx]", "mov rax, ptr qword [rbx]",
+            "mov rax, octword ptr [rbx]", "mov rax, qword ptr ptr [rbx]",
+            "mov rax, qword ptr qword ptr [rbx]", "mov rax, [rbx] qword ptr",
+
+            // F008: sinais, tokens parciais e overflow decimal/hexadecimal.
+            "add rax, +", "add rax, +1", "add rax, -", "add rax, --1", "add rax, -+1",
+            "add rax, 0x", "add rax, 0X", "add rax, -0X", "add rax, 0x1g", "add rax, 1x",
+            "add rax, 12abc",
             "add rax, 18446744073709551616", "add rax, -9223372036854775809",
-            "mov rax, [9223372036854775808]", "mov rax, [-9223372036854775809]",
-            "jmp 9Label", "jmp Bad-Label", "mov rax, [rax@rbx]"
+            "add rax, 0x10000000000000000", "add rax, -0x8000000000000001",
+            "mov rax, ["     + std::to_string(negative_limit)    + "]",
+            "mov rax, [-"    + std::to_string(negative_overflow) + "]",
+            "mov rax, ["     + ToHexLiteral(negative_limit)      + "]",
+            "mov rax, [-"    + ToHexLiteral(negative_overflow)   + "]",
+            "mov rax, [rip+" + std::to_string(negative_limit)    + "]",
+            "mov rax, [rip-" + std::to_string(negative_overflow) + "]",
+            "mov rax, [rip+" + ToHexLiteral(negative_limit)      + "]",
+            "mov rax, [rip-" + ToHexLiteral(negative_overflow)   + "]",
+
+            // F007 e pontuação residual fora da gramática.
+            "jmp rip", "jmp 9Label", "jmp Bad-Label", "jmp Bad.Label", "mov rax, [rax@rbx]"
         };
         invalid.push_back(std::string("add rax, 1\0junk", 15));
         invalid.push_back(std::string("jmp A") + static_cast<char>(0xFF));
+
+        check("helper compartilhado não confunde retorno normal com SIGABRT",
+            !Aborts([]() {}));
+
         bool rejected{true};
-        for (const std::string& input : invalid) {
-            const bool did_abort{parse_aborts(input)};
-            if (!did_abort) std::cout << "  Entrada aceita indevidamente: " << input << '\n';
+        for (std::size_t case_id{}; case_id < invalid.size(); case_id++) {
+            const std::string& input{invalid[case_id]};
+            const bool did_abort{Aborts([&input]() {
+                InstructionX86Intel parsed(0);
+                parsed.Parse(input);
+            })};
+            if (!did_abort)
+                std::cout << "  Caso inválido " << case_id << " aceito indevidamente: " << input << '\n';
             rejected = rejected && did_abort;
         }
         check("vírgulas, colchetes, caracteres, literais e endereços inválidos abortam", rejected);
     }
 
-    section("11.4 Entrada grande permanece processável");
+    section("11.5 Entrada grande permanece processável");
     {
         const std::string padding(200000, ' ');
         InstructionX86Intel instruction(0);
         instruction.Parse(padding + "mov rax, [rbx+r14*8+16]" + padding);
         check("espaçamento grande produz saída canônica determinística",
             instruction.GetInstructionString() == "mov       rax, [rbx + r14 * 8 + 16]");
+    }
+
+    section("11.6 Matriz T01-T20 completa");
+    {
+        struct TOKEN_CASE {
+            const char* id;
+            std::string input;
+            std::string expected;
+        };
+
+        const std::vector<TOKEN_CASE> token_cases{
+            {"T01", "add rax, rbx", "add       rax, rbx"},
+            {"T02", "AdD RaX, RbX", "add       rax, rbx"},
+            {"T03", "\tadd  \trax,\t rbx\t", "add       rax, rbx"},
+            {"T04", "add rax , rbx", "add       rax, rbx"},
+            {"T05", "mov rcx,[rax+rbx*4+10]", "mov       rcx, [rax + rbx * 4 + 10]"},
+            {"T06", "mov rcx, [ rax + rbx * 4 + 10 ]", "mov       rcx, [rax + rbx * 4 + 10]"},
+            {"T07", "mov rcx, [rbp-8]", "mov       rcx, [rbp - 8]"},
+            {"T08", "mov rcx, [rax]", "mov       rcx, [rax]"},
+            {"T09", "mov rcx, [rax+16]", "mov       rcx, [rax + 16]"},
+            {"T10", "mov rcx, [rax+rbx]", "mov       rcx, [rax + rbx]"},
+            {"T11", "mov rcx, [rax+rbx*8]", "mov       rcx, [rax + rbx * 8]"},
+            {"T12", "mov rcx, [rbx*4+10]", "mov       rcx, [rbx * 4 + 10]"},
+            {"T13", "mov rcx, [4096]", "mov       rcx, [4096]"},
+            {"T14a", "mov rcx, [rip+32]", "mov       rcx, [rip + 32]"},
+            {"T14b", "mov rcx, [rip+MinhaLabel]", "mov       rcx, [rip + MinhaLabel]"},
+            {"T15", "jmp MinhaLabel", "jmp       MinhaLabel"},
+            {"T16", "cvttss2si rax, xmm15", "cvttss2si rax, xmm15"},
+            {"T17a", "add rax, 0", "add       rax, 0"},
+            {"T17b", "add rax, 42", "add       rax, 42"},
+            {"T17c", "add rax, -42", "add       rax, -42"},
+            {"T17d", "add rax, 2147483647", "add       rax, 2147483647"},
+            {"T17e", "add rax, -2147483648", "add       rax, -2147483648"},
+            {"T17f", "add rax, 9223372036854775807", "add       rax, 9223372036854775807"},
+            {"T17g", "add rax, -9223372036854775808", "add       rax, -9223372036854775808"},
+            {"T18a", "add rax, 0X0", "add       rax, 0x0"},
+            {"T18b", "add rax, 0X7F", "add       rax, 0x7f"},
+            {"T18c", "add rax, 0X80000000", "add       rax, 0x80000000"},
+            {"T18d", "add rax, -0X0", "add       rax, -0x0"},
+            {"T18e", "add rax, -0X7F", "add       rax, -0x7f"},
+            {"T18f", "add rax, -0X80000000", "add       rax, -0x80000000"}
+        };
+
+        bool token_matrix_ok{true};
+        for (const TOKEN_CASE& test_case : token_cases) {
+            InstructionX86Intel first(0);
+            first.Parse(test_case.input);
+            InstructionX86Intel round_trip(0);
+            round_trip.Parse(first.GetInstructionString());
+
+            const bool case_ok{first.GetInstructionString() == test_case.expected &&
+                               round_trip.GetInstructionString() == test_case.expected};
+            if (!case_ok) std::cout << "  Falha na matriz " << test_case.id << '\n';
+            token_matrix_ok = token_matrix_ok && case_ok;
+        }
+        check("T01-T18 normalizam exatamente e permanecem estáveis", token_matrix_ok);
+
+        // T19: objetos diferentes mantêm estado completamente independente.
+        InstructionX86Intel first_object(1);
+        first_object.Parse("mov rax, [rbx]");
+        InstructionX86Intel second_object(2);
+        second_object.Parse("jmp OutroAlvo");
+        const bool independent_objects{
+            first_object.GetInstructionString() == "mov       rax, [rbx]" &&
+            first_object.GetInstructionType() == INSTRUCTION_TYPE::LOAD &&
+            first_object.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::LOAD)] &&
+            first_object.GetMemLatency() == Instruction::base_mem_latencies[0] &&
+            HasExactRegisterFamilies(first_object.GetDestRegisters(), {REG_A}) &&
+            HasExactRegisterFamilies(first_object.GetExSourceRegisters(), {REG_B}) &&
+            first_object.GetMemSourceRegisters().empty() &&
+            second_object.GetInstructionString() == "jmp       OutroAlvo" &&
+            second_object.GetInstructionType() == INSTRUCTION_TYPE::BRANCH &&
+            second_object.GetDestRegisters().empty() &&
+            second_object.GetExSourceRegisters().empty() &&
+            second_object.GetMemSourceRegisters().empty()
+        };
+        check("T19 objetos diferentes não compartilham estado", independent_objects);
+
+        // T20: novo Parse substitui texto, tipo, latências e todas as dependências.
+        const std::set<int> all_flags{80, 81, 82, 83, 84, 85};
+        InstructionX86Intel reusable(17);
+        reusable.Parse("mov rax, [rbx]");
+        reusable.SetExLatency(99);
+        reusable.SetMemLatency(99);
+        reusable.Parse("add rcx, rdx");
+        const bool reusable_ok{
+            reusable.GetPosition() == 17 &&
+            reusable.GetInstructionString() == "add       rcx, rdx" &&
+            reusable.GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC &&
+            reusable.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::INT_BASIC)] &&
+            reusable.GetMemLatency() == 0 &&
+            HasExactRegisterFamilies(reusable.GetDestRegisters(), {REG_C}, {}, all_flags) &&
+            HasExactRegisterFamilies(reusable.GetExSourceRegisters(), {REG_C, REG_D}) &&
+            reusable.GetMemSourceRegisters().empty()
+        };
+        check("T20 segundo Parse substitui todo o estado derivado", reusable_ok);
+    }
+
+    section("11.7 Matriz A01-A24 completa");
+    {
+        struct ADDRESS_CASE {
+            const char* id;
+            std::string input;
+            std::string normalized;
+            std::set<int> source_ids;
+        };
+
+        // Formas válidas são exercitadas como LOAD, STORE, LEA e operando r/m.
+        const std::vector<ADDRESS_CASE> address_cases{
+            {"A01", "[rax]", "[rax]", {REG_A}},
+            {"A02", "[r15]", "[r15]", {X86_R15_ID}},
+            {"A04", "[rax+10]", "[rax + 10]", {REG_A}},
+            {"A05", "[rbp-10]", "[rbp - 10]", {REG_BP}},
+            {"A06", "[rax+rbx]", "[rax + rbx]", {REG_A, REG_B}},
+            {"A07", "[rax+rbx*1]", "[rax + rbx]", {REG_A, REG_B}},
+            {"A08", "[rax+rbx*2]", "[rax + rbx * 2]", {REG_A, REG_B}},
+            {"A09", "[rax+rbx*4]", "[rax + rbx * 4]", {REG_A, REG_B}},
+            {"A10", "[rax+rbx*8]", "[rax + rbx * 8]", {REG_A, REG_B}},
+            {"A11", "[rax+rbx*4+10]", "[rax + rbx * 4 + 10]", {REG_A, REG_B}},
+            {"A12", "[rax+rbx*4-10]", "[rax + rbx * 4 - 10]", {REG_A, REG_B}},
+            {"A13", "[r15+r14*8+2147483647]", "[r15 + r14 * 8 + 2147483647]", {X86_R15_ID, X86_R14_ID}},
+            {"A14a", "[rip+MinhaLabel]", "[rip + MinhaLabel]", {}},
+            {"A14b", "[rip+32]", "[rip + 32]", {}},
+            {"A15", "[rax+rax*2]", "[rax + rax * 2]", {REG_A}},
+            {"A17", "[rsp]", "[rsp]", {REG_SP}}
+        };
+        const std::set<int> all_flags{80, 81, 82, 83, 84, 85};
+        bool address_matrix_ok{true};
+
+        for (const ADDRESS_CASE& test_case : address_cases) {
+            InstructionX86Intel load(0);
+            load.Parse("mov rcx, " + test_case.input);
+            const bool load_ok{
+                load.GetInstructionString() == "mov       rcx, " + test_case.normalized &&
+                load.GetInstructionType() == INSTRUCTION_TYPE::LOAD &&
+                load.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::LOAD)] &&
+                load.GetMemLatency() == Instruction::base_mem_latencies[0] &&
+                HasExactRegisterFamilies(load.GetDestRegisters(), {REG_C}) &&
+                HasExactRegisterFamilies(load.GetExSourceRegisters(), test_case.source_ids) &&
+                load.GetMemSourceRegisters().empty()
+            };
+
+            InstructionX86Intel store(0);
+            store.Parse("mov " + test_case.input + ", rcx");
+            const bool store_ok{
+                store.GetInstructionString() == "mov       " + test_case.normalized + ", rcx" &&
+                store.GetInstructionType() == INSTRUCTION_TYPE::STORE &&
+                store.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::STORE)] &&
+                store.GetMemLatency() == Instruction::base_mem_latencies[1] &&
+                store.GetDestRegisters().empty() &&
+                HasExactRegisterFamilies(store.GetExSourceRegisters(), test_case.source_ids) &&
+                HasExactRegisterFamilies(store.GetMemSourceRegisters(), {REG_C})
+            };
+
+            InstructionX86Intel lea(0);
+            lea.Parse("lea rcx, " + test_case.input);
+            const bool lea_ok{
+                lea.GetInstructionString() == "lea       rcx, " + test_case.normalized &&
+                lea.GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC &&
+                lea.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::INT_BASIC)] &&
+                lea.GetMemLatency() == 0 &&
+                HasExactRegisterFamilies(lea.GetDestRegisters(), {REG_C}) &&
+                HasExactRegisterFamilies(lea.GetExSourceRegisters(), test_case.source_ids) &&
+                lea.GetMemSourceRegisters().empty()
+            };
+
+            InstructionX86Intel read_modify(0);
+            read_modify.Parse("add rcx, " + test_case.input);
+            std::set<int> read_modify_sources{test_case.source_ids};
+            read_modify_sources.insert(REG_C);
+            const bool read_modify_ok{
+                read_modify.GetInstructionString() == "add       rcx, " + test_case.normalized &&
+                read_modify.GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC &&
+                read_modify.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::INT_BASIC)] &&
+                read_modify.GetMemLatency() == 0 &&
+                HasExactRegisterFamilies(read_modify.GetDestRegisters(), {REG_C}, {}, all_flags) &&
+                HasExactRegisterFamilies(read_modify.GetExSourceRegisters(), read_modify_sources) &&
+                read_modify.GetMemSourceRegisters().empty()
+            };
+
+            const bool case_ok{load_ok && store_ok && lea_ok && read_modify_ok};
+            if (!case_ok) std::cout << "  Falha na matriz " << test_case.id << '\n';
+            address_matrix_ok = address_matrix_ok && case_ok;
+        }
+        check("A01/A02/A04-A15/A17 passam nos quatro contextos", address_matrix_ok);
+
+        // A19-A24: dependências exatas e sem duplicatas no endereço complexo.
+        InstructionX86Intel same_family(0);
+        same_family.Parse("mov rcx, [rax+rax*2]");
+        const bool a19{HasExactRegisterFamilies(same_family.GetExSourceRegisters(), {REG_A})};
+
+        InstructionX86Intel load(0);
+        load.Parse("mov rcx, [rax+rbx*4+10]");
+        const bool a20{load.GetInstructionType() == INSTRUCTION_TYPE::LOAD &&
+                       HasExactRegisterFamilies(load.GetDestRegisters(), {REG_C}) &&
+                       HasExactRegisterFamilies(load.GetExSourceRegisters(), {REG_A, REG_B}) &&
+                       load.GetMemSourceRegisters().empty()};
+
+        InstructionX86Intel store(0);
+        store.Parse("mov [rax+rbx*4+10], rcx");
+        const bool a21{store.GetInstructionType() == INSTRUCTION_TYPE::STORE &&
+                       store.GetDestRegisters().empty() &&
+                       HasExactRegisterFamilies(store.GetExSourceRegisters(), {REG_A, REG_B}) &&
+                       HasExactRegisterFamilies(store.GetMemSourceRegisters(), {REG_C})};
+
+        InstructionX86Intel lea(0);
+        lea.Parse("lea rcx, [rax+rbx*4+10]");
+        const bool a22{lea.GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC &&
+                       HasExactRegisterFamilies(lea.GetDestRegisters(), {REG_C}) &&
+                       HasExactRegisterFamilies(lea.GetExSourceRegisters(), {REG_A, REG_B}) &&
+                       lea.GetMemSourceRegisters().empty() && !has_any_flag(lea.GetDestRegisters())};
+
+        InstructionX86Intel call(0);
+        call.Parse("call [rax+rbx*4+10]");
+        const bool a23{call.GetInstructionType() == INSTRUCTION_TYPE::BRANCH &&
+                       call.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::BRANCH)] &&
+                       call.GetMemLatency() == 0 &&
+                       HasExactRegisterFamilies(call.GetDestRegisters(), {REG_SP}) &&
+                       HasExactRegisterFamilies(call.GetExSourceRegisters(), {REG_SP, REG_A, REG_B}) &&
+                       call.GetMemSourceRegisters().empty()};
+
+        InstructionX86Intel jump(0);
+        jump.Parse("jmp [rax+rbx*4+10]");
+        const bool a24{jump.GetInstructionType() == INSTRUCTION_TYPE::BRANCH &&
+                       jump.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::BRANCH)] &&
+                       jump.GetMemLatency() == 0 && jump.GetDestRegisters().empty() &&
+                       HasExactRegisterFamilies(jump.GetExSourceRegisters(), {REG_A, REG_B}) &&
+                       jump.GetMemSourceRegisters().empty()};
+
+        check("A19-A24 preservam dependências e atributos exatos",
+            a19 && a20 && a21 && a22 && a23 && a24);
     }
 
     std::cout << "\n-----------------------------\n";

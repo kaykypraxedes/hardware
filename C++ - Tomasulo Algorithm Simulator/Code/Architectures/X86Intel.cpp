@@ -99,13 +99,14 @@ const std::unordered_map<std::string, Register>& RegisterTable() {
 
         // 'rip' não entra na tabela de propósito: é implícito e nunca é reescrito
         // por instrução (a dependência estaria sempre pronta), então nunca deve
-        // virar fonte rastreada — ver PushAddressPiece().
+        // virar fonte rastreada — ver PushOperandSources().
     }
     return t;
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────
 
+// Normaliza tokens para permitir comparações case-insensitive sem alterar a entrada original.
 static std::string ToLower(const std::string& token) {
     std::string lower{token};
     for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -117,6 +118,7 @@ static bool IsRegister(const std::string& token) {
     return RegisterTable().find(ToLower(token)) != RegisterTable().end();
 }
 
+// Identifica registradores de propósito geral em qualquer largura ou byte endereçável.
 static bool IsIntReg(const std::string& token) {
     const auto& table{RegisterTable()};
 
@@ -127,12 +129,14 @@ static bool IsIntReg(const std::string& token) {
     return (t == 'L' || t == 'R' || t == 'W' || t == 'B');
 }
 
+// Identifica registradores XMM pelo tipo físico registrado na arquitetura.
 static bool IsFloatReg(const std::string& token) {
     const auto& table{RegisterTable()};
     const auto  it{table.find(ToLower(token))};
     return (it != table.end() && it->second.GetType() == 'F');
 }
 
+// Resolve o registrador canônico de um token já validado e interrompe em caso de quebra dessa invariável.
 static const Register& LookupReg(const std::string& token) {
     const auto& table{RegisterTable()};
     const auto  it{table.find(ToLower(token))};
@@ -143,6 +147,7 @@ static const Register& LookupReg(const std::string& token) {
     return it->second;
 }
 
+// Retorna aliases do mesmo registrador físico cujas máscaras se sobrepõem ao alvo.
 static std::vector<Register> GetMaskedRegisters(const Register& target) {
     std::vector<Register> blocked;
     for (const auto& [name, reg] : RegisterTable()) {
@@ -155,12 +160,14 @@ static std::vector<Register> GetMaskedRegisters(const Register& target) {
     return blocked;
 }
 
+// Compara a identidade completa de dois registradores, incluindo a faixa mascarada.
 static bool SameRegister(const Register& lhs, const Register& rhs) {
     return lhs.GetType() == rhs.GetType() &&
            lhs.GetId()   == rhs.GetId()   &&
            lhs.GetMask() == rhs.GetMask();
 }
 
+// Adiciona um registrador somente quando sua identidade completa ainda não está no vetor.
 static void PushUnique(std::vector<Register>& regs, const Register& reg) {
     for (const Register& candidate : regs)
         if (SameRegister(candidate, reg)) return;
@@ -175,6 +182,7 @@ static void PushWithMasked(std::vector<Register>& regs, const Register& reg) {
     for (const Register& variant : GetMaskedRegisters(reg)) PushUnique(regs, variant);
 }
 
+// Adiciona todas as flags rastreadas como dependências, preservando a regra de aliases.
 static void PushAllFlags(std::vector<Register>& regs) {
     static const std::vector<std::string> flags{"cf", "pf", "af", "zf", "sf", "of"};
     for (const std::string& flag : flags) PushWithMasked(regs, LookupReg(flag));
@@ -184,6 +192,8 @@ static void PushAllFlags(std::vector<Register>& regs) {
 // === CLASSE =======================================================
 // ==================================================================
 
+// ─── ELEMENTOS STATIC ─────────────────────────────────────────────
+// Público:
 CDB InstructionX86Intel::MakeCDB() {
     // Layout contíguo por variante:
     // - ids 0-15:  L/R/W/B (larguras de GPR).
@@ -198,6 +208,7 @@ CDB InstructionX86Intel::MakeCDB() {
     FillCDB(cdb, 'F', 32, 16, 0xFF);
     FillCDB(cdb, 'G', 80, 6,  0xFF);
 
+    // Registra as faixas na mesma ordem de inserção para imprimir cada variante como um banco separado.
     cdb.print_banks = {
         {'L', 0,  16},
         {'R', 16, 16},
@@ -210,16 +221,24 @@ CDB InstructionX86Intel::MakeCDB() {
     return cdb;
 }
 
+// ─── CONSTRUTOR ───────────────────────────────────────────────────
+// Público:
 InstructionX86Intel::InstructionX86Intel(const int position) : Instruction(position) {}
 
+// ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
+// Privado:
 std::vector<std::string> InstructionX86Intel::SplitInstruction(const std::string& str) const {
     std::vector<std::string> tokens;
+
+    // Remove espaços externos sem modificar os espaços internos dos operandos.
     std::size_t begin{};
     while (begin < str.size() && (str[begin] == ' ' || str[begin] == '\t')) begin++;
     std::size_t end{str.size()};
     while (end > begin && (str[end - 1] == ' ' || str[end - 1] == '\t')) end--;
     if (begin == end) return tokens;
 
+    // Restringe a entrada à gramática que o restante do parser sabe interpretar.
+    // - Também rejeita caracteres de controle e bytes não ASCII antes da tokenização.
     for (std::size_t i{begin}; i < end; i++) {
         const unsigned char c{static_cast<unsigned char>(str[i])};
         const bool supported{std::isalnum(c) || c == '_' || c == ' ' || c == '\t' ||
@@ -230,6 +249,7 @@ std::vector<std::string> InstructionX86Intel::SplitInstruction(const std::string
         }
     }
 
+    // Separa o opcode e proíbe vírgula colada a ele, pois vírgulas delimitam apenas operandos.
     std::size_t opcode_end{begin};
     while (opcode_end < end && str[opcode_end] != ' ' && str[opcode_end] != '\t' && str[opcode_end] != ',') opcode_end++;
     if (opcode_end == begin || str[opcode_end == end ? end - 1 : opcode_end] == ',') {
@@ -242,6 +262,9 @@ std::vector<std::string> InstructionX86Intel::SplitInstruction(const std::string
     while (cursor < end && (str[cursor] == ' ' || str[cursor] == '\t')) cursor++;
     if (cursor == end) return tokens;
 
+    // Separa operandos somente por vírgulas externas aos colchetes.
+    // - A expressão de memória permanece inteira para ParseMemoryOperand().
+    // - bracket_depth também detecta fechamento sem abertura e aninhamento não suportado.
     std::size_t operand_begin{cursor};
     int bracket_depth{};
     for (std::size_t i{cursor}; i < end; i++) {
@@ -275,6 +298,8 @@ std::vector<std::string> InstructionX86Intel::SplitInstruction(const std::string
         std::cerr << "[ERRO] Operando de memória sem colchete de fechamento.\n";
         std::abort();
     }
+
+    // Salva o último operando e rejeita uma vírgula final sem conteúdo posterior.
     std::size_t piece_end{end};
     while (piece_end > operand_begin && (str[piece_end - 1] == ' ' || str[piece_end - 1] == '\t')) piece_end--;
     if (piece_end == operand_begin) {
@@ -285,11 +310,15 @@ std::vector<std::string> InstructionX86Intel::SplitInstruction(const std::string
     return tokens;
 }
 
+// Privado:
+// Converte literal decimal ou hexadecimal para valor validado e representação canônica.
 InstructionX86Intel::INTEGER_LITERAL InstructionX86Intel::ParseInteger(
     const std::string& token,
     bool               memory_displacement
 ) {
     INTEGER_LITERAL literal;
+
+    // Extrai sinal e prefixo de base antes de processar os dígitos.
     std::size_t cursor{};
     if (!token.empty() && token[0] == '-') {
         literal.negative = true;
@@ -309,6 +338,7 @@ InstructionX86Intel::INTEGER_LITERAL InstructionX86Intel::ParseInteger(
         std::abort();
     }
 
+    // Acumula a magnitude verificando cada dígito e prevenindo overflow antes da multiplicação.
     const std::size_t digits_begin{cursor};
     unsigned long magnitude{};
     for (; cursor < token.size(); cursor++) {
@@ -324,6 +354,8 @@ InstructionX86Intel::INTEGER_LITERAL InstructionX86Intel::ParseInteger(
         }
         magnitude = magnitude * literal.radix + static_cast<unsigned>(digit);
     }
+
+    // Deslocamentos de memória precisam caber em long; imediatos positivos podem usar toda a faixa unsigned long.
     const unsigned long negative_limit{static_cast<unsigned long>(std::numeric_limits<long>::max()) + 1};
     if ((literal.negative && magnitude > negative_limit) ||
         (memory_displacement && !literal.negative && magnitude > static_cast<unsigned long>(std::numeric_limits<long>::max()))) {
@@ -331,6 +363,8 @@ InstructionX86Intel::INTEGER_LITERAL InstructionX86Intel::ParseInteger(
         std::abort();
     }
     literal.magnitude = magnitude;
+
+    // Remove zeros redundantes, padroniza hexadecimal e preserva o sinal na forma normalizada.
     std::string digits{token.substr(digits_begin)};
     std::size_t nonzero{};
     while (nonzero + 1 < digits.size() && digits[nonzero] == '0') nonzero++;
@@ -340,54 +374,88 @@ InstructionX86Intel::INTEGER_LITERAL InstructionX86Intel::ParseInteger(
     return literal;
 }
 
-InstructionX86Intel::OPERAND InstructionX86Intel::ParseOperand(const std::string& token) const {
+// Privado:
+// Classifica um token pela gramática x86 e preenche somente a representação correspondente.
+InstructionX86Intel::OPERAND InstructionX86Intel::ParseOperand(
+    const std::string& token
+) const {
     OPERAND operand;
     const std::string lower{ToLower(token)};
+
+    // A ordem evita interpretar registradores e expressões entre colchetes como labels.
     if (IsRegister(lower)) {
         operand.type = OPERAND_TYPE::REGISTER;
         operand.register_name = lower;
         return operand;
     }
+
+    // Qualquer colchete torna o token candidato a memória; ParseMemoryOperand() valida o par e o conteúdo.
     if (token.find('[') != std::string::npos || token.find(']') != std::string::npos) {
         operand.type = OPERAND_TYPE::MEMORY;
         operand.memory = ParseMemoryOperand(token);
         return operand;
     }
+
+    // Tokens iniciados como número devem ser literais completos; não caem para label em caso de erro.
     const bool numeric_start{!token.empty() && (std::isdigit(static_cast<unsigned char>(token[0])) || token[0] == '-' || token[0] == '+')};
     if (numeric_start) {
         operand.type = OPERAND_TYPE::IMMEDIATE;
         operand.immediate = ParseInteger(token, false);
         return operand;
     }
-    if (token.empty() || (!std::isalpha(static_cast<unsigned char>(token[0])) && token[0] != '_')) {
+
+    // O caso restante é uma label case-sensitive que não pode reutilizar um nome reservado.
+    if (!IsValidLabel(token)) {
         std::cerr << "[ERRO] Label inválida.\n";
         std::abort();
     }
-    for (const unsigned char c : token)
-        if (!std::isalnum(c) && c != '_') {
-            std::cerr << "[ERRO] Label inválida.\n";
-            std::abort();
-        }
     operand.type = OPERAND_TYPE::LABEL;
     operand.label = token;
     return operand;
 }
 
-bool InstructionX86Intel::IsNumericPiece(const std::string& piece) {
+// Privado:
+// Verifica a gramática de label e impede que registradores ou RIP sejam reinterpretados como símbolos.
+bool InstructionX86Intel::IsValidLabel(
+    const std::string& token
+) {
+    if (token.empty() || ToLower(token) == "rip" || IsRegister(token) ||
+        (!std::isalpha(static_cast<unsigned char>(token[0])) && token[0] != '_')) return false;
+
+    for (const unsigned char c : token)
+        if (!std::isalnum(c) && c != '_') return false;
+    return true;
+}
+
+// Privado:
+// Verifica se uma peça da expressão de memória começa por um dígito.
+bool InstructionX86Intel::IsNumericPiece(
+    const std::string& piece
+) {
     return !piece.empty() && std::isdigit(static_cast<unsigned char>(piece[0]));
 }
 
-bool InstructionX86Intel::IsGpr64(const std::string& piece) {
+// Privado:
+// Verifica se a peça nomeia um registrador geral de 64 bits válido como base de endereço.
+bool InstructionX86Intel::IsGpr64(
+    const std::string& piece
+) {
     const auto& table{RegisterTable()};
     const auto it{table.find(ToLower(piece))};
     return it != table.end() && it->second.GetType() == 'L';
 }
 
-bool InstructionX86Intel::IsValidMemoryIndex(const std::string& piece) {
+// Privado:
+// Valida registrador de índice x86, excluindo rsp/r12 porque codificam ausência de índice no SIB.
+bool InstructionX86Intel::IsValidMemoryIndex(
+    const std::string& piece
+) {
     const std::string lower{ToLower(piece)};
     return IsGpr64(lower) && lower != "rsp" && lower != "r12";
 }
 
+// Privado:
+// Valida e grava o deslocamento com sinal de uma expressão de memória.
 void InstructionX86Intel::SetMemoryDisplacement(
     MEMORY_OPERAND&    memory,
     const std::string& sign,
@@ -401,6 +469,8 @@ void InstructionX86Intel::SetMemoryDisplacement(
     memory.displacement = ParseInteger((sign == "-" ? "-" : "") + value, true);
 }
 
+// Privado:
+// Valida e grava uma das escalas permitidas pelo endereçamento SIB.
 void InstructionX86Intel::SetMemoryScale(
     MEMORY_OPERAND&    memory,
     const std::string& value
@@ -412,10 +482,14 @@ void InstructionX86Intel::SetMemoryScale(
     memory.scale = value[0] - '0';
 }
 
+// Privado:
+// Decompõe um operando de memória nos campos de tamanho, base, índice, escala e deslocamento.
 InstructionX86Intel::MEMORY_OPERAND InstructionX86Intel::ParseMemoryOperand(
     const std::string& token
 ) const {
     MEMORY_OPERAND memory;
+
+    // Valida um único par de colchetes e impede qualquer conteúdo significativo após o fechamento.
     const std::size_t open{token.find('[')};
     const std::size_t close{token.find(']')};
     if (open == std::string::npos || close == std::string::npos || close < open ||
@@ -429,6 +503,7 @@ InstructionX86Intel::MEMORY_OPERAND InstructionX86Intel::ParseMemoryOperand(
             std::abort();
         }
 
+    // Interpreta o prefixo opcional "<tamanho> ptr" antes da expressão de endereço.
     std::string prefix{token.substr(0, open)};
     while (!prefix.empty() && (prefix.back() == ' ' || prefix.back() == '\t')) prefix.pop_back();
     std::size_t prefix_begin{};
@@ -458,6 +533,8 @@ InstructionX86Intel::MEMORY_OPERAND InstructionX86Intel::ParseMemoryOperand(
         }
     }
 
+    // Tokeniza o interior em átomos e operadores, ignorando espaços.
+    // - Isso permite reconhecer formas suportadas sem avaliar uma expressão textual genérica.
     std::vector<std::string> pieces;
     std::string atom;
     for (std::size_t i{open + 1}; i < close; i++) {
@@ -477,6 +554,8 @@ InstructionX86Intel::MEMORY_OPERAND InstructionX86Intel::ParseMemoryOperand(
         std::abort();
     }
 
+    // RIP relativo aceita apenas deslocamento com sinal ou label somada ao RIP.
+    // - RIP não vira dependência porque não é renomeado nem escrito pelo simulador.
     const std::string first{ToLower(pieces[0])};
     if (first == "rip") {
         if (pieces.size() != 3 || (pieces[1] != "+" && pieces[1] != "-")) {
@@ -486,22 +565,16 @@ InstructionX86Intel::MEMORY_OPERAND InstructionX86Intel::ParseMemoryOperand(
         memory.rip_relative = true;
         if (IsNumericPiece(pieces[2])) SetMemoryDisplacement(memory, pieces[1], pieces[2]);
         else {
-            if (pieces[1] != "+" || pieces[2].empty() ||
-                IsRegister(pieces[2]) ||
-                (!std::isalpha(static_cast<unsigned char>(pieces[2][0])) && pieces[2][0] != '_')) {
+            if (pieces[1] != "+" || !IsValidLabel(pieces[2])) {
                 std::cerr << "[ERRO] Label relativa a RIP inválida.\n";
                 std::abort();
             }
-            for (const unsigned char c : pieces[2])
-                if (!std::isalnum(c) && c != '_') {
-                    std::cerr << "[ERRO] Label relativa a RIP inválida.\n";
-                    std::abort();
-                }
             memory.label = pieces[2];
         }
         return memory;
     }
 
+    // Formas simples: [base], [deslocamento] e [-deslocamento].
     if (pieces.size() == 1 && IsGpr64(first)) {
         memory.base = first;
         return memory;
@@ -514,6 +587,8 @@ InstructionX86Intel::MEMORY_OPERAND InstructionX86Intel::ParseMemoryOperand(
         SetMemoryDisplacement(memory, "-", pieces[1]);
         return memory;
     }
+
+    // Forma sem base: [índice * escala] com deslocamento opcional.
     if (pieces.size() >= 3 && IsValidMemoryIndex(first) && pieces[1] == "*" && IsNumericPiece(pieces[2])) {
         memory.index = first;
         SetMemoryScale(memory, pieces[2]);
@@ -523,11 +598,15 @@ InstructionX86Intel::MEMORY_OPERAND InstructionX86Intel::ParseMemoryOperand(
             return memory;
         }
     }
+
+    // Forma base mais deslocamento, positivo ou negativo.
     if (IsGpr64(first) && pieces.size() == 3 && (pieces[1] == "+" || pieces[1] == "-") && IsNumericPiece(pieces[2])) {
         memory.base = first;
         SetMemoryDisplacement(memory, pieces[1], pieces[2]);
         return memory;
     }
+
+    // Forma SIB completa: [base + índice * escala] com deslocamento opcional quando a escala é explícita.
     if (IsGpr64(first) && pieces.size() >= 3 && pieces[1] == "+" && IsValidMemoryIndex(pieces[2])) {
         memory.base = first;
         memory.index = ToLower(pieces[2]);
@@ -548,12 +627,18 @@ InstructionX86Intel::MEMORY_OPERAND InstructionX86Intel::ParseMemoryOperand(
             return memory;
         }
     }
+
+    // Rejeita formas ambíguas ou não modeladas em vez de inferir semântica diferente do simulador.
     std::cerr << "[ERRO] Expressão de memória fora da gramática suportada.\n";
     std::abort();
 }
 
+// Privado:
 bool InstructionX86Intel::IdentifyType(const std::vector<std::string>& tokens) {
     const std::string op{ToLower(tokens[0])};
+
+    // Analisa os operandos uma única vez e guarda a estrutura usada nas etapas posteriores do Parse().
+    // - ValidateInstruction(), NormalizeInstruction() e SetAttributes() compartilham exatamente essa interpretação.
     operands.clear();
     for (std::size_t i{1}; i < tokens.size(); i++) operands.push_back(ParseOperand(tokens[i]));
 
@@ -593,17 +678,22 @@ bool InstructionX86Intel::IdentifyType(const std::vector<std::string>& tokens) {
     return true;
 }
 
+// Privado:
 void InstructionX86Intel::ValidateInstruction(const std::vector<std::string>& tokens) {
     const std::string op{ToLower(tokens[0])};
 
+    // IdentifyType() já restringiu a família; cada ramo confirma quantidade, posição e classe dos operandos.
+    // - A validação aceita somente formas cuja semântica de dependências o simulador consegue representar.
     switch (type) {
         case INSTRUCTION_TYPE::LOAD: {
+            // LOAD sempre move memória para um registrador inteiro ou XMM.
             if (tokens.size() == 3 && operands[0].type == OPERAND_TYPE::REGISTER &&
                 (IsIntReg(operands[0].register_name) || IsFloatReg(operands[0].register_name)) &&
                 operands[1].type == OPERAND_TYPE::MEMORY) return;
             break;
         }
         case INSTRUCTION_TYPE::STORE: {
+            // STORE sempre move registrador/imediato para memória.
             if (tokens.size() == 3 && operands[0].type == OPERAND_TYPE::MEMORY &&
                 ((operands[1].type == OPERAND_TYPE::REGISTER &&
                   (IsIntReg(operands[1].register_name) || IsFloatReg(operands[1].register_name))) ||
@@ -611,6 +701,7 @@ void InstructionX86Intel::ValidateInstruction(const std::vector<std::string>& to
             break;
         }
         case INSTRUCTION_TYPE::BRANCH: {
+            // Saltos incondicionais e calls podem ser diretos ou indiretos; JCCs permanecem label-only.
             if (op == "jmp" || op == "call") {
                 if (tokens.size() == 2 &&
                     (operands[0].type == OPERAND_TYPE::LABEL ||
@@ -625,6 +716,7 @@ void InstructionX86Intel::ValidateInstruction(const std::vector<std::string>& to
             break;
         }
         case INSTRUCTION_TYPE::INT_BASIC: {
+            // Separa formas unárias e binárias porque cada grupo posiciona fontes e destinos de modo diferente.
             if (op == "push") {
                 // Restrito a IREG/IMM: "push [mem]" exigiria ler memória E
                 // escrever na pilha na MESMA instrução, fora do par LOAD/STORE
@@ -660,6 +752,7 @@ void InstructionX86Intel::ValidateInstruction(const std::vector<std::string>& to
             break;
         }
         case INSTRUCTION_TYPE::INT_MUL: {
+            // mul usa um operando explícito; imul modelado usa destino explícito e uma segunda fonte.
             if (op == "mul") {
                 if (tokens.size() == 2 &&
                     ((operands[0].type == OPERAND_TYPE::REGISTER && IsIntReg(operands[0].register_name)) ||
@@ -673,6 +766,7 @@ void InstructionX86Intel::ValidateInstruction(const std::vector<std::string>& to
             break;
         }
         case INSTRUCTION_TYPE::INT_DIV: {
+            // div/idiv recebem apenas o divisor explícito; o dividendo e o resultado usam registradores implícitos.
             if ((op == "div" || op == "idiv") && tokens.size() == 2 &&
                 ((operands[0].type == OPERAND_TYPE::REGISTER && IsIntReg(operands[0].register_name)) ||
                  operands[0].type == OPERAND_TYPE::MEMORY)) return;
@@ -681,6 +775,7 @@ void InstructionX86Intel::ValidateInstruction(const std::vector<std::string>& to
         case INSTRUCTION_TYPE::FLOAT_BASIC:
         case INSTRUCTION_TYPE::FLOAT_MUL:
         case INSTRUCTION_TYPE::FLOAT_DIV: {
+            // Operações SSE usam destino XMM, exceto conversões cujo resultado é inteiro.
             if (op == "cvttss2si") {
                 // Único opcode do grupo com destino INTEIRO / fonte FLOAT — o
                 // resto do grupo é sempre destino float. A checagem genérica
@@ -707,24 +802,31 @@ void InstructionX86Intel::ValidateInstruction(const std::vector<std::string>& to
     std::abort();
 }
 
+// Privado:
 void InstructionX86Intel::NormalizeInstruction(std::vector<std::string>& tokens) {
-    tokens[0] = ToLower(tokens[0]);
-    instruction_string = tokens[0];
+    // Reconstrói a instrução canônica sem modificar labels case-sensitive.
+    const std::string op{ToLower(tokens[0])};
+    instruction_string = op;
 
     // Padroniza o espaço entre o OpCode e o primeiro elemento (facilita o debugging).
-    for (size_t i{tokens[0].size()}; i < biggest_instruction; i++) instruction_string += " ";
+    for (size_t i{op.size()}; i < biggest_instruction; i++) instruction_string += " ";
 
     for (std::size_t i{}; i < operands.size(); i++)
         instruction_string += (i == 0 ? "" : ", ") + NormalizeOperand(operands[i]);
 }
 
+// Privado:
+// Converte a estrutura de um operando para a forma textual canônica usada na saída do simulador.
 std::string InstructionX86Intel::NormalizeOperand(const OPERAND& operand) const {
+    // Operandos escalares já foram validados e normalizados durante o parsing.
     if (operand.type == OPERAND_TYPE::REGISTER) return operand.register_name;
     if (operand.type == OPERAND_TYPE::IMMEDIATE) return operand.immediate.normalized;
     if (operand.type == OPERAND_TYPE::LABEL) return operand.label;
 
     const MEMORY_OPERAND& memory{operand.memory};
     std::string normalized;
+
+    // Recria o qualificador opcional de tamanho antes dos colchetes.
     switch (memory.size) {
         case MEMORY_SIZE::BYTE:    normalized = "byte ptr "; break;
         case MEMORY_SIZE::WORD:    normalized = "word ptr "; break;
@@ -734,6 +836,8 @@ std::string InstructionX86Intel::NormalizeOperand(const OPERAND& operand) const 
         default: break;
     }
     normalized += '[';
+
+    // Emite primeiro a base implícita RIP ou a base geral e depois o índice escalado.
     bool has_component{};
     if (memory.rip_relative) {
         normalized += "rip";
@@ -749,6 +853,8 @@ std::string InstructionX86Intel::NormalizeOperand(const OPERAND& operand) const 
             normalized += " * " + std::to_string(memory.scale);
         has_component = true;
     }
+
+    // Label relativa ou deslocamento fecham a expressão com sinal e espaçamento padronizados.
     if (!memory.label.empty()) {
         normalized += " + " + memory.label;
     } else if (memory.has_displacement) {
@@ -761,10 +867,13 @@ std::string InstructionX86Intel::NormalizeOperand(const OPERAND& operand) const 
     return normalized + ']';
 }
 
+// Privado:
+// Adiciona as dependências explícitas de um registrador ou dos componentes que calculam um endereço.
 void InstructionX86Intel::PushOperandSources(
     std::vector<Register>& sources,
     const OPERAND&         operand
 ) const {
+    // Imediatos, labels e RIP não dependem de um valor produzido por outra instrução.
     if (operand.type == OPERAND_TYPE::REGISTER) {
         PushWithMasked(sources, LookupReg(operand.register_name));
     } else if (operand.type == OPERAND_TYPE::MEMORY) {
@@ -773,68 +882,78 @@ void InstructionX86Intel::PushOperandSources(
     }
 }
 
+// Privado:
 void InstructionX86Intel::SetAttributes(const std::vector<std::string>& tokens) {
-    const std::string& op{tokens[0]};
+    const std::string op{ToLower(tokens[0])};
 
+    // Traduz a semântica x86 para dependências do pipeline:
+    // - destinos reservam o CDB; fontes EX precisam estar prontas para executar;
+    // - fontes MEM são valores consumidos somente no acesso à memória;
+    // - PushWithMasked() inclui aliases sobrepostos do mesmo registrador físico.
     switch (type) {
         case INSTRUCTION_TYPE::LOAD: {
-            PushWithMasked(dest_registers, LookupReg(tokens[1]));
+            // O endereço é fonte de EX; o dado carregado sobrescreve o registrador de destino.
+            PushWithMasked(dest_registers, LookupReg(operands[0].register_name));
             PushOperandSources(ex_source_registers, operands[1]);
             break;
         }
         case INSTRUCTION_TYPE::STORE: {
+            // O endereço é calculado em EX, mas o valor armazenado só é consumido em MEM.
             PushOperandSources(ex_source_registers, operands[0]);
-            if (operands[1].type == OPERAND_TYPE::REGISTER)
-                PushWithMasked(mem_source_registers, LookupReg(tokens[2]));
+            PushOperandSources(mem_source_registers, operands[1]);
             break;
         }
         case INSTRUCTION_TYPE::BRANCH: {
             if (op == "call" || op == "ret") {
+                // call/ret atualizam a pilha e dependem do valor anterior de rsp.
                 PushWithMasked(dest_registers,      LookupReg("rsp"));
                 PushWithMasked(ex_source_registers, LookupReg("rsp"));
             } else if (op != "jmp") {
                 // Task 05 refinará cada JCC para seu subconjunto exato.
                 PushAllFlags(ex_source_registers);
             }
-            // jmp/call indiretos ("jmp eax", "call [ebx+4]"):
+            // jmp/call indiretos ("jmp rax", "call [rbx+4]"):
             // - O alvo precisa estar pronto antes do desvio, então vira fonte.
             // - Labels não geram fonte (endereço resolvido estaticamente).
-            if ((op == "jmp" || op == "call") && tokens.size() > 1)
+            if ((op == "jmp" || op == "call") && !operands.empty())
                 PushOperandSources(ex_source_registers, operands[0]);
             break;
         }
         case INSTRUCTION_TYPE::INT_BASIC: {
             if (op == "push") {
+                // push atualiza rsp em EX e consome o valor enviado à pilha em MEM.
                 PushWithMasked(dest_registers,      LookupReg("rsp"));
                 PushWithMasked(ex_source_registers, LookupReg("rsp"));
-                if (IsIntReg(tokens[1])) PushWithMasked(mem_source_registers, LookupReg(tokens[1])); // Salva na RAM.
+                PushOperandSources(mem_source_registers, operands[0]); // Salva na RAM.
             } else if (op == "pop") {
+                // pop lê e atualiza rsp, além de escrever o registrador que recebe o valor da memória.
                 PushWithMasked(dest_registers,      LookupReg("rsp"));
                 PushWithMasked(ex_source_registers, LookupReg("rsp"));
-                PushWithMasked(dest_registers,      LookupReg(tokens[1])); // Puxa da RAM.
+                PushWithMasked(dest_registers,      LookupReg(operands[0].register_name)); // Puxa da RAM.
             } else if (op == "cmp" || op == "test") {
+                // Comparações leem ambos os operandos e escrevem somente flags.
                 PushAllFlags(dest_registers);
                 PushOperandSources(ex_source_registers, operands[0]);
                 PushOperandSources(ex_source_registers, operands[1]);
             } else if (op == "lea") {
                 // lea não acessa memória de fato (só calcula o endereço) e não
                 // mexe nas flags rastreadas.
-                PushWithMasked(dest_registers, LookupReg(tokens[1]));
+                PushWithMasked(dest_registers, LookupReg(operands[0].register_name));
                 PushOperandSources(ex_source_registers, operands[1]);
             } else {
                 // add, sub, and, or, xor, shl/shr/sar/sal, rol/ror, adc, sbb,
                 // inc, dec, not, neg, mov, movsx, movzx (fonte registrador).
                 const bool reads_dest = !ContainsOpcode(MOVS, op) && !ContainsOpcode(PURE_WRITE, op);
 
-                if (IsIntReg(tokens[1])) {
-                    PushWithMasked(dest_registers, LookupReg(tokens[1]));
-                    if (reads_dest) PushWithMasked(ex_source_registers, LookupReg(tokens[1]));
+                if (operands[0].type == OPERAND_TYPE::REGISTER) {
+                    PushWithMasked(dest_registers, LookupReg(operands[0].register_name));
+                    if (reads_dest) PushOperandSources(ex_source_registers, operands[0]);
                 } else if (operands[0].type == OPERAND_TYPE::MEMORY) {
                     PushOperandSources(ex_source_registers, operands[0]);
                 }
 
                 // Fonte (operando 2).
-                if (tokens.size() > 2) PushOperandSources(ex_source_registers, operands[1]);
+                if (operands.size() > 1) PushOperandSources(ex_source_registers, operands[1]);
 
                 // Task 05 refinará cada opcode para seu subconjunto exato.
                 if (!ContainsOpcode(MOVS, op) && !ContainsOpcode(NO_FLAGS, op))
@@ -852,8 +971,10 @@ void InstructionX86Intel::SetAttributes(const std::vector<std::string>& tokens) 
                 // Par implícito AX (8-bit) / AX:DX / EAX:EDX / RAX:RDX.
                 // - A largura é a do operando explícito.
                 // - A sintaxe não modela sufixo de tamanho (dword/qword) para operando de memória:
-                // "mul [ebx]" assume 32-bit por padrão (simplificação assumida).
-                const char operand_width{operands[0].type == OPERAND_TYPE::MEMORY ? 'R' : LookupReg(tokens[1]).GetType()};
+                // "mul [rbx]" assume 32-bit por padrão (simplificação assumida).
+                const char operand_width{operands[0].type == OPERAND_TYPE::MEMORY
+                                         ? 'R'
+                                         : LookupReg(operands[0].register_name).GetType()};
                 const bool is_8bit{operand_width == 'B'};
                 // 8-bit não tem "par" separado: o resultado inteiro cabe em AX (16-bit), não em AL.
                 // - Por isso o 8-bit colapsa para 'W' aqui.
@@ -872,8 +993,8 @@ void InstructionX86Intel::SetAttributes(const std::vector<std::string>& tokens) 
                 PushOperandSources(ex_source_registers, operands[0]);
                 PushAllFlags(dest_registers);
             } else if (op == "imul") {
-                PushWithMasked(dest_registers,      LookupReg(tokens[1]));
-                PushWithMasked(ex_source_registers, LookupReg(tokens[1])); // Destino também é fonte (x86 CISC).
+                PushWithMasked(dest_registers, LookupReg(operands[0].register_name));
+                PushOperandSources(ex_source_registers, operands[0]); // Destino também é fonte (x86 CISC).
                 PushOperandSources(ex_source_registers, operands[1]);
                 PushAllFlags(dest_registers);
             }
@@ -883,25 +1004,22 @@ void InstructionX86Intel::SetAttributes(const std::vector<std::string>& tokens) 
         case INSTRUCTION_TYPE::FLOAT_MUL:
         case INSTRUCTION_TYPE::FLOAT_DIV: {
             if (op == "comiss" || op == "ucomiss") {
+                // Comparações escalares leem operandos XMM e produzem somente flags.
                 PushAllFlags(dest_registers);
-                PushWithMasked(ex_source_registers, LookupReg(tokens[1]));
-                if (IsFloatReg(tokens[2])) PushWithMasked(ex_source_registers, LookupReg(tokens[2]));
+                PushOperandSources(ex_source_registers, operands[0]);
+                PushOperandSources(ex_source_registers, operands[1]);
             } else if (op == "cvttss2si") {
                 // Destino inteiro, escrita pura (não lê o destino antigo).
-                PushWithMasked(dest_registers,      LookupReg(tokens[1]));
-                PushWithMasked(ex_source_registers, LookupReg(tokens[2]));
+                PushWithMasked(dest_registers, LookupReg(operands[0].register_name));
+                PushOperandSources(ex_source_registers, operands[1]);
             } else {
                 // Operações de 2 operandos FPU/SSE (addss, mulss, movaps quando
                 // cai aqui, sqrtss, cvtsi2ss, ...).
                 const bool reads_dest = !ContainsOpcode(MOVS, op) && !ContainsOpcode(PURE_WRITE, op);
 
-                PushWithMasked(dest_registers, LookupReg(tokens[1]));
-                if (reads_dest) PushWithMasked(ex_source_registers, LookupReg(tokens[1]));
-
-                if (IsFloatReg(tokens[2]) || IsIntReg(tokens[2]))
-                    PushWithMasked(ex_source_registers, LookupReg(tokens[2]));
-                else if (operands[1].type == OPERAND_TYPE::MEMORY)
-                    PushOperandSources(ex_source_registers, operands[1]);
+                PushWithMasked(dest_registers, LookupReg(operands[0].register_name));
+                if (reads_dest) PushOperandSources(ex_source_registers, operands[0]);
+                PushOperandSources(ex_source_registers, operands[1]);
             }
             break;
         }
