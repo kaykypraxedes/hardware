@@ -283,23 +283,37 @@ InstructionArm64::InstructionArm64(
 
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Privado:
-bool InstructionArm64::IdentifyType(
+bool InstructionArm64::SetStages(
     const std::vector<std::string>& tokens
 ){
     std::string op{tokens[0]};
     for (char& c : op) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    INSTRUCTION_TYPE instruction_type{INSTRUCTION_TYPE::INVALID};
 
-    if (ContainsOpcode(LOADS, op))            type = INSTRUCTION_TYPE::LOAD;
-    else if (ContainsOpcode(STORES, op))      type = INSTRUCTION_TYPE::STORE;
-    else if (ContainsOpcode(INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
-    else if (ContainsOpcode(BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
-    else if (ContainsOpcode(INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
-    else if (ContainsOpcode(INT_DIV, op))     type = INSTRUCTION_TYPE::INT_DIV;
-    else if (ContainsOpcode(FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
-    else if (ContainsOpcode(FLOAT_MUL, op))   type = INSTRUCTION_TYPE::FLOAT_MUL;
-    else if (ContainsOpcode(FLOAT_DIV, op))   type = INSTRUCTION_TYPE::FLOAT_DIV;
+    if (ContainsOpcode(LOADS, op))            instruction_type = INSTRUCTION_TYPE::LOAD;
+    else if (ContainsOpcode(STORES, op))      instruction_type = INSTRUCTION_TYPE::STORE;
+    else if (ContainsOpcode(INT_BASIC, op))   instruction_type = INSTRUCTION_TYPE::INT_BASIC;
+    else if (ContainsOpcode(BRANCHES, op))    instruction_type = INSTRUCTION_TYPE::BRANCH;
+    else if (ContainsOpcode(INT_MUL, op))     instruction_type = INSTRUCTION_TYPE::INT_MUL;
+    else if (ContainsOpcode(INT_DIV, op))     instruction_type = INSTRUCTION_TYPE::INT_DIV;
+    else if (ContainsOpcode(FLOAT_BASIC, op)) instruction_type = INSTRUCTION_TYPE::FLOAT_BASIC;
+    else if (ContainsOpcode(FLOAT_MUL, op))   instruction_type = INSTRUCTION_TYPE::FLOAT_MUL;
+    else if (ContainsOpcode(FLOAT_DIV, op))   instruction_type = INSTRUCTION_TYPE::FLOAT_DIV;
     else return false;
 
+    // SetStageAttributes trabalha com a mesma forma minúscula que antes era
+    // produzida por NormalizeInstruction(), sem alterar labels do texto final.
+    std::vector<std::string> stage_tokens{tokens};
+    for (std::string& token : stage_tokens)
+        for (char& c : token)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+    ValidateInstruction(stage_tokens, instruction_type);
+
+    std::vector<Register> ex_sources;
+    std::vector<Register> mem_sources;
+    SetStageAttributes(stage_tokens, instruction_type, ex_sources, mem_sources);
+    AddStage(instruction_type, ex_sources, mem_sources);
     return true;
 }
 
@@ -351,6 +365,8 @@ std::vector<std::string> InstructionArm64::SplitInstruction(
 void InstructionArm64::NormalizeInstruction(
     std::vector<std::string>& tokens
 ){
+    const INSTRUCTION_TYPE type{GetInstructionType()};
+
     for (size_t i = 0; i < tokens.size(); ++i) {
         // Labels de desvio são case-sensitive: só opcode e registradores viram minúsculo.
         if (type == INSTRUCTION_TYPE::BRANCH && i > 0 && !IsRegister(tokens[i], RegisterTable())) continue;
@@ -385,17 +401,20 @@ void InstructionArm64::NormalizeInstruction(
 }
 
 // Privado:
-void InstructionArm64::SetAttributes(
-    const std::vector<std::string>& tokens
+void InstructionArm64::SetStageAttributes(
+    const std::vector<std::string>& tokens,
+    const INSTRUCTION_TYPE          instruction_type,
+    std::vector<Register>&          ex_sources,
+    std::vector<Register>&          mem_sources
 ){
+    const INSTRUCTION_TYPE type{instruction_type};
+
     dest_registers.clear();
-    ex_source_registers.clear();
-    mem_source_registers.clear();
+    ex_sources.clear();
+    mem_sources.clear();
 
     std::vector<int> expected_dests{GetDestines(tokens[0], type)};
     std::vector<int> expected_srcs{GetSources(tokens[0], type, tokens.size())};
-
-    ValidateInstruction(tokens);
 
     // Instruções de 5 tokens:
     if (tokens.size() == 5){
@@ -405,7 +424,7 @@ void InstructionArm64::SetAttributes(
         if (tokens[0] == "cmp" || tokens[0] == "cmn" || tokens[0] == "tst" || tokens[0] == "fcmp") {
             for (size_t i{1}; i < tokens.size(); ++i){
                 if (IsRegister(tokens[i], RegisterTable()) && !IsZeroRegister(tokens[i]))
-                    PushWithMasked(ex_source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    PushWithMasked(ex_sources, LookupRegister(tokens[i], instruction_string, RegisterTable()));
             }
             dest_registers.push_back(Register('G', 80));
             return;
@@ -416,10 +435,10 @@ void InstructionArm64::SetAttributes(
         // - tokens[4] é o marcador de writeback '!' - ignorado.
         else if (type == INSTRUCTION_TYPE::STORE && tokens[4] == "!") {
             if (!IsZeroRegister(tokens[1]))
-                PushWithMasked(mem_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                PushWithMasked(mem_sources, LookupRegister(tokens[1], instruction_string, RegisterTable()));
             if (!IsZeroRegister(tokens[2]))
-                PushWithMasked(mem_source_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
-            PushAddressSources(ex_source_registers, tokens[3], instruction_string);
+                PushWithMasked(mem_sources, LookupRegister(tokens[2], instruction_string, RegisterTable()));
+            PushAddressSources(ex_sources, tokens[3], instruction_string);
             return;
         }
         // "ldp x0, x1, [sp, #16]!" (writeback pré-indexado):
@@ -431,7 +450,7 @@ void InstructionArm64::SetAttributes(
                 PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
             if (!IsZeroRegister(tokens[2]))
                 PushWithMasked(dest_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
-            PushAddressSources(ex_source_registers, tokens[3], instruction_string);
+            PushAddressSources(ex_sources, tokens[3], instruction_string);
             return;
         }
     }
@@ -447,7 +466,7 @@ void InstructionArm64::SetAttributes(
                     PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
                 if (!IsZeroRegister(tokens[2]))
                     PushWithMasked(dest_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
-                PushAddressSources(ex_source_registers, tokens[3], instruction_string);
+                PushAddressSources(ex_sources, tokens[3], instruction_string);
                 return;
             }
             // "stp x29, x30, [sp, #-16]":
@@ -457,10 +476,10 @@ void InstructionArm64::SetAttributes(
             // e é tratada no bloco de 5 tokens.)
             else if (type == INSTRUCTION_TYPE::STORE){
                 if (!IsZeroRegister(tokens[1]))
-                    PushWithMasked(mem_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                    PushWithMasked(mem_sources, LookupRegister(tokens[1], instruction_string, RegisterTable()));
                 if (!IsZeroRegister(tokens[2]))
-                    PushWithMasked(mem_source_registers, LookupRegister(tokens[2], instruction_string, RegisterTable()));
-                PushAddressSources(ex_source_registers, tokens[3], instruction_string);
+                    PushWithMasked(mem_sources, LookupRegister(tokens[2], instruction_string, RegisterTable()));
+                PushAddressSources(ex_sources, tokens[3], instruction_string);
                 return;
             }
         }
@@ -469,7 +488,7 @@ void InstructionArm64::SetAttributes(
         // - Sem destino.
         else if (tokens[0] == "tbz" || tokens[0] == "tbnz") {
             if (!IsZeroRegister(tokens[1]))
-                PushWithMasked(ex_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                PushWithMasked(ex_sources, LookupRegister(tokens[1], instruction_string, RegisterTable()));
             return;
         }
         // "ldr x0, [x1], #16" (pós-indexado):
@@ -479,7 +498,7 @@ void InstructionArm64::SetAttributes(
         else if (type == INSTRUCTION_TYPE::LOAD) {
             if (!IsZeroRegister(tokens[1]))
                 PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            PushAddressSources(ex_source_registers, tokens[2], instruction_string);
+            PushAddressSources(ex_sources, tokens[2], instruction_string);
             return;
         }
         // "str x0, [x1], #16" (pós-indexado):
@@ -488,8 +507,8 @@ void InstructionArm64::SetAttributes(
         // - tokens[3] é o deslocamento pós-índice (sempre imediato) - ignorado.
         else if (type == INSTRUCTION_TYPE::STORE) {
             if (!IsZeroRegister(tokens[1]))
-                PushWithMasked(mem_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            PushAddressSources(ex_source_registers, tokens[2], instruction_string);
+                PushWithMasked(mem_sources, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            PushAddressSources(ex_sources, tokens[2], instruction_string);
             return;
         }
         // Aritmética geral - "add x1, x2, x3" (com ou sem shift/extensão):
@@ -498,7 +517,7 @@ void InstructionArm64::SetAttributes(
         else {
             for (size_t i{2}; i < tokens.size(); ++i){
                 if (IsRegister(tokens[i], RegisterTable()) && !IsZeroRegister(tokens[i]))
-                    PushWithMasked(ex_source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    PushWithMasked(ex_sources, LookupRegister(tokens[i], instruction_string, RegisterTable()));
             }
             if (!IsZeroRegister(tokens[1]))
                 PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
@@ -520,7 +539,7 @@ void InstructionArm64::SetAttributes(
         if (type == INSTRUCTION_TYPE::LOAD) {
             if (!IsZeroRegister(tokens[1]))
                 PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            PushAddressSources(ex_source_registers, tokens[2], instruction_string);
+            PushAddressSources(ex_sources, tokens[2], instruction_string);
             return;
         }
         // "str x0, [x1, #8]":
@@ -528,8 +547,8 @@ void InstructionArm64::SetAttributes(
         // - Sem destino.
         else if (type == INSTRUCTION_TYPE::STORE) {
             if (!IsZeroRegister(tokens[1]))
-                PushWithMasked(mem_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
-            PushAddressSources(ex_source_registers, tokens[2], instruction_string);
+                PushWithMasked(mem_sources, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+            PushAddressSources(ex_sources, tokens[2], instruction_string);
             return;
         }
         // Comparadores - "cmp x0, x1":
@@ -538,7 +557,7 @@ void InstructionArm64::SetAttributes(
         else if (tokens[0] == "cmp" || tokens[0] == "cmn" || tokens[0] == "tst" || tokens[0] == "fcmp") {
             for (size_t i{1}; i < tokens.size(); ++i){
                 if (IsRegister(tokens[i], RegisterTable()) && !IsZeroRegister(tokens[i]))
-                    PushWithMasked(ex_source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    PushWithMasked(ex_sources, LookupRegister(tokens[i], instruction_string, RegisterTable()));
             }
             dest_registers.push_back(Register('G', 80));
             return;
@@ -548,7 +567,7 @@ void InstructionArm64::SetAttributes(
         // - Sem destino.
         else if (type == INSTRUCTION_TYPE::BRANCH && (tokens[0] == "cbz" || tokens[0] == "cbnz")) {
             if (!IsZeroRegister(tokens[1]))
-                PushWithMasked(ex_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                PushWithMasked(ex_sources, LookupRegister(tokens[1], instruction_string, RegisterTable()));
             return;
         }
         // Aritmética de 2 operandos - "fcvtzs w0, d1" / "mov x0, xzr" / "neg x0, x1":
@@ -557,7 +576,7 @@ void InstructionArm64::SetAttributes(
         else {
             for (size_t i{2}; i < tokens.size(); ++i){
                 if (IsRegister(tokens[i], RegisterTable()) && !IsZeroRegister(tokens[i]))
-                    PushWithMasked(ex_source_registers, LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    PushWithMasked(ex_sources, LookupRegister(tokens[i], instruction_string, RegisterTable()));
             }
             if (!IsZeroRegister(tokens[1]))
                 PushWithMasked(dest_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
@@ -583,7 +602,7 @@ void InstructionArm64::SetAttributes(
             // - Fonte = flag 'cpsr';
             // Sem destino.
             else if (tokens[0].rfind("b.", 0) == 0) {
-                ex_source_registers.push_back(Register('G', 80));
+                ex_sources.push_back(Register('G', 80));
                 return;
             }
             // "bl func":
@@ -598,7 +617,7 @@ void InstructionArm64::SetAttributes(
             // Sem destino.
             else if (tokens[0] == "br") {
                 if (!IsZeroRegister(tokens[1]))
-                    PushWithMasked(ex_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                    PushWithMasked(ex_sources, LookupRegister(tokens[1], instruction_string, RegisterTable()));
                 return;
             }
             // "blr x0":
@@ -606,7 +625,7 @@ void InstructionArm64::SetAttributes(
             // - Destino = link register (x30);
             else if (tokens[0] == "blr") {
                 if (!IsZeroRegister(tokens[1]))
-                    PushWithMasked(ex_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                    PushWithMasked(ex_sources, LookupRegister(tokens[1], instruction_string, RegisterTable()));
                 dest_registers.push_back(Register('L', 30, 0xFF));
                 return;
             }
@@ -615,7 +634,7 @@ void InstructionArm64::SetAttributes(
             // Sem destino.
             else if (tokens[0] == "ret") {
                 if (!IsZeroRegister(tokens[1]))
-                    PushWithMasked(ex_source_registers, LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                    PushWithMasked(ex_sources, LookupRegister(tokens[1], instruction_string, RegisterTable()));
                 return;
             }
         }
@@ -626,7 +645,7 @@ void InstructionArm64::SetAttributes(
         // - Fonte = link register (x30);
         // Sem destino.
         if (type == INSTRUCTION_TYPE::BRANCH && tokens[0] == "ret") {
-            ex_source_registers.push_back(Register('L', 30, 0xFF));
+            ex_sources.push_back(Register('L', 30, 0xFF));
             return;
         }
         // "nop":
@@ -645,9 +664,12 @@ void InstructionArm64::SetAttributes(
 // Verifica se os destinos e fontes correspondem à sintaxe da linguagem.
 // - Aborta em caso contrário, sem possibilidade de escrita incorreta.
 void InstructionArm64::ValidateInstruction(
-    const std::vector<std::string>& tokens
+    const std::vector<std::string>& tokens,
+    const INSTRUCTION_TYPE          instruction_type
 
 ){
+    static_cast<void>(tokens);
+    static_cast<void>(instruction_type);
     /*
     // 1. Destinos nominais devem ser invariavelmente registradores.
     for (int pos : expected_dests) {

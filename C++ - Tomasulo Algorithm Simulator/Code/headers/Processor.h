@@ -13,7 +13,6 @@
 #include "Architecture.h"
 #include <string>
 #include <vector>
-#include <tuple>      // para passar e receber as instruções de troca de thread na Granulação Grossa
 #include <cstdlib>    // para std::abort
 #include <iostream>   // para std::cerr
 
@@ -55,7 +54,7 @@ class Processor {
             const std::vector<int>& = {},
             const std::vector<int>& = {},
             const std::vector<int>& = {},
-            const std::vector<std::tuple<int,int,int>>& = {},
+            const std::vector<LATENCY_OVERRIDE>& = {},
             const ARCHITECTURE = ARCHITECTURE::SIMPLIFIED
         );
 

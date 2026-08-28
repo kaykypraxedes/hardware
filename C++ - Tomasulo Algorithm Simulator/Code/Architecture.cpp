@@ -69,13 +69,22 @@ std::vector<int> Instruction::base_mem_latencies
 int Instruction::GetPosition()   const { return position; }
 
 // Público:
-int Instruction::GetExLatency()  const { return ex_latency; }
+int Instruction::GetExLatency()  const {
+    ValidateStageVectors();
+    return ex_latencies.front();
+}
 
 // Público:
-int Instruction::GetMemLatency() const { return mem_latency; }
+int Instruction::GetMemLatency() const {
+    ValidateStageVectors();
+    return mem_latencies.front();
+}
 
 // Público:
-INSTRUCTION_TYPE Instruction::GetInstructionType() const { return type; }
+INSTRUCTION_TYPE Instruction::GetInstructionType() const {
+    ValidateStageVectors();
+    return instruction_types.front();
+}
 
 // Público:
 const std::string& Instruction::GetInstructionString()            const { return instruction_string; }
@@ -84,10 +93,49 @@ const std::string& Instruction::GetInstructionString()            const { return
 const std::vector<Register>& Instruction::GetDestRegisters()      const { return dest_registers; }
 
 // Público:
-const std::vector<Register>& Instruction::GetExSourceRegisters()  const { return ex_source_registers; }
+const std::vector<Register>& Instruction::GetExSourceRegisters()  const {
+    ValidateStageVectors();
+    return ex_source_registers.front();
+}
 
 // Público:
-const std::vector<Register>& Instruction::GetMemSourceRegisters() const { return mem_source_registers; }
+const std::vector<Register>& Instruction::GetMemSourceRegisters() const {
+    ValidateStageVectors();
+    return mem_source_registers.front();
+}
+
+// Público:
+const std::vector<INSTRUCTION_TYPE>& Instruction::GetInstructionTypes() const {
+    ValidateStageVectors();
+    return instruction_types;
+}
+
+// Público:
+const std::vector<int>& Instruction::GetExLatencies() const {
+    ValidateStageVectors();
+    return ex_latencies;
+}
+
+// Público:
+const std::vector<int>& Instruction::GetMemLatencies() const {
+    ValidateStageVectors();
+    return mem_latencies;
+}
+
+// Público:
+const std::vector<std::vector<Register>>& Instruction::GetAllExSourceRegisters() const {
+    ValidateStageVectors();
+    return ex_source_registers;
+}
+
+// Público:
+const std::vector<std::vector<Register>>& Instruction::GetAllMemSourceRegisters() const {
+    ValidateStageVectors();
+    return mem_source_registers;
+}
+
+// Público:
+const std::string& Instruction::GetCurrentRS() const { return current_rs; }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
@@ -107,19 +155,23 @@ Instruction::Instruction(
 void Instruction::Parse(
     const std::string& str
 ){
+    // Limpa qualquer dado de instrução que poderia existir.
+    // - Reutilização de instruções em contextos como reescrita de registradores.
     instruction_string.clear();
-    type = INSTRUCTION_TYPE::INVALID;
-    ex_latency = 0;
-    mem_latency = 0;
+    instruction_types.clear();
+    ex_latencies.clear();
+    mem_latencies.clear();
     dest_registers.clear();
     ex_source_registers.clear();
     mem_source_registers.clear();
+    current_rs.clear();
 
     // Verifica se foi passado uma string vazia.
     if (str.empty()) {
         std::cerr << "[ERRO] String vazia passada como instrução!\n";
         std::abort();
     }
+    instruction_string = str;
 
     std::vector<std::string> tokens{SplitInstruction(str)};
 
@@ -131,45 +183,148 @@ void Instruction::Parse(
             "- Instrução: " << str << '\n';
         std::abort();
     }
-    if (!IdentifyType(tokens)) {
+    if (!SetStages(tokens)) {
         std::cerr << "[ERRO] Instrução não suportada por essa arquitetura: " << tokens[0] << '\n';
         std::abort();
     }
-
-    // Camada de validação:
-    // - Verifica se a sintaxe da instrução está correta.
-    // - Busca reduzida por restringir o tipo com "IndentifyType()".
-    ValidateInstruction(tokens);
-
-    // Termina de salvar suas informações.
+    ValidateStageVectors();
+    ValidateLatencies(ex_latencies, mem_latencies);
     NormalizeInstruction(tokens);
-    SetAttributes(tokens);
-    SetLatencies();
+}
+
+// Público:
+void Instruction::SetLatencies(
+    const std::vector<int>& new_ex_latencies,
+    const std::vector<int>& new_mem_latencies
+) {
+    ValidateStageVectors();
+
+    // Confirma o contrato do override antes de montar o estado efetivo.
+    if (new_ex_latencies.size() != instruction_types.size() ||
+        new_mem_latencies.size() != instruction_types.size()) {
+        std::cerr << "[ERRO] Quantidade de latências diferente da quantidade de etapas.\n";
+        std::abort();
+    }
+
+    // Zero em MEM restaura o valor-base correspondente à etapa.
+    std::vector<int> effective_mem_latencies;
+    effective_mem_latencies.reserve(instruction_types.size());
+    for (std::size_t i{}; i < instruction_types.size(); i++) {
+        const int override_latency{new_mem_latencies[i]};
+        effective_mem_latencies.push_back(
+            override_latency == 0 ?
+                GetBaseMemLatency(instruction_types[i]) :
+                override_latency
+        );
+    }
+
+    // Valida o plano completo antes de modificar qualquer vetor interno.
+    ValidateLatencies(new_ex_latencies, effective_mem_latencies);
+    ex_latencies = new_ex_latencies;
+    mem_latencies = effective_mem_latencies;
+}
+
+// Público:
+void Instruction::SetCurrentRS(
+    const std::string& rs
+){
+    current_rs = rs;
+}
+
+// Público:
+void Instruction::AdvanceStage() {
+    ValidateStageVectors();
+    if (instruction_types.size() == 1) {
+        std::cerr << "[ERRO] A etapa final da instrução não pode ser removida.\n";
+        std::abort();
+    }
+
+    RemoveCurrentStage();
+    current_rs.clear();
+    ValidateStageVectors();
+    ValidateLatencies(ex_latencies, mem_latencies);
+}
+
+// Protegido:
+void Instruction::AddStage(
+    const INSTRUCTION_TYPE       instruction_type,
+    const std::vector<Register>& ex_sources,
+    const std::vector<Register>& mem_sources
+){
+    if (instruction_type == INSTRUCTION_TYPE::INVALID) {
+        std::cerr << "[ERRO] Não é possível adicionar uma etapa inválida.\n";
+        std::abort();
+    }
+
+    instruction_types.push_back(instruction_type);
+    ex_latencies.push_back(base_ex_latencies[static_cast<int>(instruction_type)]);
+    mem_latencies.push_back(GetBaseMemLatency(instruction_type));
+    ex_source_registers.push_back(ex_sources);
+    mem_source_registers.push_back(mem_sources);
 }
 
 // Privado:
-void Instruction::SetLatencies() {
-    if (type == INSTRUCTION_TYPE::LOAD) {
-        mem_latency = base_mem_latencies[0];
-    } else if (type == INSTRUCTION_TYPE::STORE) {
-        mem_latency = base_mem_latencies[1];
+int Instruction::GetBaseMemLatency(
+    const INSTRUCTION_TYPE instruction_type
+) {
+    if (instruction_type == INSTRUCTION_TYPE::LOAD) {
+        return base_mem_latencies[0];
     }
-    // "enums" tradicionais (sem um valor atribuido) podem ser convertidos para int (ordem -> valor int).
-    ex_latency = base_ex_latencies[static_cast<int>(type)];
+    if (instruction_type == INSTRUCTION_TYPE::STORE) {
+        return base_mem_latencies[1];
+    }
+    return 0;
 }
 
-// Público:
-void Instruction::SetExLatency(
-    const int latency
-){
-    ex_latency = latency;
+// Privado:
+void Instruction::ValidateStageVectors() const {
+    const std::size_t stage_count{instruction_types.size()};
+    if (stage_count == 0 ||
+        ex_latencies.size()         != stage_count ||
+        mem_latencies.size()        != stage_count ||
+        ex_source_registers.size()  != stage_count ||
+        mem_source_registers.size() != stage_count) {
+        std::cerr << "[ERRO] Vetores de etapas da instrução estão desalinhados.\n";
+        std::abort();
+    }
 }
 
-// Público:
-void Instruction::SetMemLatency(
-    const int latency
-){
-    mem_latency = latency;
+// Privado:
+void Instruction::ValidateLatencies(
+    const std::vector<int>& ex_values,
+    const std::vector<int>& mem_values
+) const {
+    if (ex_values.size() != instruction_types.size() ||
+        mem_values.size() != instruction_types.size()) {
+        std::cerr << "[ERRO] Vetores de latências desalinhados com as etapas.\n";
+        std::abort();
+    }
+
+    for (std::size_t i{}; i < instruction_types.size(); i++) {
+        if (ex_values[i] <= 0) {
+            std::cerr << "[ERRO] Latência de EX deve ser positiva.\n";
+            std::abort();
+        }
+
+        const bool uses_memory{
+            instruction_types[i] == INSTRUCTION_TYPE::LOAD ||
+            instruction_types[i] == INSTRUCTION_TYPE::STORE
+        };
+        if ((uses_memory && mem_values[i] <= 0) ||
+            (!uses_memory && mem_values[i] != 0)) {
+            std::cerr << "[ERRO] Latência de MEM incompatível com o tipo da etapa.\n";
+            std::abort();
+        }
+    }
+}
+
+// Privado:
+void Instruction::RemoveCurrentStage() {
+    instruction_types.erase(instruction_types.begin());
+    ex_latencies.erase(ex_latencies.begin());
+    mem_latencies.erase(mem_latencies.begin());
+    ex_source_registers.erase(ex_source_registers.begin());
+    mem_source_registers.erase(mem_source_registers.begin());
 }
 
 } // namespace processor

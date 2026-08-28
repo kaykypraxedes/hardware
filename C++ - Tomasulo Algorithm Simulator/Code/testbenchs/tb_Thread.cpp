@@ -66,19 +66,19 @@ int main() {
         check("IsSwitchCycle() consome a marcação (não repete)", !t.IsSwitchCycle());
     }
 
-    section("1.4 new_latency no construtor");
+    section("1.4 latency_overrides no construtor");
     {
         std::vector<std::string> prog = {"l.d f2, 0(r1)"};
 
-        Thread t1(prog);  // sem new_latency
+        Thread t1(prog);  // sem latency_overrides
         check("exLat base == 1",  t1.GetTable()[0].instruction->GetExLatency()  == 1);
         check("memLat base == 1", t1.GetTable()[0].instruction->GetMemLatency() == 1);
 
-        Thread t2(prog, {{0, 3, 2}});  // ex=3, mem=2
+        Thread t2(prog, {{0, {3}, {2}}});  // ex=3, mem=2
         check("exLat == 3",  t2.GetTable()[0].instruction->GetExLatency()  == 3);
         check("memLat == 2", t2.GetTable()[0].instruction->GetMemLatency() == 2);
 
-        Thread t3(prog, {{0, 5, 0}});  // ex=5, mem=0 → não altera mem
+        Thread t3(prog, {{0, {5}, {0}}});  // ex=5, mem=0 → preserva a base
         check("exLat == 5", t3.GetTable()[0].instruction->GetExLatency()  == 5);
         check("memLat continua 1 (base)", t3.GetTable()[0].instruction->GetMemLatency() == 1);
     }
@@ -293,8 +293,8 @@ int main() {
     section("3.5 s.d f2,0(r1) COM ROB — RS liberada logo após o EX; latência de MEM simulada no Commit()");
     {
         std::vector<std::string> prog = {"s.d f2, 0(r1)"};
-        // mem_latency = 3 (via new_latency) para deixar visível a simulação multi-ciclo no Commit().
-        Thread t(prog, {{0, 1, 3}}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/4);
+        // mem_latency = 3 (via latency_overrides) para deixar visível a simulação multi-ciclo no Commit().
+        Thread t(prog, {{0, {1}, {3}}}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/4);
 
         t.Issue(1);
         t.ExMem(2); t.Wr(2); // IS -> EX (ex_cycles == [2,2], lat=1)
@@ -365,6 +365,35 @@ int main() {
               tab[0].wr_cycle != tab[1].wr_cycle);
         check("WAW: ambas as RS de int_basic ficaram livres no fim",
               !t.GetRS().int_basic[0].IsBusy() && !t.GetRS().int_basic[1].IsBusy());
+    }
+
+    section("4.2.1 WAW+RAW: produtor antigo não libera consumidor do mais novo");
+    {
+        std::vector<std::string> prog{
+            "add r3, r1, r2",
+            "mul r3, r4, r5",
+            "sub r6, r3, r7"
+        };
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
+
+        t.Issue(1);
+        t.Issue(2);
+        t.Issue(3);
+
+        t.ExMem(2); t.Wr(2);
+        t.ExMem(3); t.Wr(3);
+        check("WR do produtor posição 0 ocorreu primeiro", t.GetTable()[0].wr_cycle == 3);
+        check("consumidor continua bloqueado pelo produtor posição 1",
+            t.GetTable()[2].ex_cycles.empty());
+
+        for (int cycle = 4; cycle <= 7; cycle++) {
+            t.ExMem(cycle);
+            t.Wr(cycle);
+        }
+        check("produtor mais novo também concluiu", t.GetTable()[1].wr_cycle > 0);
+        check("consumidor iniciou somente após o WR do produtor mais novo",
+            !t.GetTable()[2].ex_cycles.empty() &&
+            t.GetTable()[2].ex_cycles.front() > t.GetTable()[1].wr_cycle);
     }
 
     section("4.3 Hazard estrutural de FU: 2 muls disputando a única FU int_mult_div_alu");
@@ -469,10 +498,10 @@ int main() {
 
     section("5.4 Branch SEM ROB com EX latência 4: add só entra em EX após o branch terminar");
     {
-        // bnez com exLat=4 (via new_latency). Com 1 FU o add também seria atrasado
+        // bnez com exLat=4 (via latency_overrides). Com 1 FU o add também seria atrasado
         // por hazard estrutural — a flag e a FU agem na mesma direção.
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
-        Thread t(prog, {{0, 4, 0}}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
+        Thread t(prog, {{0, {4}, {0}}}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
 
         t.Issue(1); t.Issue(1); // despacho largura 2 no ciclo 1
         cycle(t, 2);            // bnez entra em EX (2-5); add filtrado pela flag
@@ -496,7 +525,7 @@ int main() {
         // o add só pode entrar em EX quando a flag for limpa (fim do EX do branch).
         std::vector<int> fus_custom = {1, 2, 1, 1, 1, 1};
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
-        Thread t(prog, {{0, 4, 0}}, DEFAULT_NUM_RS, fus_custom);
+        Thread t(prog, {{0, {4}, {0}}}, DEFAULT_NUM_RS, fus_custom);
 
         t.Issue(1); t.Issue(1); // despacho largura 2 no ciclo 1
         cycle(t, 2);             // bnez entra em EX (2-5); add filtrado pela flag

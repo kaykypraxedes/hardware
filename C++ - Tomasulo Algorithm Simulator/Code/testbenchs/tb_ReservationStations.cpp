@@ -9,17 +9,14 @@
 
 using namespace processor;
 
-// Público:
-// Helper do testbench: monta uma instrução pelo MESMO caminho que a Thread
-// usa (InstructionFactory::ParseTrace -> shared_ptr), pois o construtor
-// legado "Instruction(posição, string)" não existe mais (D14).
-static std::shared_ptr<Instruction> make_inst(const std::string& line) {
-    std::vector<std::string> lines{line};
-    std::vector<std::unique_ptr<Instruction>> parsed =
-        InstructionFactory::ParseTrace(lines, ARCHITECTURE::SIMPLIFIED);
-    // A Factory atribui a posição pelo índice da linha (aqui, sempre 0);
-    // nenhum teste desta suíte depende da posição.
-    return std::shared_ptr<Instruction>(std::move(parsed[0]));
+// Monta uma instrução simplificada com posição lógica controlada pelo teste.
+static std::shared_ptr<Instruction> make_inst(
+    const std::string& line,
+    const int          position = 0
+) {
+    auto instruction{std::make_shared<InstructionSimplified>(position)};
+    instruction->Parse(line);
+    return instruction;
 }
 
 static CDB makeCDB() {
@@ -50,8 +47,9 @@ static FUNCTIONAL_UNITS makeFU(int n = 2) {
 // Verifica se TODAS as posições de um vetor de dependências (ex_Q/mem_Q) já
 // foram resolvidas — útil quando o teste não precisa checar uma posição
 // específica, só "nada está pendente".
-static bool all_resolved(const std::vector<std::pair<std::string,int>>& q) {
-    for (const auto& p : q) if (!p.first.empty()) return false;
+static bool all_resolved(const std::vector<int>& q) {
+    for (const int producer_position : q)
+        if (producer_position != -1) return false;
     return true;
 }
 
@@ -87,7 +85,7 @@ int main() {
     {
         RS rs("int0");
         CDB cdb = makeCDB();
-        auto instr = make_inst("add r3, r1, r2");
+        auto instr = make_inst("add r3, r1, r2", 0);
         bool ok = rs.AddIssue(instr, cdb, 1);
         check("AddIssue() retorna true",
             ok);
@@ -103,8 +101,12 @@ int main() {
               rs.GetInstructions().size() == 1 && rs.GetInstructions()[0] == "add    r3, r1, r2");
         check("GetTimes()[0] == 1 (ciclo de issue)",
               rs.GetTimes().size() == 1 && rs.GetTimes()[0] == 1);
-        check("CDB.R[3].GetCurrentRS() == 'int0'",
-            R(cdb, 3).GetCurrentRS() == "int0");
+        check("CDB.R[3].GetCurrentProducer() == 0",
+            R(cdb, 3).GetCurrentProducer() == 0);
+        check("Instruction::GetCurrentRS() == 'int0'",
+            instr->GetCurrentRS() == "int0");
+        check("histórico do produtor preserva 'int0'",
+            R(cdb, 3).GetAllocatedRS() == std::vector<std::string>{"int0"});
     }
 
     section("2.2 AddIssue() — RS ocupada retorna false");
@@ -114,7 +116,7 @@ int main() {
         auto instr = make_inst("add r3, r1, r2");
         rs.AddIssue(instr, cdb, 1);
 
-        auto instr2 = make_inst("sub r5, r1, r2");
+        auto instr2 = make_inst("sub r5, r1, r2", 1);
         bool dup = rs.AddIssue(instr2, cdb, 2);
         check("AddIssue em RS ocupada retorna false", !dup);
     }
@@ -123,14 +125,14 @@ int main() {
     {
         RS rs("fmul0");
         CDB cdb = makeCDB();
-        std::string prod = "load0";
-        F(cdb, 2).AllocateRS(prod, 1);
+        const int producer_position{7};
+        F(cdb, 2).AllocateProducer(producer_position, "load0", 1);
 
-        auto instr = make_inst("mul.d f4, f2, f0");
+        auto instr = make_inst("mul.d f4, f2, f0", 0);
         rs.AddIssue(instr, cdb, 2);
-        check("ex_Q[0] == 'load0' (f2 pendente)", rs.GetExQ()[0].first == "load0");
-        check("ex_Q[1] vazio (f0 livre)",         rs.GetExQ()[1].first.empty());
-        check("CDB.F[4] -> 'fmul0'",              F(cdb, 4).GetCurrentRS() == "fmul0");
+        check("ex_Q[0] == 7 (f2 pendente)", rs.GetExQ()[0] == producer_position);
+        check("ex_Q[1] == -1 (f0 livre)",   rs.GetExQ()[1] == -1);
+        check("CDB.F[4] -> produtor 0",      F(cdb, 4).GetCurrentProducer() == 0);
     }
 
     section("2.4 AddIssue() — 'add r1, r1, r2' sem auto-dependência");
@@ -154,8 +156,19 @@ int main() {
             ok);
         check("ex_Q com 2 posições (r1, r2), ambas resolvidas",
             rs.GetExQ().size() == 2 && all_resolved(rs.GetExQ()));
-        check("CDB HI marcado com produtor 'intmul1'", HI(cdb).GetCurrentRS() == "intmul1");
-        check("CDB LO marcado com produtor 'intmul1'", LO(cdb).GetCurrentRS() == "intmul1");
+        check("CDB HI marcado com produtor 0", HI(cdb).GetCurrentProducer() == 0);
+        check("CDB LO marcado com produtor 0", LO(cdb).GetCurrentProducer() == 0);
+        check("histórico de HI preserva 'intmul1'",
+            HI(cdb).GetAllocatedRS() == std::vector<std::string>{"intmul1"});
+    }
+
+    section("2.6 AddIssue() — posição lógica negativa aborta");
+    {
+        check("instrução sem posição válida é rejeitada", Aborts([]() {
+            RS rs("int_invalid");
+            CDB cdb = makeCDB();
+            rs.AddIssue(make_inst("add r3, r1, r2", -1), cdb, 1);
+        }));
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -188,17 +201,17 @@ int main() {
         RS rs("fmul1");
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
-        std::string prod = "load0";
-        F(cdb, 2).AllocateRS(prod, 1);
+        const int producer_position{7};
+        F(cdb, 2).AllocateProducer(producer_position, "load0", 1);
 
         auto instr = make_inst("mul.d f4, f2, f0");
         rs.AddIssue(instr, cdb, 2);
-        check("ex_Q[0] == 'load0' antes de liberar", rs.GetExQ()[0].first == "load0");
+        check("ex_Q[0] == 7 antes de liberar", rs.GetExQ()[0] == producer_position);
 
         bool before = rs.UpdateDependencies(cdb, fu, 3);
         check("UpdateDependencies retorna false com ex_Q[0] pendente", !before);
 
-        F(cdb, 2).DeallocateRS("load0", 1, 3);
+        F(cdb, 2).DeallocateProducer(producer_position, 3);
         bool after = rs.UpdateDependencies(cdb, fu, 4);
         check("UpdateDependencies retorna true após ex_Q[0] liberado", after);
         check("fase == EX após liberar", rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::EX);
@@ -209,14 +222,15 @@ int main() {
         RS rs("store1");
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
-        F(cdb, 8).AllocateRS("fmul2", 1); // dado (f8) pendente; endereço (r1) livre
+        const int producer_position{8};
+        F(cdb, 8).AllocateProducer(producer_position, "fmul2", 1); // dado (f8) pendente; endereço (r1) livre
 
         auto instr = make_inst("s.d f8, 0(r1)");
         rs.AddIssue(instr, cdb, 2);
         check("ex_Q (endereço) vazio",
             all_resolved(rs.GetExQ()));
-        check("mem_Q[0] == 'fmul2' (dado pendente)",
-            rs.GetMemQ().size() == 1 && rs.GetMemQ()[0].first == "fmul2");
+        check("mem_Q[0] == 8 (dado pendente)",
+            rs.GetMemQ().size() == 1 && rs.GetMemQ()[0] == producer_position);
 
         bool entered_ex = rs.UpdateDependencies(cdb, fu, 3);
         check("STORE entra em EX mesmo com dado (mem_Q) pendente — EX só olha ex_Q", entered_ex);
@@ -227,7 +241,7 @@ int main() {
         bool blocked = rs.UpdateDependencies(cdb, fu, 4);
         check("MEM bloqueado enquanto mem_Q não resolve", !blocked);
 
-        F(cdb, 8).DeallocateRS("fmul2", 1, 5);
+        F(cdb, 8).DeallocateProducer(producer_position, 5);
         bool mem_ok = rs.UpdateDependencies(cdb, fu, 5);
         check("MEM inicia após dado (mem_Q) resolvido", mem_ok);
     }
@@ -237,12 +251,13 @@ int main() {
         RS rs("store2");
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
-        R(cdb, 9).AllocateRS("int5", 1); // endereço pendente
+        const int producer_position{9};
+        R(cdb, 9).AllocateProducer(producer_position, "int5", 1); // endereço pendente
 
         auto instr = make_inst("s.d f0, 0(r9)");
         rs.AddIssue(instr, cdb, 2);
-        check("ex_Q[0] == 'int5' (endereço pendente)",
-            rs.GetExQ().size() == 1 && rs.GetExQ()[0].first == "int5");
+        check("ex_Q[0] == 9 (endereço pendente)",
+            rs.GetExQ().size() == 1 && rs.GetExQ()[0] == producer_position);
 
         bool blocked = rs.UpdateDependencies(cdb, fu, 3);
         check("STORE não entra em EX com endereço (ex_Q) pendente", !blocked);
@@ -253,22 +268,48 @@ int main() {
     {
         RS rs("fmul3");
         CDB cdb = makeCDB();
-        F(cdb, 2).AllocateRS("load2", 1);
+        const int producer_position{12};
+        F(cdb, 2).AllocateProducer(producer_position, "load2", 1);
 
-        auto instr = make_inst("mul.d f4, f2, f0");
+        auto instr = make_inst("mul.d f4, f2, f0", 0);
         rs.AddIssue(instr, cdb, 2);
-        check("ex_Q[0] == 'load2' antes do broadcast", rs.GetExQ()[0].first == "load2");
+        check("ex_Q[0] == 12 antes do broadcast", rs.GetExQ()[0] == producer_position);
 
-        rs.ResolveDependency("load2", F(cdb, 2));
-        check("ex_Q[0] limpo após ResolveDependency",  rs.GetExQ()[0].first.empty());
+        rs.ResolveDependency(producer_position, F(cdb, 2));
+        check("ex_Q[0] limpo após ResolveDependency", rs.GetExQ()[0] == -1);
 
-        // rs_id que não bate não deve afetar nada
+        // Posição lógica diferente não deve afetar nada.
         RS rs2("fmul4");
-        F(cdb, 10).AllocateRS("load3", 1);
-        auto instr2 = make_inst("mul.d f12, f10, f0");
+        const int other_producer{13};
+        F(cdb, 10).AllocateProducer(other_producer, "load3", 1);
+        auto instr2 = make_inst("mul.d f12, f10, f0", 1);
         rs2.AddIssue(instr2, cdb, 2);
-        rs2.ResolveDependency("outro_produtor_qualquer", F(cdb, 10));
-        check("ResolveDependency com rs_id que não bate não altera ex_Q", rs2.GetExQ()[0].first == "load3");
+        rs2.ResolveDependency(99, F(cdb, 10));
+        check("ResolveDependency com posição diferente não altera ex_Q",
+            rs2.GetExQ()[0] == other_producer);
+    }
+
+    section("3.6 WAW — produtor antigo não resolve dependência do mais novo");
+    {
+        RS rs("fmul_waw");
+        CDB cdb = makeCDB();
+        FUNCTIONAL_UNITS fu = makeFU();
+        Register& source{F(cdb, 2)};
+        source.AllocateProducer(30, "load0", 1);
+        source.AllocateProducer(31, "load1", 2);
+
+        auto instruction = make_inst("mul.d f4, f2, f0", 32);
+        rs.AddIssue(instruction, cdb, 3);
+        check("Q captura somente o produtor lógico mais novo", rs.GetExQ()[0] == 31);
+
+        source.DeallocateProducer(30, 4);
+        rs.ResolveDependency(30, source);
+        check("broadcast antigo não limpa Q do produtor novo", rs.GetExQ()[0] == 31);
+        check("instrução continua bloqueada", !rs.UpdateDependencies(cdb, fu, 4));
+
+        source.DeallocateProducer(31, 5);
+        check("instrução inicia após o produtor correto finalizar",
+            rs.UpdateDependencies(cdb, fu, 5));
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -282,31 +323,33 @@ int main() {
     {
         RS rs("int8");
         CDB cdb = makeCDB();
-        R(cdb, 2).AllocateRS("load4", 1); // r2 (2a fonte) pendente; r1 (1a fonte) livre
+        const int producer_position{14};
+        R(cdb, 2).AllocateProducer(producer_position, "load4", 1); // r2 (2a fonte) pendente; r1 (1a fonte) livre
 
         auto instr = make_inst("add r3, r1, r2");
         rs.AddIssue(instr, cdb, 2);
 
-        check("ex_Q[0].first vazio (r1 estava livre)",       rs.GetExQ()[0].first.empty());
-        check("ex_Q[1].first == 'load4' (r2 pendente)",      rs.GetExQ()[1].first == "load4");
+        check("ex_Q[0] == -1 (r1 estava livre)", rs.GetExQ()[0] == -1);
+        check("ex_Q[1] == 14 (r2 pendente)",     rs.GetExQ()[1] == producer_position);
     }
 
     section("4.2 Mesmo produtor em duas posições — 'add r3, r1, r1' com r1 pendente");
     {
         RS rs("int9");
         CDB cdb = makeCDB();
-        R(cdb, 1).AllocateRS("load5", 1);
+        const int producer_position{15};
+        R(cdb, 1).AllocateProducer(producer_position, "load5", 1);
 
         auto instr = make_inst("add r3, r1, r1");
         rs.AddIssue(instr, cdb, 2);
-        check("ex_Q[0] == 'load5'",
-            rs.GetExQ()[0].first == "load5");
-        check("ex_Q[1] == 'load5' (mesma dependência nas duas posições)",
-            rs.GetExQ()[1].first == "load5");
+        check("ex_Q[0] == 15",
+            rs.GetExQ()[0] == producer_position);
+        check("ex_Q[1] == 15 (mesma dependência nas duas posições)",
+            rs.GetExQ()[1] == producer_position);
 
-        rs.ResolveDependency("load5", R(cdb, 1));
+        rs.ResolveDependency(producer_position, R(cdb, 1));
         check("ResolveDependency limpa AMBAS as posições de uma vez",
-            rs.GetExQ()[0].first.empty() && rs.GetExQ()[1].first.empty());
+            rs.GetExQ()[0] == -1 && rs.GetExQ()[1] == -1);
     }
 
     section("4.3 Encadeamento via HI/LO — 'mflo' depende do 'lo' produzido por um 'mult' anterior");
@@ -316,15 +359,15 @@ int main() {
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
 
-        auto i_mult = make_inst("mult r1, r2");
+        auto i_mult = make_inst("mult r1, r2", 16);
         rs_mult.AddIssue(i_mult, cdb, 1); // hi/lo ficam pendentes de 'intmul2'
 
-        auto i_mflo = make_inst("mflo r3");
+        auto i_mflo = make_inst("mflo r3", 17);
         rs_mflo.AddIssue(i_mflo, cdb, 2);
-        check("mflo: ex_Q[0] == 'intmul2' (lo ainda pendente do mult)",
-            rs_mflo.GetExQ().size() == 1 && rs_mflo.GetExQ()[0].first == "intmul2");
+        check("mflo: ex_Q[0] == 16 (lo ainda pendente do mult)",
+            rs_mflo.GetExQ().size() == 1 && rs_mflo.GetExQ()[0] == 16);
 
-        LO(cdb).DeallocateRS("intmul2", 1, 3); // simula fim do broadcast do mult
+        LO(cdb).DeallocateProducer(16, 3); // simula fim do broadcast do mult
         bool started = rs_mflo.UpdateDependencies(cdb, fu, 3);
         check("mflo entra em EX assim que 'lo' é liberado", started);
     }
@@ -341,36 +384,6 @@ int main() {
         bool started = rs.UpdateDependencies(cdb, fu, 2);
         check("lui: entra em EX imediatamente (vetor vazio não bloqueia)", started);
     }
-
-    /*
-    // Teste das flags de segurança do programa (abortam a execução):
-
-    section("[ABORT] TryAllocateFU com ex_latency == 0 (via SetExLatency)");
-    {
-        RS rs("int_abort0");
-        CDB cdb = makeCDB();
-        FUNCTIONAL_UNITS fu = makeFU();
-        auto instr = make_inst("add r3, r1, r2");
-        instr->SetExLatency(0);
-        rs.AddIssue(instr, cdb, 1);
-        rs.UpdateDependencies(cdb, fu, 2); // deve abortar dentro de TryAllocateFU (EX)
-        std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
-    }
-
-    section("[ABORT] TryAllocateFU com mem_latency == 0 (LOAD, via SetMemLatency)");
-    {
-        RS rs("load_abort0");
-        CDB cdb = makeCDB();
-        FUNCTIONAL_UNITS fu = makeFU();
-        auto instr = make_inst("l.d f2, 0(r1)");
-        instr->SetMemLatency(0);
-        rs.AddIssue(instr, cdb, 1);
-        rs.UpdateDependencies(cdb, fu, 2); // EX normal (exLat de LOAD == 1)
-        rs.UpdateCountdown(fu, 2);         // fase avança para MEM
-        rs.UpdateDependencies(cdb, fu, 3); // deve abortar dentro de TryAllocateFU (MEM, latency 0)
-        std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
-    }
-    */
 
     // ════════════════════════════════════════════════════════════════════
     // 5. CONTAGEM DE CICLOS — PROGRESSÃO DE FASES (UpdateCountdown)
@@ -422,8 +435,8 @@ int main() {
         RS rs("store0");
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
-        std::string prod = "float_basico0";
-        F(cdb, 6).AllocateRS(prod, 1);
+        const int producer_position{18};
+        F(cdb, 6).AllocateProducer(producer_position, "float_basico0", 1);
 
         auto instr = make_inst("s.d f6, 0(r2)");
         rs.AddIssue(instr, cdb, 2);
@@ -433,7 +446,7 @@ int main() {
         check("STORE: fim do EX sinalizado", ex_done);
         check("STORE: countdown == -1 após EX (aguarda dado)", rs.GetCountdown() == -1);
 
-        F(cdb, 6).DeallocateRS("float_basico0", 1, 4);
+        F(cdb, 6).DeallocateProducer(producer_position, 4);
         bool mem_ok = rs.UpdateDependencies(cdb, fu, 4);
         check("STORE: UpdateDependencies inicia MEM após dado liberado", mem_ok);
         check("STORE: fase == MEM", rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM);
@@ -468,6 +481,7 @@ int main() {
         check("GetMemQ() vazio",                        rs.GetMemQ().empty());
         check("GetTimes() tem 2 entradas após Release", rs.GetTimes().size() == 2);
         check("GetTimes()[1] == 3 (ciclo de release)",  rs.GetTimes()[1] == 3);
+        check("Instruction::GetCurrentRS() vazio após Release", instr->GetCurrentRS().empty());
     }
 
     section("6.2 Release() após LOAD — caminho de liberação completo e reuso");
@@ -475,7 +489,7 @@ int main() {
         RS rs("load1");
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
-        auto instr = make_inst("l.d f4, 0(r2)");
+        auto instr = make_inst("l.d f4, 0(r2)", 0);
 
         rs.AddIssue(instr, cdb, 1);
         rs.UpdateDependencies(cdb, fu, 2);
@@ -496,7 +510,7 @@ int main() {
         check("LOAD: GetTimes().size() == 2",        rs.GetTimes().size() == 2);
         check("LOAD: GetTimes()[0] == 1 (issue)",    rs.GetTimes()[0] == 1);
         check("LOAD: GetTimes()[1] == 4 (release)",  rs.GetTimes()[1] == 4);
-        auto instr2 = make_inst("l.d f6, 0(r3)");
+        auto instr2 = make_inst("l.d f6, 0(r3)", 1);
         bool reuse = rs.AddIssue(instr2, cdb, 5);
         check("LOAD: RS pode ser reusada após Release",  reuse);
     }
@@ -507,14 +521,14 @@ int main() {
         CDB cdb = makeCDB();
         FUNCTIONAL_UNITS fu = makeFU();
 
-        auto i1 = make_inst("add r7, r1, r2");
+        auto i1 = make_inst("add r7, r1, r2", 20);
         rs.AddIssue(i1, cdb, 1);
         rs.UpdateDependencies(cdb, fu, 2);
         rs.UpdateCountdown(fu, 2);           // WR
-        R(cdb, 7).DeallocateRS("int7", 1, 3); // simula fim do broadcast
+        R(cdb, 7).DeallocateProducer(20, 3); // simula fim do broadcast
         rs.Release(3);
 
-        auto i2 = make_inst("add r7, r7, r1"); // lê e escreve r7 de novo, mesma RS
+        auto i2 = make_inst("add r7, r7, r1", 21); // lê e escreve r7 de novo, mesma RS
         rs.AddIssue(i2, cdb, 4);
         check("Sem autodependência espúria ao reler R7 já resolvido", all_resolved(rs.GetExQ()));
     }
@@ -538,8 +552,8 @@ int main() {
 
         CDB cdb = makeCDB();
         RS rs0("int0"), rs1("int1");
-        auto i0 = make_inst("add r3, r1, r2");
-        auto i1 = make_inst("sub r5, r3, r4");
+        auto i0 = make_inst("add r3, r1, r2", 0);
+        auto i1 = make_inst("sub r5, r3, r4", 1);
         rs0.AddIssue(i0, cdb, 1);
         rs1.AddIssue(i1, cdb, 1);
 
@@ -556,8 +570,8 @@ int main() {
         CDB cdb = makeCDB();
 
         RS rsA("load2"), rsB("load3");
-        auto ldA = make_inst("l.d f2, 0(r1)");
-        auto ldB = make_inst("l.d f4, 0(r2)");
+        auto ldA = make_inst("l.d f2, 0(r1)", 0);
+        auto ldB = make_inst("l.d f4, 0(r2)", 1);
         rsA.AddIssue(ldA, cdb, 1);
         rsB.AddIssue(ldB, cdb, 1);
 
@@ -581,9 +595,9 @@ int main() {
         CDB cdb = makeCDB();
 
         RS rsMul("intmul0"), rsDiv("intdiv0"), rsAdd("intbasic0");
-        auto iMul = make_inst("mult r1, r2"); // mult/div não têm destino explícito (vai para hi/lo)
-        auto iDiv = make_inst("div r1, r2");
-        auto iAdd = make_inst("add r6, r1, r2");
+        auto iMul = make_inst("mult r1, r2", 0); // mult/div não têm destino explícito (vai para hi/lo)
+        auto iDiv = make_inst("div r1, r2", 1);
+        auto iAdd = make_inst("add r6, r1, r2", 2);
         rsMul.AddIssue(iMul, cdb, 1);
         rsDiv.AddIssue(iDiv, cdb, 1);
         rsAdd.AddIssue(iAdd, cdb, 1);
@@ -606,9 +620,9 @@ int main() {
         CDB cdb = makeCDB();
 
         RS rsFadd("fbasic0"), rsFadd2("fbasic1"), rsFmul("fmul5");
-        auto iFadd = make_inst("add.d f2, f0, f4");
-        auto iFadd2 = make_inst("sub.d f8, f0, f4");
-        auto iFmul = make_inst("mul.d f6, f0, f4");
+        auto iFadd = make_inst("add.d f2, f0, f4", 0);
+        auto iFadd2 = make_inst("sub.d f8, f0, f4", 1);
+        auto iFmul = make_inst("mul.d f6, f0, f4", 2);
         rsFadd.AddIssue(iFadd, cdb, 1);
         rsFadd2.AddIssue(iFadd2, cdb, 1);
         rsFmul.AddIssue(iFmul, cdb, 1);
@@ -631,9 +645,9 @@ int main() {
         CDB cdb = makeCDB();
 
         RS rsFmul("fmul6"), rsFdiv("fdiv0"), rsFadd("fbasic2");
-        auto iFmul = make_inst("mul.d f6, f0, f4");
-        auto iFdiv = make_inst("div.d f10, f0, f4");
-        auto iFadd = make_inst("add.d f12, f0, f4");
+        auto iFmul = make_inst("mul.d f6, f0, f4", 0);
+        auto iFdiv = make_inst("div.d f10, f0, f4", 1);
+        auto iFadd = make_inst("add.d f12, f0, f4", 2);
         rsFmul.AddIssue(iFmul, cdb, 1);
         rsFdiv.AddIssue(iFdiv, cdb, 1);
         rsFadd.AddIssue(iFadd, cdb, 1);

@@ -634,57 +634,74 @@ InstructionX86Intel::MEMORY_OPERAND InstructionX86Intel::ParseMemoryOperand(
 }
 
 // Privado:
-bool InstructionX86Intel::IdentifyType(const std::vector<std::string>& tokens) {
+bool InstructionX86Intel::SetStages(const std::vector<std::string>& tokens) {
     const std::string op{ToLower(tokens[0])};
+    INSTRUCTION_TYPE instruction_type{INSTRUCTION_TYPE::INVALID};
 
     // Analisa os operandos uma única vez e guarda a estrutura usada nas etapas posteriores do Parse().
-    // - ValidateInstruction(), NormalizeInstruction() e SetAttributes() compartilham exatamente essa interpretação.
+    // - Validação, normalização e montagem das etapas compartilham exatamente essa interpretação.
     operands.clear();
     for (std::size_t i{1}; i < tokens.size(); i++) operands.push_back(ParseOperand(tokens[i]));
 
     // MOV: polimórfico (LOAD, STORE ou cópia registrador-registrador/imediato).
     if (ContainsOpcode(MOVS, op)) {
         if (tokens.size() != 3) return false;
-        if (operands[0].type == OPERAND_TYPE::MEMORY) { type = INSTRUCTION_TYPE::STORE; return true; }
-        if (operands[1].type == OPERAND_TYPE::MEMORY) { type = INSTRUCTION_TYPE::LOAD;  return true; }
+        if (operands[0].type == OPERAND_TYPE::MEMORY) {
+            instruction_type = INSTRUCTION_TYPE::STORE;
+        } else if (operands[1].type == OPERAND_TYPE::MEMORY) {
+            instruction_type = INSTRUCTION_TYPE::LOAD;
+        } else {
         // Sem memória envolvida:
         // - O tipo depende de QUAL registrador, não do nome do opcode.
-        type = ((operands[0].type == OPERAND_TYPE::REGISTER && IsFloatReg(operands[0].register_name)) ||
-                (operands[1].type == OPERAND_TYPE::REGISTER && IsFloatReg(operands[1].register_name)))
-               ? INSTRUCTION_TYPE::FLOAT_BASIC
-               : INSTRUCTION_TYPE::INT_BASIC;
-        return true;
-    }
-
-    // MOVSX/MOVZX: polimórficos por outro eixo (largura muda entre dest/fonte).
-    // - Viram LOAD quando a fonte é memória; aritmética pura (INT_BASIC) quando é registrador.
-    if (ContainsOpcode(MOVSX_MOVZX, op)) {
+            instruction_type =
+                ((operands[0].type == OPERAND_TYPE::REGISTER && IsFloatReg(operands[0].register_name)) ||
+                 (operands[1].type == OPERAND_TYPE::REGISTER && IsFloatReg(operands[1].register_name)))
+                ? INSTRUCTION_TYPE::FLOAT_BASIC
+                : INSTRUCTION_TYPE::INT_BASIC;
+        }
+    } else if (ContainsOpcode(MOVSX_MOVZX, op)) {
+        // MOVSX/MOVZX: LOAD quando a fonte é memória; INT_BASIC quando é registrador.
         if (tokens.size() != 3) return false;
-        type = operands[1].type == OPERAND_TYPE::MEMORY
-               ? INSTRUCTION_TYPE::LOAD
-               : INSTRUCTION_TYPE::INT_BASIC;
-        return true;
+        instruction_type = operands[1].type == OPERAND_TYPE::MEMORY
+                           ? INSTRUCTION_TYPE::LOAD
+                           : INSTRUCTION_TYPE::INT_BASIC;
+    } else if (ContainsOpcode(INT_BASIC, op)) {
+        instruction_type = INSTRUCTION_TYPE::INT_BASIC;
+    } else if (ContainsOpcode(BRANCHES, op)) {
+        instruction_type = INSTRUCTION_TYPE::BRANCH;
+    } else if (ContainsOpcode(INT_MUL, op)) {
+        instruction_type = INSTRUCTION_TYPE::INT_MUL;
+    } else if (ContainsOpcode(INT_DIV, op)) {
+        instruction_type = INSTRUCTION_TYPE::INT_DIV;
+    } else if (ContainsOpcode(FLOAT_BASIC, op)) {
+        instruction_type = INSTRUCTION_TYPE::FLOAT_BASIC;
+    } else if (ContainsOpcode(FLOAT_MUL, op)) {
+        instruction_type = INSTRUCTION_TYPE::FLOAT_MUL;
+    } else if (ContainsOpcode(FLOAT_DIV, op)) {
+        instruction_type = INSTRUCTION_TYPE::FLOAT_DIV;
+    } else {
+        return false;
     }
 
-    if      (ContainsOpcode(INT_BASIC,   op)) type = INSTRUCTION_TYPE::INT_BASIC;
-    else if (ContainsOpcode(BRANCHES,    op)) type = INSTRUCTION_TYPE::BRANCH;
-    else if (ContainsOpcode(INT_MUL,     op)) type = INSTRUCTION_TYPE::INT_MUL;
-    else if (ContainsOpcode(INT_DIV,     op)) type = INSTRUCTION_TYPE::INT_DIV;
-    else if (ContainsOpcode(FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
-    else if (ContainsOpcode(FLOAT_MUL,   op)) type = INSTRUCTION_TYPE::FLOAT_MUL;
-    else if (ContainsOpcode(FLOAT_DIV,   op)) type = INSTRUCTION_TYPE::FLOAT_DIV;
-    else return false;
+    ValidateInstruction(tokens, instruction_type);
 
+    std::vector<Register> ex_sources;
+    std::vector<Register> mem_sources;
+    SetStageAttributes(tokens, instruction_type, ex_sources, mem_sources);
+    AddStage(instruction_type, ex_sources, mem_sources);
     return true;
 }
 
 // Privado:
-void InstructionX86Intel::ValidateInstruction(const std::vector<std::string>& tokens) {
+void InstructionX86Intel::ValidateInstruction(
+    const std::vector<std::string>& tokens,
+    const INSTRUCTION_TYPE          instruction_type
+) {
     const std::string op{ToLower(tokens[0])};
 
-    // IdentifyType() já restringiu a família; cada ramo confirma quantidade, posição e classe dos operandos.
+    // SetStages() já restringiu a família; cada ramo confirma quantidade, posição e classe dos operandos.
     // - A validação aceita somente formas cuja semântica de dependências o simulador consegue representar.
-    switch (type) {
+    switch (instruction_type) {
         case INSTRUCTION_TYPE::LOAD: {
             // LOAD sempre move memória para um registrador inteiro ou XMM.
             if (tokens.size() == 3 && operands[0].type == OPERAND_TYPE::REGISTER &&
@@ -883,63 +900,68 @@ void InstructionX86Intel::PushOperandSources(
 }
 
 // Privado:
-void InstructionX86Intel::SetAttributes(const std::vector<std::string>& tokens) {
+void InstructionX86Intel::SetStageAttributes(
+    const std::vector<std::string>& tokens,
+    const INSTRUCTION_TYPE          instruction_type,
+    std::vector<Register>&          ex_sources,
+    std::vector<Register>&          mem_sources
+) {
     const std::string op{ToLower(tokens[0])};
 
     // Traduz a semântica x86 para dependências do pipeline:
     // - destinos reservam o CDB; fontes EX precisam estar prontas para executar;
     // - fontes MEM são valores consumidos somente no acesso à memória;
     // - PushWithMasked() inclui aliases sobrepostos do mesmo registrador físico.
-    switch (type) {
+    switch (instruction_type) {
         case INSTRUCTION_TYPE::LOAD: {
             // O endereço é fonte de EX; o dado carregado sobrescreve o registrador de destino.
             PushWithMasked(dest_registers, LookupReg(operands[0].register_name));
-            PushOperandSources(ex_source_registers, operands[1]);
+            PushOperandSources(ex_sources, operands[1]);
             break;
         }
         case INSTRUCTION_TYPE::STORE: {
             // O endereço é calculado em EX, mas o valor armazenado só é consumido em MEM.
-            PushOperandSources(ex_source_registers, operands[0]);
-            PushOperandSources(mem_source_registers, operands[1]);
+            PushOperandSources(ex_sources, operands[0]);
+            PushOperandSources(mem_sources, operands[1]);
             break;
         }
         case INSTRUCTION_TYPE::BRANCH: {
             if (op == "call" || op == "ret") {
                 // call/ret atualizam a pilha e dependem do valor anterior de rsp.
                 PushWithMasked(dest_registers,      LookupReg("rsp"));
-                PushWithMasked(ex_source_registers, LookupReg("rsp"));
+                PushWithMasked(ex_sources, LookupReg("rsp"));
             } else if (op != "jmp") {
                 // Task 05 refinará cada JCC para seu subconjunto exato.
-                PushAllFlags(ex_source_registers);
+                PushAllFlags(ex_sources);
             }
             // jmp/call indiretos ("jmp rax", "call [rbx+4]"):
             // - O alvo precisa estar pronto antes do desvio, então vira fonte.
             // - Labels não geram fonte (endereço resolvido estaticamente).
             if ((op == "jmp" || op == "call") && !operands.empty())
-                PushOperandSources(ex_source_registers, operands[0]);
+                PushOperandSources(ex_sources, operands[0]);
             break;
         }
         case INSTRUCTION_TYPE::INT_BASIC: {
             if (op == "push") {
                 // push atualiza rsp em EX e consome o valor enviado à pilha em MEM.
                 PushWithMasked(dest_registers,      LookupReg("rsp"));
-                PushWithMasked(ex_source_registers, LookupReg("rsp"));
-                PushOperandSources(mem_source_registers, operands[0]); // Salva na RAM.
+                PushWithMasked(ex_sources, LookupReg("rsp"));
+                PushOperandSources(mem_sources, operands[0]); // Salva na RAM.
             } else if (op == "pop") {
                 // pop lê e atualiza rsp, além de escrever o registrador que recebe o valor da memória.
                 PushWithMasked(dest_registers,      LookupReg("rsp"));
-                PushWithMasked(ex_source_registers, LookupReg("rsp"));
+                PushWithMasked(ex_sources, LookupReg("rsp"));
                 PushWithMasked(dest_registers,      LookupReg(operands[0].register_name)); // Puxa da RAM.
             } else if (op == "cmp" || op == "test") {
                 // Comparações leem ambos os operandos e escrevem somente flags.
                 PushAllFlags(dest_registers);
-                PushOperandSources(ex_source_registers, operands[0]);
-                PushOperandSources(ex_source_registers, operands[1]);
+                PushOperandSources(ex_sources, operands[0]);
+                PushOperandSources(ex_sources, operands[1]);
             } else if (op == "lea") {
                 // lea não acessa memória de fato (só calcula o endereço) e não
                 // mexe nas flags rastreadas.
                 PushWithMasked(dest_registers, LookupReg(operands[0].register_name));
-                PushOperandSources(ex_source_registers, operands[1]);
+                PushOperandSources(ex_sources, operands[1]);
             } else {
                 // add, sub, and, or, xor, shl/shr/sar/sal, rol/ror, adc, sbb,
                 // inc, dec, not, neg, mov, movsx, movzx (fonte registrador).
@@ -947,13 +969,13 @@ void InstructionX86Intel::SetAttributes(const std::vector<std::string>& tokens) 
 
                 if (operands[0].type == OPERAND_TYPE::REGISTER) {
                     PushWithMasked(dest_registers, LookupReg(operands[0].register_name));
-                    if (reads_dest) PushOperandSources(ex_source_registers, operands[0]);
+                    if (reads_dest) PushOperandSources(ex_sources, operands[0]);
                 } else if (operands[0].type == OPERAND_TYPE::MEMORY) {
-                    PushOperandSources(ex_source_registers, operands[0]);
+                    PushOperandSources(ex_sources, operands[0]);
                 }
 
                 // Fonte (operando 2).
-                if (operands.size() > 1) PushOperandSources(ex_source_registers, operands[1]);
+                if (operands.size() > 1) PushOperandSources(ex_sources, operands[1]);
 
                 // Task 05 refinará cada opcode para seu subconjunto exato.
                 if (!ContainsOpcode(MOVS, op) && !ContainsOpcode(NO_FLAGS, op))
@@ -961,7 +983,7 @@ void InstructionX86Intel::SetAttributes(const std::vector<std::string>& tokens) 
 
                 // ADC e SBB também leem a flag (carry-in).
                 if (op == "adc" || op == "sbb")
-                    PushWithMasked(ex_source_registers, LookupReg("cf"));
+                    PushWithMasked(ex_sources, LookupReg("cf"));
             }
             break;
         }
@@ -982,20 +1004,20 @@ void InstructionX86Intel::SetAttributes(const std::vector<std::string>& tokens) 
                 const int  pair_mask{(pair_width == 'L') ? 0xFF : (pair_width == 'R') ? 0x0F : 0x03};
 
                 PushWithMasked(dest_registers,      Register(pair_width, 0, pair_mask)); // ax/eax/rax
-                PushWithMasked(ex_source_registers, Register(pair_width, 0, pair_mask));
+                PushWithMasked(ex_sources, Register(pair_width, 0, pair_mask));
                 if (!is_8bit) {
                     // id 3 = família rdx/edx/dx (ver ordem em RegisterTable()).
                     PushWithMasked(dest_registers, Register(pair_width, 3, pair_mask)); // dx/edx/rdx
                     if (op != "mul") // mul só LÊ eax; div/idiv leem o par completo (dividendo).
-                        PushWithMasked(ex_source_registers, Register(pair_width, 3, pair_mask));
+                        PushWithMasked(ex_sources, Register(pair_width, 3, pair_mask));
                 }
 
-                PushOperandSources(ex_source_registers, operands[0]);
+                PushOperandSources(ex_sources, operands[0]);
                 PushAllFlags(dest_registers);
             } else if (op == "imul") {
                 PushWithMasked(dest_registers, LookupReg(operands[0].register_name));
-                PushOperandSources(ex_source_registers, operands[0]); // Destino também é fonte (x86 CISC).
-                PushOperandSources(ex_source_registers, operands[1]);
+                PushOperandSources(ex_sources, operands[0]); // Destino também é fonte (x86 CISC).
+                PushOperandSources(ex_sources, operands[1]);
                 PushAllFlags(dest_registers);
             }
             break;
@@ -1006,20 +1028,20 @@ void InstructionX86Intel::SetAttributes(const std::vector<std::string>& tokens) 
             if (op == "comiss" || op == "ucomiss") {
                 // Comparações escalares leem operandos XMM e produzem somente flags.
                 PushAllFlags(dest_registers);
-                PushOperandSources(ex_source_registers, operands[0]);
-                PushOperandSources(ex_source_registers, operands[1]);
+                PushOperandSources(ex_sources, operands[0]);
+                PushOperandSources(ex_sources, operands[1]);
             } else if (op == "cvttss2si") {
                 // Destino inteiro, escrita pura (não lê o destino antigo).
                 PushWithMasked(dest_registers, LookupReg(operands[0].register_name));
-                PushOperandSources(ex_source_registers, operands[1]);
+                PushOperandSources(ex_sources, operands[1]);
             } else {
                 // Operações de 2 operandos FPU/SSE (addss, mulss, movaps quando
                 // cai aqui, sqrtss, cvtsi2ss, ...).
                 const bool reads_dest = !ContainsOpcode(MOVS, op) && !ContainsOpcode(PURE_WRITE, op);
 
                 PushWithMasked(dest_registers, LookupReg(operands[0].register_name));
-                if (reads_dest) PushOperandSources(ex_source_registers, operands[0]);
-                PushOperandSources(ex_source_registers, operands[1]);
+                if (reads_dest) PushOperandSources(ex_sources, operands[0]);
+                PushOperandSources(ex_sources, operands[1]);
             }
             break;
         }

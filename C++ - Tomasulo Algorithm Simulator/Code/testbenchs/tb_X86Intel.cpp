@@ -741,8 +741,7 @@ int main() {
         check("RIP e label relativa não viram fontes renomeáveis",
             rip_relative.GetExSourceRegisters().empty());
 
-        address.SetExLatency(99);
-        address.SetMemLatency(99);
+        address.SetLatencies({99}, {99});
         address.Parse("jmp NovoAlvo");
         check("segundo Parse substitui texto, tipo, latências e dependências",
             address.GetInstructionString() == "jmp       NovoAlvo" &&
@@ -911,8 +910,7 @@ int main() {
         const std::set<int> all_flags{80, 81, 82, 83, 84, 85};
         InstructionX86Intel reusable(17);
         reusable.Parse("mov rax, [rbx]");
-        reusable.SetExLatency(99);
-        reusable.SetMemLatency(99);
+        reusable.SetLatencies({99}, {99});
         reusable.Parse("add rcx, rdx");
         const bool reusable_ok{
             reusable.GetPosition() == 17 &&

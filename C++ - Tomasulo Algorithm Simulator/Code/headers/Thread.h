@@ -23,7 +23,6 @@
 #include <string>
 #include <vector>
 #include <memory>    // para std::unique_ptr e std::shared_ptr
-#include <tuple>     // para passar e receber as instruções de troca de thread na Granulação Grossa
 #include <algorithm> // para std::stable_sort
 #include <cstdlib>   // para std::abort
 #include <iostream>  // para std::cerr
@@ -70,15 +69,15 @@ class Thread {
     public:
         // Construtor:
         Thread(
-            const std::vector<std::string>&             assembly, // Único dado que não pode ser inferido.
-            const std::vector<std::tuple<int,int,int>>& new_latency = {},
-            const std::vector<int>&                     num_rs = {},
-            const std::vector<int>&                     num_fus = {},
-            const std::vector<int>&                     switch_cycles = {},
-            const int                                   dispatch_width = 1,
-            const int                                   rob_capacity = 0,
-            const bool                                  has_predictor = false,
-            const ARCHITECTURE                          arch = ARCHITECTURE::SIMPLIFIED
+            const std::vector<std::string>&      assembly, // Único dado que não pode ser inferido.
+            const std::vector<LATENCY_OVERRIDE>& latency_overrides = {},
+            const std::vector<int>&              num_rs = {},
+            const std::vector<int>&              num_fus = {},
+            const std::vector<int>&              switch_cycles = {},
+            const int                            dispatch_width = 1,
+            const int                            rob_capacity = 0,
+            const bool                           has_predictor = false,
+            const ARCHITECTURE                   arch = ARCHITECTURE::SIMPLIFIED
         );
 
         // Getters:

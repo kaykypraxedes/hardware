@@ -20,9 +20,10 @@ int main() {
         Register r;
         check("GetType() == 'Z'",           r.GetType() == 'Z');
         check("GetBusy() == false",         r.GetBusy() == false);
-        check("GetCurrentRS() vazio",       r.GetCurrentRS().empty());
+        check("GetCurrentProducer() == -1", r.GetCurrentProducer() == -1);
         check("GetAllocationTimes() vazio", r.GetAllocationTimes().empty());
         check("GetAllocatedRS() vazio",     r.GetAllocatedRS().empty());
+        check("GetProducerPositions() vazio", r.GetProducerPositions().empty());
     }
 
     section("1.2 Register(char, id) — construtor por classe e id");
@@ -97,16 +98,18 @@ int main() {
     std::cout << "\n";
     print_title("3. ALOCAÇÃO E DESALOCAÇÃO");
 
-    section("3.1 AllocateRS(rs, start) — primeira alocação");
+    section("3.1 AllocateProducer(position, rs, cycle) — primeira alocação");
     {
         Register r('F', 4);
         std::string rs1 = "load0";
-        r.AllocateRS(rs1, 3);
+        r.AllocateProducer(4, rs1, 3);
 
-        check("busy == true após AllocateRS",
+        check("busy == true após AllocateProducer",
             r.GetBusy() == true);
-        check("GetCurrentRS() == 'load0'",
-            r.GetCurrentRS() == "load0");
+        check("GetCurrentProducer() == 4",
+            r.GetCurrentProducer() == 4);
+        check("GetProducerPositions()[0] == 4",
+            r.GetProducerPositions().size() == 1 && r.GetProducerPositions()[0] == 4);
         check("GetAllocatedRS()[0] == 'load0'",
             r.GetAllocatedRS().size() == 1 && r.GetAllocatedRS()[0] == "load0");
         check("GetAllocationTimes().size() == 2 (par start/fim com fim pendente)",
@@ -117,26 +120,26 @@ int main() {
             r.GetAllocationTimes()[1] == -1);
 
         std::string rs2 = "load1";
-        r.AllocateRS(rs2, 7);
-        check("2a alocacao: GetCurrentRS() == 'load1'",
-            r.GetCurrentRS() == "load1");
+        r.AllocateProducer(9, rs2, 7);
+        check("2a alocacao: GetCurrentProducer() == 9",
+            r.GetCurrentProducer() == 9);
         check("2a alocacao: GetAllocatedRS().size() == 2",
             r.GetAllocatedRS().size() == 2);
         check("2a alocacao: GetAllocationTimes().size() == 4",
             r.GetAllocationTimes().size() == 4);
     }
 
-    section("3.2 DeallocateRS(rs_id, start_cycle, end_cycle) — desalocação simples");
+    section("3.2 DeallocateProducer(position, cycle) — desalocação simples");
     {
         Register r('R', 2);
         std::string rs = "int_basic0";
-        r.AllocateRS(rs, 5);
-        r.DeallocateRS("int_basic0", 5, 8);
+        r.AllocateProducer(2, rs, 5);
+        r.DeallocateProducer(2, 8);
 
-        check("busy == false após DeallocateRS",
+        check("busy == false após DeallocateProducer",
             r.GetBusy() == false);
-        check("GetCurrentRS() vazio após desalocar",
-            r.GetCurrentRS().empty());
+        check("GetCurrentProducer() == -1 após desalocar",
+            r.GetCurrentProducer() == -1);
         check("tempos: [5, 8]",
             r.GetAllocationTimes().size() == 2 &&
             r.GetAllocationTimes()[0] == 5 &&
@@ -145,16 +148,29 @@ int main() {
             !r.GetAllocatedRS().empty() && r.GetAllocatedRS()[0] == "int_basic0");
     }
 
-    section("3.3 DeallocateRS() — casos de erro");
+    section("3.3 DeallocateProducer() — casos de erro");
     {
         Register r('R', 9);
-        r.AllocateRS("x", 1);
-        bool result = r.DeallocateRS("nao_existe", 1, 5);
-        check("DeallocateRS retorna false p/ rs_id inexistente", result == false);
+        r.AllocateProducer(3, "x", 1);
+        bool result = r.DeallocateProducer(99, 5);
+        check("DeallocateProducer retorna false p/ posição inexistente", result == false);
         check("estado não foi alterado (ainda busy)", r.GetBusy() == true);
 
-        bool result2 = r.DeallocateRS("x", 999, 5); // start_cycle errado
-        check("DeallocateRS retorna false p/ start_cycle errado", result2 == false);
+        r.DeallocateProducer(3, 5);
+        check("DeallocateProducer repetido retorna false", !r.DeallocateProducer(3, 6));
+    }
+
+    section("3.4 AllocateProducer() — posições inválidas abortam");
+    {
+        check("posição negativa aborta", Aborts([]() {
+            Register r('R', 1);
+            r.AllocateProducer(-1, "int0", 1);
+        }));
+        check("posição duplicada aborta", Aborts([]() {
+            Register r('R', 1);
+            r.AllocateProducer(4, "int0", 1);
+            r.AllocateProducer(4, "int1", 2);
+        }));
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -164,29 +180,25 @@ int main() {
     std::cout << "\n";
     print_title("4. CONSULTAS DE DEPENDÊNCIA");
 
-    section("4.1 GetRSCycleStart(rs_id)");
+    section("4.1 GetCurrentProducer()");
     {
         Register r('R', 3);
-        r.AllocateRS("load0", 5);
-        check("start_cycle correto para RS pendente", r.GetRSCycleStart("load0") == 5);
-        check("RS inexistente retorna -1",            r.GetRSCycleStart("nope") == -1);
-
-        r.DeallocateRS("load0", 5, 9);
-        check("RS já desalocada retorna -1 (não é mais pendente)",
-              r.GetRSCycleStart("load0") == -1);
+        r.AllocateProducer(12, "load0", 5);
+        check("produtor pendente correto", r.GetCurrentProducer() == 12);
+        r.DeallocateProducer(12, 9);
+        check("produtor finalizado deixa de ser atual", r.GetCurrentProducer() == -1);
     }
 
-    section("4.2 IsDependencyResolved(rs_id, start_cycle)");
+    section("4.2 IsDependencyResolved(position)");
     {
         Register r('F', 2);
-        r.AllocateRS("mul0", 3);
-        check("pendente: não resolvido",  !r.IsDependencyResolved("mul0", 3));
+        r.AllocateProducer(7, "mul0", 3);
+        check("pendente: não resolvido",  !r.IsDependencyResolved(7));
 
-        r.DeallocateRS("mul0", 3, 10);
-        check("desalocado: resolvido",     r.IsDependencyResolved("mul0", 3));
+        r.DeallocateProducer(7, 10);
+        check("desalocado: resolvido",     r.IsDependencyResolved(7));
 
-        check("start_cycle errado: não encontrado", !r.IsDependencyResolved("mul0", 99));
-        check("rs_id errado: não encontrado",       !r.IsDependencyResolved("outro", 3));
+        check("posição desconhecida não está resolvida", !r.IsDependencyResolved(99));
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -199,37 +211,39 @@ int main() {
     section("5.1 WAW — múltiplos produtores pendentes");
     {
         Register r('R', 4);
-        r.AllocateRS("add0", 1);
-        r.AllocateRS("add1", 6); // segundo produtor pendente (WAW) para o mesmo registrador
+        r.AllocateProducer(2, "add0", 1);
+        r.AllocateProducer(5, "add1", 6); // segundo produtor pendente (WAW) para o mesmo registrador
 
-        check("GetCurrentRS() retorna o mais recente pendente (add1)",
-              r.GetCurrentRS() == "add1");
+        check("GetCurrentProducer() retorna o mais recente pendente",
+              r.GetCurrentProducer() == 5);
         check("busy continua true com 2 pendentes", r.GetBusy() == true);
 
         // Desaloca o mais antigo primeiro — busy deve continuar true (add1 ainda pendente)
-        r.DeallocateRS("add0", 1, 4);
+        r.DeallocateProducer(2, 4);
         check("busy == true (add1 ainda pendente)", r.GetBusy() == true);
-        check("GetCurrentRS() ainda retorna add1",  r.GetCurrentRS() == "add1");
+        check("produtor atual continua sendo a posição 5", r.GetCurrentProducer() == 5);
+        check("produtor antigo resolvido", r.IsDependencyResolved(2));
+        check("produtor novo continua pendente", !r.IsDependencyResolved(5));
 
         // Desaloca o último — agora sim busy deve cair
-        r.DeallocateRS("add1", 6, 9);
+        r.DeallocateProducer(5, 9);
         check("busy == false (nenhum pendente)", r.GetBusy() == false);
-        check("GetCurrentRS() vazio",            r.GetCurrentRS().empty());
+        check("GetCurrentProducer() == -1",     r.GetCurrentProducer() == -1);
     }
 
     section("5.2 Mesmo rs_id reutilizado em ciclos diferentes");
     {
         Register r('R', 7);
-        r.AllocateRS("loop_rs", 2);
-        r.DeallocateRS("loop_rs", 2, 5);
-        r.AllocateRS("loop_rs", 10); // mesmo nome de RS, reutilizado depois
+        r.AllocateProducer(2, "loop_rs", 2);
+        r.DeallocateProducer(2, 5);
+        r.AllocateProducer(10, "loop_rs", 10); // mesmo nome físico, novo produtor lógico
 
-        check("GetRSCycleStart acha a alocação pendente correta (10, não 2)",
-              r.GetRSCycleStart("loop_rs") == 10);
         check("IsDependencyResolved(2) == true (já resolvida)",
-              r.IsDependencyResolved("loop_rs", 2));
+              r.IsDependencyResolved(2));
         check("IsDependencyResolved(10) == false (ainda pendente)",
-              !r.IsDependencyResolved("loop_rs", 10));
+              !r.IsDependencyResolved(10));
+        check("histórico preserva o mesmo nome físico duas vezes",
+              r.GetAllocatedRS() == std::vector<std::string>{"loop_rs", "loop_rs"});
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -244,13 +258,14 @@ int main() {
         Register f('F', 6);
         std::string rs_a = "load1";
         std::string rs_b = "load2";
-        f.AllocateRS(rs_a, 2);
-        f.DeallocateRS("load1", 2, 4);
-        f.AllocateRS(rs_b, 10);
-        f.DeallocateRS("load2", 10, 12);
+        f.AllocateProducer(1, rs_a, 2);
+        f.DeallocateProducer(1, 4);
+        f.AllocateProducer(2, rs_b, 10);
+        f.DeallocateProducer(2, 12);
 
         check("busy == false ao final",    f.GetBusy() == false);
         check("2 RS alocadas no historico", f.GetAllocatedRS().size() == 2);
+        check("posições [1,2] preservadas", f.GetProducerPositions() == std::vector<int>{1, 2});
         auto t = f.GetAllocationTimes();
         check("tempos: [2,4,10,12]",
               t.size() == 4 && t[0]==2 && t[1]==4 && t[2]==10 && t[3]==12);

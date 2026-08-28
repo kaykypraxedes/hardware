@@ -20,6 +20,7 @@
 #include <cctype>        // para std::tolower
 #include <cstdlib>       // para std::abort
 #include <iostream>      // para std::cerr
+#include <tuple>         // para std::tuple
 
 namespace processor {
 
@@ -160,6 +161,15 @@ enum class INSTRUCTION_PHASE_TOMASULO {
     COMMIT
 };
 
+/**
+ * @brief Override de latências associado à posição de uma instrução.
+ *
+ * @details Os vetores de EX e MEM seguem a ordenação das etapas da
+ * instrução.
+ */
+using LATENCY_OVERRIDE =
+    std::tuple<int, std::vector<int>, std::vector<int>>;
+
 // ─── CLASSE ───────────────────────────────────────────────────────
 
 /**
@@ -245,6 +255,48 @@ class Instruction {
          */
         const std::vector<Register>& GetMemSourceRegisters() const;
 
+        /**
+         * @brief Retorna a sequência completa de tipos da instrução.
+         *
+         * @return Vetor ordenado pelos estágios ainda pendentes.
+         */
+        const std::vector<INSTRUCTION_TYPE>& GetInstructionTypes() const;
+
+        /**
+         * @brief Retorna as latências EX de todos os estágios pendentes.
+         *
+         * @return Vetor alinhado com GetInstructionTypes().
+         */
+        const std::vector<int>& GetExLatencies() const;
+
+        /**
+         * @brief Retorna as latências MEM de todos os estágios pendentes.
+         *
+         * @return Vetor alinhado com GetInstructionTypes().
+         */
+        const std::vector<int>& GetMemLatencies() const;
+
+        /**
+         * @brief Retorna as fontes EX separadas por estágio.
+         *
+         * @return Vetor externo alinhado com GetInstructionTypes().
+         */
+        const std::vector<std::vector<Register>>& GetAllExSourceRegisters() const;
+
+        /**
+         * @brief Retorna as fontes MEM separadas por estágio.
+         *
+         * @return Vetor externo alinhado com GetInstructionTypes().
+         */
+        const std::vector<std::vector<Register>>& GetAllMemSourceRegisters() const;
+
+        /**
+         * @brief Retorna a RS física ocupada pela etapa atual.
+         *
+         * @return Identificador vazio quando a instrução não ocupa uma RS.
+         */
+        const std::string& GetCurrentRS() const;
+
         // Demais métodos:
 
         /**
@@ -265,67 +317,119 @@ class Instruction {
         );
 
         /**
-         * @brief Seta uma latência específica de MEM para a
-         * instrução.
+         * @brief Sobrescreve atomicamente as latências de todas as etapas.
          *
-         * @details Útil para simular um cache miss, por exemplo.
+         * @details Cada vetor deve possuir uma entrada por etapa. Em MEM,
+         * zero preserva a latência-base correspondente ao tipo da etapa.
          *
-         * @param const int latency - Latência
+         * @param new_ex_latencies Novas latências de EX.
+         * @param new_mem_latencies Novas latências de MEM.
          */
-        void SetMemLatency(
-            const int latency
+        void SetLatencies(
+            const std::vector<int>& new_ex_latencies,
+            const std::vector<int>& new_mem_latencies
         );
 
         /**
-         * @brief Seta uma latência específica de EX para a
-         * instrução.
+         * @brief Atualiza a localização física da etapa atual.
          *
-         * @param const int latency - Latência
+         * @param rs Identificador da RS; vazio representa nenhuma ocupação.
          */
-        void SetExLatency(
-            const int latency
+        void SetCurrentRS(
+            const std::string& rs
         );
+
+        /**
+         * @brief Remove atomicamente uma etapa intermediária concluída.
+         *
+         * @details A etapa final nunca pode ser removida por esse método.
+         */
+        void AdvanceStage();
 
     protected:
         // Atributos:
         int                   position{-1};
         std::string           instruction_string;
-        int                   ex_latency{};
-        int                   mem_latency{};
-        INSTRUCTION_TYPE      type{INSTRUCTION_TYPE::INVALID};
 
         /**
          * @brief Arquiteturas como X86, ARM, etc. Podem ter
          * múltiplos destinos (aliases, máscaras, flags, etc.).
          */
         std::vector<Register> dest_registers;
-        std::vector<Register> ex_source_registers;  // Ajudam a identificar quais registradores travam quais partes do pipeline.
-        std::vector<Register> mem_source_registers;
 
         // Método igual para todos:
 
         /**
-         * @brief Define as latências com base no tipo de instrução,
-         * definidas pelos vetores de latência.
+         * @brief Adiciona atomicamente uma etapa completa da instrução.
+         *
+         * @param instruction_type Tipo da nova etapa.
+         * @param ex_sources Fontes consumidas durante EX.
+         * @param mem_sources Fontes consumidas durante MEM.
          */
-        void SetLatencies();
+        void AddStage(
+            const INSTRUCTION_TYPE     instruction_type,
+            const std::vector<Register>& ex_sources,
+            const std::vector<Register>& mem_sources
+        );
 
         // Métodos virtuais (cada arquitetura deve implementar sua versão):
         virtual std::vector<std::string> SplitInstruction(
             const std::string& str
         ) const = 0;
-        virtual bool IdentifyType(
+
+        /**
+         * @brief Valida a instrução e monta todas as suas etapas.
+         *
+         * @param tokens Componentes extraídos da instrução.
+         *
+         * @return true para opcode suportado; false para opcode desconhecido.
+         */
+        virtual bool SetStages(
             const std::vector<std::string>& tokens
         ) = 0;
-        virtual void ValidateInstruction(
-            const std::vector<std::string>& tokens
-        ) = 0;
+
         virtual void NormalizeInstruction(
             std::vector<std::string>& tokens
         ) = 0;
-        virtual void SetAttributes(
-            const std::vector<std::string>& tokens
-        ) = 0;
+
+    private:
+        // Uma posição em cada vetor representa a mesma etapa lógica.
+        std::vector<INSTRUCTION_TYPE>        instruction_types;
+        std::vector<int>                     ex_latencies;
+        std::vector<int>                     mem_latencies;
+        std::vector<std::vector<Register>>   ex_source_registers;
+        std::vector<std::vector<Register>>   mem_source_registers;
+        std::string                          current_rs;
+
+        /**
+         * @brief Retorna a latência-base de MEM correspondente ao tipo.
+         *
+         * @return Latência de LOAD/STORE ou zero para os demais tipos.
+         */
+        static int GetBaseMemLatency(
+            const INSTRUCTION_TYPE instruction_type
+        );
+
+        /**
+         * @brief Confirma que todos os vetores por etapa estão alinhados.
+         */
+        void ValidateStageVectors() const;
+
+        /**
+         * @brief Confirma a validade das latências efetivas de cada etapa.
+         *
+         * @param ex_values Latências efetivas de EX.
+         * @param mem_values Latências efetivas de MEM.
+         */
+        void ValidateLatencies(
+            const std::vector<int>& ex_values,
+            const std::vector<int>& mem_values
+        ) const;
+
+        /**
+         * @brief Remove o primeiro elemento de todos os vetores por etapa.
+         */
+        void RemoveCurrentStage();
 };
 
 } // namespace processor

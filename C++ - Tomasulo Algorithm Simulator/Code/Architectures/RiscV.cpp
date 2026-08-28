@@ -109,23 +109,36 @@ InstructionRiscV::InstructionRiscV(
 
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Privado:
-bool InstructionRiscV::IdentifyType(
+bool InstructionRiscV::SetStages(
     const std::vector<std::string>& tokens
 ){
     std::string op{tokens[0]};
     for (char& c : op) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    INSTRUCTION_TYPE instruction_type{INSTRUCTION_TYPE::INVALID};
 
-    if (ContainsOpcode(LOADS, op))            type = INSTRUCTION_TYPE::LOAD;
-    else if (ContainsOpcode(STORES, op))      type = INSTRUCTION_TYPE::STORE;
-    else if (ContainsOpcode(INT_BASIC, op))   type = INSTRUCTION_TYPE::INT_BASIC;
-    else if (ContainsOpcode(BRANCHES, op))    type = INSTRUCTION_TYPE::BRANCH;
-    else if (ContainsOpcode(INT_MUL, op))     type = INSTRUCTION_TYPE::INT_MUL;
-    else if (ContainsOpcode(INT_DIV, op))     type = INSTRUCTION_TYPE::INT_DIV;
-    else if (ContainsOpcode(FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
-    else if (ContainsOpcode(FLOAT_MUL, op))   type = INSTRUCTION_TYPE::FLOAT_MUL;
-    else if (ContainsOpcode(FLOAT_DIV, op))   type = INSTRUCTION_TYPE::FLOAT_DIV;
+    if (ContainsOpcode(LOADS, op))            instruction_type = INSTRUCTION_TYPE::LOAD;
+    else if (ContainsOpcode(STORES, op))      instruction_type = INSTRUCTION_TYPE::STORE;
+    else if (ContainsOpcode(INT_BASIC, op))   instruction_type = INSTRUCTION_TYPE::INT_BASIC;
+    else if (ContainsOpcode(BRANCHES, op))    instruction_type = INSTRUCTION_TYPE::BRANCH;
+    else if (ContainsOpcode(INT_MUL, op))     instruction_type = INSTRUCTION_TYPE::INT_MUL;
+    else if (ContainsOpcode(INT_DIV, op))     instruction_type = INSTRUCTION_TYPE::INT_DIV;
+    else if (ContainsOpcode(FLOAT_BASIC, op)) instruction_type = INSTRUCTION_TYPE::FLOAT_BASIC;
+    else if (ContainsOpcode(FLOAT_MUL, op))   instruction_type = INSTRUCTION_TYPE::FLOAT_MUL;
+    else if (ContainsOpcode(FLOAT_DIV, op))   instruction_type = INSTRUCTION_TYPE::FLOAT_DIV;
     else return false;
 
+    // Mantém a montagem semântica case-insensitive sem alterar labels da saída.
+    std::vector<std::string> stage_tokens{tokens};
+    for (std::string& token : stage_tokens)
+        for (char& c : token)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+    ValidateInstruction(stage_tokens, instruction_type);
+
+    std::vector<Register> ex_sources;
+    std::vector<Register> mem_sources;
+    SetStageAttributes(stage_tokens, instruction_type, ex_sources, mem_sources);
+    AddStage(instruction_type, ex_sources, mem_sources);
     return true;
 }
 
@@ -158,6 +171,8 @@ std::vector<std::string> InstructionRiscV::SplitInstruction(
 void InstructionRiscV::NormalizeInstruction(
     std::vector<std::string>& tokens
 ){
+    const INSTRUCTION_TYPE type{GetInstructionType()};
+
     for (size_t i = 0; i < tokens.size(); ++i) {
         // Labels de desvio são case-sensitive: só opcode e registradores viram minúsculo.
         if (type == INSTRUCTION_TYPE::BRANCH && i > 0 && !IsRegister(tokens[i], RegisterTable())) continue;
@@ -183,12 +198,19 @@ void InstructionRiscV::NormalizeInstruction(
 }
 
 // Privado:
-void InstructionRiscV::SetAttributes(
-    const std::vector<std::string>& tokens
+void InstructionRiscV::SetStageAttributes(
+    const std::vector<std::string>& tokens,
+    const INSTRUCTION_TYPE          instruction_type,
+    std::vector<Register>&          ex_sources,
+    std::vector<Register>&          mem_sources
 ){
+    const INSTRUCTION_TYPE type{instruction_type};
+    std::string op{tokens[0]};
+    for (char& c : op) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
     dest_registers.clear();
-    ex_source_registers.clear();
-    mem_source_registers.clear();
+    ex_sources.clear();
+    mem_sources.clear();
 
     // Instruções de 4+ tokens:
     if (tokens.size() > 3) {
@@ -199,7 +221,7 @@ void InstructionRiscV::SetAttributes(
             dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             for (size_t i = 2; i < tokens.size(); ++i)
                 if (IsRegister(tokens[i], RegisterTable()))
-                    ex_source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    ex_sources.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
             return;
         }
         // "sw x5, 4(x6)":
@@ -207,21 +229,21 @@ void InstructionRiscV::SetAttributes(
         // - Base = tokens[3] (imediato ignorado);
         else if (type == INSTRUCTION_TYPE::STORE) {
             if (IsRegister(tokens[1], RegisterTable()))
-                mem_source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                mem_sources.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             for (size_t i = 2; i < tokens.size(); ++i)
                 if (IsRegister(tokens[i], RegisterTable()))
-                    ex_source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    ex_sources.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
             return;
         }
         // "jalr x1, 0(x5)" (forma completa: rd, imediato, rs1):
         // - Fonte   = tokens[3];
         // - Destino = tokens[1];
         // - tokens[2] é o deslocamento (sempre imediato) - ignorado.
-        else if (tokens[0] == "jalr") {
+        else if (op == "jalr") {
             dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             for (size_t i = 2; i < tokens.size(); ++i)
                 if (IsRegister(tokens[i], RegisterTable()))
-                    ex_source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    ex_sources.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
             return;
         }
         // "beq x5, x6, LOOP" (e bne/blt/bge/bltu/bgeu):
@@ -231,7 +253,7 @@ void InstructionRiscV::SetAttributes(
         else if (type == INSTRUCTION_TYPE::BRANCH) {
             for (size_t i = 1; i < tokens.size(); ++i)
                 if (IsRegister(tokens[i], RegisterTable()))
-                    ex_source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    ex_sources.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
             return;
         }
         // Aritmética - "add x5, x6, x7" / "addi x5, x6, 10" (e formas com mais fontes, como fmadd.s dest,src,src,src):
@@ -241,7 +263,7 @@ void InstructionRiscV::SetAttributes(
             dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             for (size_t i = 2; i < tokens.size(); ++i)
                 if (IsRegister(tokens[i], RegisterTable()))
-                    ex_source_registers.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
+                    ex_sources.push_back(LookupRegister(tokens[i], instruction_string, RegisterTable()));
             return;
         }
     }
@@ -250,17 +272,17 @@ void InstructionRiscV::SetAttributes(
         // "jal x1, func" (rd explícito):
         // - Destino = tokens[1];
         // Sem destino.
-        if (tokens[0] == "jal") {
+        if (op == "jal") {
             dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             return;
         }
         // "mv x5, x6" (pseudo de "addi x5, x6, 0"):
         // - Fonte   = tokens[2];
         // - Destino = tokens[1];
-        else if (tokens[0] == "mv") {
+        else if (op == "mv") {
             dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             if (IsRegister(tokens[2], RegisterTable()))
-                ex_source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+                ex_sources.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
             return;
         }
         // "li x5, 10" / "lui x5, 10" / "auipc x5, 10" (dest + imediato) ou "fsqrt.s f1, f2" / "fabs.s f1, f2" / "fcvt.s.w f1, x2" (dest + fonte única):
@@ -269,7 +291,7 @@ void InstructionRiscV::SetAttributes(
         else {
             dest_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             if (IsRegister(tokens[2], RegisterTable()))
-                ex_source_registers.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
+                ex_sources.push_back(LookupRegister(tokens[2], instruction_string, RegisterTable()));
             return;
         }
     }
@@ -278,29 +300,29 @@ void InstructionRiscV::SetAttributes(
         // "jal func"
         // - Destino = rd implícito (x1);
         // Sem fonte;
-        if (tokens[0] == "jal") {
+        if (op == "jal") {
             dest_registers.push_back(Register('L', 1));
             return;
         }
         // "jalr x5" (pseudo: rd implícito = x1, offset implícito = 0):
         // - Fonte = tokens[1];
         // - Destino = x1;
-        else if (tokens[0] == "jalr") {
+        else if (op == "jalr") {
             dest_registers.push_back(Register('L', 1));
             if (IsRegister(tokens[1], RegisterTable()))
-                ex_source_registers.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
+                ex_sources.push_back(LookupRegister(tokens[1], instruction_string, RegisterTable()));
             return;
         }
         // "call func":
         // - Destino = x1 (ra);
         // Sem fonte
-        else if (tokens[0] == "call") {
+        else if (op == "call") {
             dest_registers.push_back(Register('L', 1));
             return;
         }
         // "j LOOP":
         // - Não lê nem escreve registrador.
-        else if (tokens[0] == "j") {
+        else if (op == "j") {
             return;
         }
     }
@@ -309,13 +331,13 @@ void InstructionRiscV::SetAttributes(
         // "ret" (pseudo de "jalr x0, 0(x1)"):
         // - Fonte = x1 (ra);
         // Sem destino.
-        if (tokens[0] == "ret") {
-            ex_source_registers.push_back(Register('L', 1));
+        if (op == "ret") {
+            ex_sources.push_back(Register('L', 1));
             return;
         }
         // "nop" (pseudo de "addi x0, x0, 0"):
         // - Não lê nem escreve registrador.
-        else if (tokens[0] == "nop") {
+        else if (op == "nop") {
             return;
         }
     }
@@ -328,9 +350,11 @@ void InstructionRiscV::SetAttributes(
 // Verifica se os destinos e fontes correspondem à sintaxe da linguagem.
 // - Aborta em caso contrário, sem possibilidade de escrita incorreta.
 void InstructionRiscV::ValidateInstruction(
-    const std::vector<std::string>& tokens
+    const std::vector<std::string>& tokens,
+    const INSTRUCTION_TYPE          instruction_type
 ){
-
+    static_cast<void>(tokens);
+    static_cast<void>(instruction_type);
 }
 
 } // namespace processor

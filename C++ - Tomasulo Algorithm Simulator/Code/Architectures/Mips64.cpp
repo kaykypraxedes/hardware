@@ -283,20 +283,29 @@ std::vector<std::string> InstructionMips64::SplitInstruction(
     return tokens;
 }
 
-bool InstructionMips64::IdentifyType(
+bool InstructionMips64::SetStages(
     const std::vector<std::string>& tokens
 ) {
     const std::string op{ToLower(tokens[0])};
-    if      (ContainsOpcode(LOADS,       op)) type = INSTRUCTION_TYPE::LOAD;
-    else if (ContainsOpcode(STORES,      op)) type = INSTRUCTION_TYPE::STORE;
-    else if (ContainsOpcode(BRANCHES,    op)) type = INSTRUCTION_TYPE::BRANCH;
-    else if (ContainsOpcode(INT_BASIC,   op)) type = INSTRUCTION_TYPE::INT_BASIC;
-    else if (ContainsOpcode(INT_MUL,     op)) type = INSTRUCTION_TYPE::INT_MUL;
-    else if (ContainsOpcode(INT_DIV,     op)) type = INSTRUCTION_TYPE::INT_DIV;
-    else if (ContainsOpcode(FLOAT_BASIC, op)) type = INSTRUCTION_TYPE::FLOAT_BASIC;
-    else if (ContainsOpcode(FLOAT_MUL,   op)) type = INSTRUCTION_TYPE::FLOAT_MUL;
-    else if (ContainsOpcode(FLOAT_DIV,   op)) type = INSTRUCTION_TYPE::FLOAT_DIV;
+    INSTRUCTION_TYPE instruction_type{INSTRUCTION_TYPE::INVALID};
+
+    if      (ContainsOpcode(LOADS,       op)) instruction_type = INSTRUCTION_TYPE::LOAD;
+    else if (ContainsOpcode(STORES,      op)) instruction_type = INSTRUCTION_TYPE::STORE;
+    else if (ContainsOpcode(BRANCHES,    op)) instruction_type = INSTRUCTION_TYPE::BRANCH;
+    else if (ContainsOpcode(INT_BASIC,   op)) instruction_type = INSTRUCTION_TYPE::INT_BASIC;
+    else if (ContainsOpcode(INT_MUL,     op)) instruction_type = INSTRUCTION_TYPE::INT_MUL;
+    else if (ContainsOpcode(INT_DIV,     op)) instruction_type = INSTRUCTION_TYPE::INT_DIV;
+    else if (ContainsOpcode(FLOAT_BASIC, op)) instruction_type = INSTRUCTION_TYPE::FLOAT_BASIC;
+    else if (ContainsOpcode(FLOAT_MUL,   op)) instruction_type = INSTRUCTION_TYPE::FLOAT_MUL;
+    else if (ContainsOpcode(FLOAT_DIV,   op)) instruction_type = INSTRUCTION_TYPE::FLOAT_DIV;
     else return false;
+
+    ValidateInstruction(tokens);
+
+    std::vector<Register> ex_sources;
+    std::vector<Register> mem_sources;
+    SetStageAttributes(tokens, ex_sources, mem_sources);
+    AddStage(instruction_type, ex_sources, mem_sources);
     return true;
 }
 
@@ -305,10 +314,10 @@ void InstructionMips64::ValidateInstruction(
 ) {
     const std::string op{ToLower(tokens[0])};
 
-    // Não deveria falhar: "IdentifyType()" já garantiu que "op" pertence a uma das categorias conhecidas.
+    // Não deveria falhar: SetStages() já garantiu que "op" pertence a uma categoria conhecida.
     const auto it{OPCODE_SHAPE.find(op)};
     if (it == OPCODE_SHAPE.end()) {
-        std::cerr << "[ERRO] Opcode reconhecido em IdentifyType() mas ausente em OPCODE_SHAPE: " << op << '\n';
+        std::cerr << "[ERRO] Opcode reconhecido em SetStages() mas ausente em OPCODE_SHAPE: " << op << '\n';
         std::abort();
     }
 
@@ -393,6 +402,8 @@ void InstructionMips64::ValidateInstruction(
 void InstructionMips64::NormalizeInstruction(
     std::vector<std::string>& tokens
 ) {
+    const INSTRUCTION_TYPE type{GetInstructionType()};
+
     tokens[0] = ToLower(tokens[0]);
     instruction_string = tokens[0];
     for (size_t i{tokens[0].size()}; i < biggest_instruction; i++) instruction_string += " ";
@@ -409,10 +420,12 @@ void InstructionMips64::NormalizeInstruction(
     }
 }
 
-void InstructionMips64::SetAttributes(
-    const std::vector<std::string>& tokens
+void InstructionMips64::SetStageAttributes(
+    const std::vector<std::string>& tokens,
+    std::vector<Register>&          ex_sources,
+    std::vector<Register>&          mem_sources
 ) {
-    const std::string& op{tokens[0]};
+    const std::string op{ToLower(tokens[0])};
 
     // Não deveria falhar: "ValidateInstruction()" já garantiu que "op" pertence a uma das categorias conhecidas.
     const auto it{OPCODE_SHAPE.find(op)};
@@ -426,26 +439,26 @@ void InstructionMips64::SetAttributes(
         case OP_SHAPE::LOAD_INT:
         case OP_SHAPE::LOAD_FLOAT:
             dest_registers.push_back(LookupReg(tokens[1]));
-            ex_source_registers.push_back(LookupReg(tokens[3]));
+            ex_sources.push_back(LookupReg(tokens[3]));
             return;
 
         // Store:
         case OP_SHAPE::STORE_INT:
         case OP_SHAPE::STORE_FLOAT:
-            ex_source_registers.push_back(LookupReg(tokens[3]));
-            mem_source_registers.push_back(LookupReg(tokens[1]));
+            ex_sources.push_back(LookupReg(tokens[3]));
+            mem_sources.push_back(LookupReg(tokens[1]));
             return;
 
         // Branch:
         case OP_SHAPE::BR_2REG_LABEL:
-            ex_source_registers.push_back(LookupReg(tokens[1]));
-            ex_source_registers.push_back(LookupReg(tokens[2]));
+            ex_sources.push_back(LookupReg(tokens[1]));
+            ex_sources.push_back(LookupReg(tokens[2]));
             return;
         case OP_SHAPE::BR_1REG_LABEL:
-            ex_source_registers.push_back(LookupReg(tokens[1]));
+            ex_sources.push_back(LookupReg(tokens[1]));
             return;
         case OP_SHAPE::BR_1REG_LABEL_LINK:
-            ex_source_registers.push_back(LookupReg(tokens[1]));
+            ex_sources.push_back(LookupReg(tokens[1]));
             dest_registers.push_back(LookupReg("ra")); // Escreve o endereço de retorno implicitamente.
             return;
         case OP_SHAPE::BR_LABEL:
@@ -454,32 +467,32 @@ void InstructionMips64::SetAttributes(
             dest_registers.push_back(LookupReg("ra")); // Escreve o endereço de retorno implicitamente.
             return;
         case OP_SHAPE::BR_1REG:
-            ex_source_registers.push_back(LookupReg(tokens[1]));
+            ex_sources.push_back(LookupReg(tokens[1]));
             return;
         case OP_SHAPE::BR_JALR:
             if (tokens.size() == 2) {
                 // rs apenas -> rd = "ra" implícito.
-                ex_source_registers.push_back(LookupReg(tokens[1]));
+                ex_sources.push_back(LookupReg(tokens[1]));
                 dest_registers.push_back(LookupReg("ra"));
                 return;
             }
             // rd, rs explícitos.
             dest_registers.push_back(LookupReg(tokens[1]));
-            ex_source_registers.push_back(LookupReg(tokens[2]));
+            ex_sources.push_back(LookupReg(tokens[2]));
             return;
 
         // Int sem HI/LO:
         case OP_SHAPE::INT_3REG:
         case OP_SHAPE::MUL_3REG:
             dest_registers.push_back(LookupReg(tokens[1]));
-            ex_source_registers.push_back(LookupReg(tokens[2]));
-            ex_source_registers.push_back(LookupReg(tokens[3]));
+            ex_sources.push_back(LookupReg(tokens[2]));
+            ex_sources.push_back(LookupReg(tokens[3]));
             return;
         case OP_SHAPE::INT_2REG_IMM_S:
         case OP_SHAPE::INT_2REG_IMM_U:
             // imm/shamt não é registrador (não gera dependência de dado).
             dest_registers.push_back(LookupReg(tokens[1]));
-            ex_source_registers.push_back(LookupReg(tokens[2]));
+            ex_sources.push_back(LookupReg(tokens[2]));
             return;
         case OP_SHAPE::INT_1REG_IMM:
             dest_registers.push_back(LookupReg(tokens[1]));
@@ -488,46 +501,46 @@ void InstructionMips64::SetAttributes(
         // Int com HI/LO:
         case OP_SHAPE::INT_1REG_LO:
             dest_registers.push_back(LookupReg(tokens[1]));
-            ex_source_registers.push_back(LookupReg("lo"));
+            ex_sources.push_back(LookupReg("lo"));
             return;
         case OP_SHAPE::INT_1REG_HI:
             dest_registers.push_back(LookupReg(tokens[1]));
-            ex_source_registers.push_back(LookupReg("hi"));
+            ex_sources.push_back(LookupReg("hi"));
             return;
         case OP_SHAPE::INT_1REG_MTLO:
             dest_registers.push_back(LookupReg("lo"));
-            ex_source_registers.push_back(LookupReg(tokens[1]));
+            ex_sources.push_back(LookupReg(tokens[1]));
             return;
         case OP_SHAPE::INT_1REG_MTHI:
             dest_registers.push_back(LookupReg("hi"));
-            ex_source_registers.push_back(LookupReg(tokens[1]));
+            ex_sources.push_back(LookupReg(tokens[1]));
             return;
         case OP_SHAPE::MULDIV_2REG_HILO:
             dest_registers.push_back(LookupReg("lo"));
             dest_registers.push_back(LookupReg("hi"));
-            ex_source_registers.push_back(LookupReg(tokens[1]));
-            ex_source_registers.push_back(LookupReg(tokens[2]));
+            ex_sources.push_back(LookupReg(tokens[1]));
+            ex_sources.push_back(LookupReg(tokens[2]));
             return;
 
         // Float:
         case OP_SHAPE::FLOAT_3REG:
             dest_registers.push_back(LookupReg(tokens[1]));
-            ex_source_registers.push_back(LookupReg(tokens[2]));
-            ex_source_registers.push_back(LookupReg(tokens[3]));
+            ex_sources.push_back(LookupReg(tokens[2]));
+            ex_sources.push_back(LookupReg(tokens[3]));
             return;
         case OP_SHAPE::FLOAT_2REG:
             dest_registers.push_back(LookupReg(tokens[1]));
-            ex_source_registers.push_back(LookupReg(tokens[2]));
+            ex_sources.push_back(LookupReg(tokens[2]));
             return;
         case OP_SHAPE::FLOAT_COND:
             dest_registers.push_back(LookupReg("fcc")); // Escreve na flag de condição
-            ex_source_registers.push_back(LookupReg(tokens[1]));
-            ex_source_registers.push_back(LookupReg(tokens[2]));
+            ex_sources.push_back(LookupReg(tokens[1]));
+            ex_sources.push_back(LookupReg(tokens[2]));
             return;
     }
 
     // Não deveria chegar aqui: todo OP_SHAPE tem um "case" acima.
-    std::cerr << "[ERRO] Forma (OP_SHAPE) validada mas não tratada em SetAttributes(): " << op << '\n';
+    std::cerr << "[ERRO] Forma (OP_SHAPE) validada mas não tratada em SetStageAttributes(): " << op << '\n';
     std::abort();
 }
 

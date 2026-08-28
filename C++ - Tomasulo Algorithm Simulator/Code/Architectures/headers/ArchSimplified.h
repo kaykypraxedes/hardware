@@ -25,18 +25,20 @@ class InstructionSimplified : public Instruction { // Herança da classe Instruc
         std::vector<std::string> SplitInstruction(
             const std::string& str
         ) const override;
-        bool IdentifyType(
+        bool SetStages(
             const std::vector<std::string>& tokens
         ) override;
         void ValidateInstruction(
             const std::vector<std::string>& tokens
-        ) override;
+        );
         void NormalizeInstruction(
             std::vector<std::string>& tokens
         ) override;
-        void SetAttributes(
-            const std::vector<std::string>& tokens
-        ) override;
+        void SetStageAttributes(
+            const std::vector<std::string>& tokens,
+            std::vector<Register>&          ex_sources,
+            std::vector<Register>&          mem_sources
+        );
 };
 
 } // namespace processor

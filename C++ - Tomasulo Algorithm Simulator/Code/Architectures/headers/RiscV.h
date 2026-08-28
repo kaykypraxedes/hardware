@@ -25,18 +25,22 @@ class InstructionRiscV : public Instruction { // Herança da classe Instruction.
         std::vector<std::string> SplitInstruction(
             const std::string& str
         ) const override;
-        bool IdentifyType(
+        bool SetStages(
             const std::vector<std::string>& tokens
         ) override;
         void ValidateInstruction(
-            const std::vector<std::string>& tokens
-        ) override;
+            const std::vector<std::string>& tokens,
+            INSTRUCTION_TYPE                instruction_type
+        );
         void NormalizeInstruction(
             std::vector<std::string>& tokens
         ) override;
-        void SetAttributes(
-            const std::vector<std::string>& tokens
-        ) override;
+        void SetStageAttributes(
+            const std::vector<std::string>& tokens,
+            INSTRUCTION_TYPE                instruction_type,
+            std::vector<Register>&          ex_sources,
+            std::vector<Register>&          mem_sources
+        );
 };
 
 } // namespace processor

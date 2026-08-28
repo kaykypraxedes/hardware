@@ -21,7 +21,6 @@
 #include "Components.h"
 #include <string>
 #include <vector>
-#include <utility>   // para std::pair
 #include <memory>    // para std::shared_ptr
 #include <cstdlib>   // para std::abort
 #include <iostream>  // para std::cerr
@@ -54,8 +53,8 @@ class RS {
         const std::string&              GetId()                  const;
         const std::vector<int>&         GetTimes()               const;
         const std::vector<std::string>& GetInstructions()        const;
-        const std::vector<std::pair<std::string,int>>& GetExQ()  const;
-        const std::vector<std::pair<std::string,int>>& GetMemQ() const;
+        const std::vector<int>& GetExQ()  const;
+        const std::vector<int>& GetMemQ() const;
 
         // Demais métodos:
 
@@ -124,20 +123,15 @@ class RS {
         );
 
         /**
-         * @brief Se esta RS estiver esperando pelo produtor de outra
-         * RS captura o valor (V) e limpa a pendência (Q).
+         * @brief Se esta RS estiver esperando por uma instrução produtora,
+         * captura o valor (V) e limpa a pendência (Q).
          *
-         * @details É uma escolha de implementação verificar apenas o
-         * rs_id é verificado (não o start_cycle). Uma RS ocupada
-         * sempre tem suas dependências resolvidas antes de ser
-         * liberada, não havendo Q[i] stale de alocações anteriores.
-         *
-         * @param const std::string& rs_id - RS liberada.
-         * @param const Register& value - Registrador liberado.
+         * @param producer_position Identidade lógica liberada.
+         * @param value Registrador liberado.
          */
         void ResolveDependency(
-            const std::string& rs_id,
-            const Register&    value
+            const int       producer_position,
+            const Register& value
         );
 
         /**
@@ -158,8 +152,8 @@ class RS {
         std::string                  id;    // Nome do RS ("load1", "addInt3", etc.).
         std::vector<Register>        ex_V;  // Registradores prontos (V) separados por ciclo do pipeline que eles travam.
         std::vector<Register>        mem_V;
-        std::vector<std::pair<std::string,int>> ex_Q;        // Registradores em espera (Q) compostos por {rs_id, start_cycle}.
-        std::vector<std::pair<std::string,int>> mem_Q;
+        std::vector<int>             ex_Q;   // Posição lógica do produtor; -1 indica ausência.
+        std::vector<int>             mem_Q;
         // - Elementos da instrução:
         std::shared_ptr<Instruction> current_instruction;    // Instrução (compartilhada com a tabela/ROB).
         INSTRUCTION_PHASE_TOMASULO   phase{INSTRUCTION_PHASE_TOMASULO::UNUSED};
@@ -209,16 +203,18 @@ class RS {
 
         /**
          * @brief Marca no CDB todos os registradores de destino da
-         * instrução como pendentes desta RS.
+         * instrução como pendentes do produtor lógico.
          *
          * @param const std::vector<Register>& dests - Registradores
          * de destino.
+         * @param producer_position Posição lógica da instrução.
          * @param CDB& cdb - CDB com o banco de registradores para
          * acessar o registrador alvo.
          * @param const int cycle - Ciclo atual.
          */
         void AllocateDestInCDB(
             const std::vector<Register>& dests,
+            const int                    producer_position,
             CDB&                         cdb,
             const int                    cycle
         );

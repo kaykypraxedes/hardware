@@ -195,8 +195,8 @@ de dados por enquanto.
       `base_mem_latencies` são `static` na classe-base e
       compartilhados por **todas** as arquiteturas já
       implementadas — alterá-los afeta todas de uma vez. Latências
-      únicas por instrução usam `SetExLatency()`/`SetMemLatency()`
-      na instância, não os vetores estáticos.
+      únicas por instrução usam `SetLatencies()` com um vetor por
+      etapa na instância, não os vetores estáticos.
 
 ## Cuidados / "gotchas" gerais
 

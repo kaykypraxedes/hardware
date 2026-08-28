@@ -104,13 +104,13 @@ static bool ComparePositionOnRS(
 }
 
 static void ResolveDependencyInGroup(
-    std::vector<RS>&   group,
-    const std::string& rs_id,
-    const Register&    dest
+    std::vector<RS>& group,
+    const int        producer_position,
+    const Register&  dest
 ){
-    // Passa em um grupo de RS resolvendo dependências onde "Q == dest".
+    // Passa em um grupo de RS resolvendo dependências do produtor lógico.
     for (RS& dep : group)
-        if (dep.IsBusy()) dep.ResolveDependency(rs_id, dest);
+        if (dep.IsBusy()) dep.ResolveDependency(producer_position, dest);
 }
 
 static void BroadcastOnCDBAndRS(
@@ -123,34 +123,19 @@ static void BroadcastOnCDBAndRS(
     // Instrução sem registrador de destino válido.
     if (dest.GetType() == 'Z') return;
 
+    // Desaloca diretamente a identidade lógica, sem depender da RS física atual.
     Register& reg{GetReg(cdb, dest)};
-
-    // Em cada RS:
-    for (std::vector<RS>* group : GetAllRSGroups(rs)) {
-        for (RS& r : *group) {
-
-            // Ignora células da RS vazias ou que ainda não chegaram em WB.
-            if (!r.IsBusy() || r.GetInstructionPhase() != INSTRUCTION_PHASE_TOMASULO::WR) continue;
-            // Ignora células da RS de outras instruções (posição diferente).
-            if (r.GetCurrentInstruction().GetPosition() != position) continue;
-
-            // 1. Desaloca no CDB os registradores de destino das instruções que finalizaram o WR (liberaram a RS).
-            std::string rs_id{r.GetId()};
-            int start_cycle{reg.GetRSCycleStart(rs_id)};
-
-            if (!reg.DeallocateRS(rs_id, start_cycle, cycle)) {
-                std::cerr << "[ERRO] Falha na desalocação da célula da RS!"
-                "- RS: " << rs_id << '\n' <<
-                "- [start-end]: [" << start_cycle << "-" << cycle << "]\n";
-                std::abort();
-            }
-
-            // 2. Atualiza em todos os grupos de RS as dependências das instruções que dependiam desse resultado.
-            // - Elimina as dependências onde "Q == rs_id".
-            for (std::vector<RS>* group : GetAllRSGroups(rs))
-                ResolveDependencyInGroup(*group, rs_id, dest);
-        }
+    if (!reg.DeallocateProducer(position, cycle)) {
+        std::cerr <<
+            "[ERRO] Falha na desalocação do produtor!\n"
+            "- Posição: " << position << '\n' <<
+            "- Ciclo final: " << cycle << '\n';
+        std::abort();
     }
+
+    // Atualiza todos os Qs que aguardavam exatamente esse produtor.
+    for (std::vector<RS>* group : GetAllRSGroups(rs))
+        ResolveDependencyInGroup(*group, position, dest);
 }
 
 static void ReleaseRS(
@@ -209,15 +194,15 @@ const std::vector<TABLE_ROW>& Thread::GetTable() const { return instruction_tabl
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
 Thread::Thread(
-    const std::vector<std::string>&             assembly,
-    const std::vector<std::tuple<int,int,int>>& new_latency,
-    const std::vector<int>&                     num_rs,
-    const std::vector<int>&                     num_fus,
-    const std::vector<int>&                     switch_cycles,
-    const int                                   dispatch_width,
-    const int                                   rob_capacity,
-    const bool                                  has_predictor,
-    const ARCHITECTURE                          arch
+    const std::vector<std::string>&      assembly,
+    const std::vector<LATENCY_OVERRIDE>& latency_overrides,
+    const std::vector<int>&              num_rs,
+    const std::vector<int>&              num_fus,
+    const std::vector<int>&              switch_cycles,
+    const int                            dispatch_width,
+    const int                            rob_capacity,
+    const bool                           has_predictor,
+    const ARCHITECTURE                   arch
 ) :
     has_rob        (rob_capacity > 0),
     rob_capacity   (rob_capacity > 0 ? rob_capacity : 1),
@@ -245,11 +230,13 @@ Thread::Thread(
     // Inicializa os RSs e as FUs.
     InitializeComponents(num_rs, num_fus, dispatch_width, arch);
 
-    // Passa as novas latências às instruções.
-    for (const auto& [position, ex, mem] : new_latency) {
+    // Passa os overrides vetoriais às instruções antes do primeiro Issue.
+    for (const auto& [position, ex_latencies, mem_latencies] : latency_overrides) {
         if (static_cast<size_t>(position) < instruction_table.size()) {
-            instruction_table[position].instruction->SetExLatency(ex);
-            if (mem > 0) instruction_table[position].instruction->SetMemLatency(mem);
+            instruction_table[position].instruction->SetLatencies(
+                ex_latencies,
+                mem_latencies
+            );
         }
     }
 }

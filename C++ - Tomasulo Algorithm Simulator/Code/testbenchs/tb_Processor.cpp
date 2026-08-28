@@ -125,12 +125,12 @@ int main() {
         check("mul: mem_cycles vazio",           tab[0].mem_cycles.empty());
     }
 
-    section("2.4 Modificação customizada de Latência (new_latency via parâmetro)");
+    section("2.4 Modificação customizada de Latência (latency_overrides via parâmetro)");
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
-        // Tupla: <posição_instrucao, ex_latency, mem_latency>
+        // Tupla: <posição_instrucao, ex_latencies, mem_latencies>
         // Vamos forçar o add (que normalmente leva 1 ciclo) a levar 5 ciclos de EX
-        std::vector<std::tuple<int,int,int>> lat = {{0, 5, 0}};
+        std::vector<LATENCY_OVERRIDE> lat = {{0, {5}, {0}}};
 
         Processor p(1, 1, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,

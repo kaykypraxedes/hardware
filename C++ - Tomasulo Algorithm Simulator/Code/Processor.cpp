@@ -11,24 +11,24 @@ namespace processor {
 
 // ─── HELPERS ──────────────────────────────────────────────────────
 static void InitializeThreads(
-    const std::vector<std::string>&             assembly,
-    std::vector<Thread>&                        threads,
-    const int                                   num_threads,
-    const int                                   dispatch_width,
-    const bool                                  has_predictor,
-    const std::vector<int>&                     num_rs,
-    const std::vector<int>&                     num_fus,
-    const std::vector<int>&                     switch_cycles,
-    const std::vector<std::tuple<int,int,int>>& new_latency,
-    const ARCHITECTURE                          arch,
-    const PROCESSOR_TYPE                        type
+    const std::vector<std::string>&      assembly,
+    std::vector<Thread>&                 threads,
+    const int                            num_threads,
+    const int                            dispatch_width,
+    const bool                           has_predictor,
+    const std::vector<int>&              num_rs,
+    const std::vector<int>&              num_fus,
+    const std::vector<int>&              switch_cycles,
+    const std::vector<LATENCY_OVERRIDE>& latency_overrides,
+    const ARCHITECTURE                   arch,
+    const PROCESSOR_TYPE                 type
 ){
     int rob_capacity{(type == PROCESSOR_TYPE::TOMASULO_ESPECULATIVE) ? Processor::base_rob_capacity : 0};
     for (int i{}; i < num_threads; i++){
         threads.push_back(
             Thread(
                 assembly,
-                new_latency,
+                latency_overrides,
                 num_rs,
                 num_fus,
                 switch_cycles,
@@ -72,17 +72,17 @@ const std::vector<TABLE_ROW>& Processor::GetThreadTable(
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
 Processor::Processor(
-    const int                                   num_threads,
-    const int                                   dispatch_width,
-    const bool                                  has_predictor,
-    const PROCESSOR_TYPE                        type,
-    const MULTITHREADING_MODEL                  mt_model,
-    const std::vector<std::string>&             Assembly,
-    const std::vector<int>&                     num_rs,
-    const std::vector<int>&                     num_fus,
-    const std::vector<int>&                     switch_instructions,
-    const std::vector<std::tuple<int,int,int>>& new_latency,
-    const ARCHITECTURE                          arch
+    const int                            num_threads,
+    const int                            dispatch_width,
+    const bool                           has_predictor,
+    const PROCESSOR_TYPE                 type,
+    const MULTITHREADING_MODEL           mt_model,
+    const std::vector<std::string>&      Assembly,
+    const std::vector<int>&              num_rs,
+    const std::vector<int>&              num_fus,
+    const std::vector<int>&              switch_instructions,
+    const std::vector<LATENCY_OVERRIDE>& latency_overrides,
+    const ARCHITECTURE                   arch
 ) :
     dispatch_width(dispatch_width),
     has_predictor (has_predictor),
@@ -112,7 +112,7 @@ Processor::Processor(
         num_rs,
         num_fus,
         switch_instructions,
-        new_latency,
+        latency_overrides,
         arch,
         type
     );

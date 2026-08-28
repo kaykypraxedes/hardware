@@ -58,15 +58,18 @@ std::vector<int> Register::GetAllocationTimes() const {
 }
 
 // Público:
-std::string Register::GetCurrentRS() const {
-    for (int i{static_cast<int>(allocated_rs.size()) - 1}; i >= 0; i--) {
-        if (end_times[i] == -1) return allocated_rs[i];
+int Register::GetCurrentProducer() const {
+    for (int i{static_cast<int>(producer_positions.size()) - 1}; i >= 0; i--) {
+        if (end_times[i] == -1) return producer_positions[i];
     }
-    return "";
+    return -1;
 }
 
 // Público:
 const std::vector<std::string>& Register::GetAllocatedRS() const { return allocated_rs; }
+
+// Público:
+const std::vector<int>& Register::GetProducerPositions() const { return producer_positions; }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 
@@ -82,51 +85,49 @@ Register::Register(
 void Register::ToggleBusy() { busy = !busy; }
 
 // Público:
-int Register::GetRSCycleStart(
-    const std::string& rs_id
-) const {
-    for (int i{static_cast<int>(allocated_rs.size()) - 1}; i >= 0; i--) {
-        if (end_times[i] == -1 && allocated_rs[i] == rs_id)
-            return start_times[i];
-    }
-    return -1;
-}
-
-// Público:
 bool Register::IsDependencyResolved(
-    const std::string& rs_id,
-    const int          start_cycle
+    const int producer_position
 ) const {
-    for (size_t i{}; i < allocated_rs.size(); i++) {
-        if (start_times[i] == start_cycle && allocated_rs[i] == rs_id) {
+    for (size_t i{}; i < producer_positions.size(); i++)
+        if (producer_positions[i] == producer_position)
             return end_times[i] != -1;
-        }
-    }
     return false;
 }
 
 // Público:
-void Register::AllocateRS( // Retorno "void" pois sempre funciona.
+void Register::AllocateProducer(
+    const int          producer_position,
     const std::string& rs_id,
-    const int          start_cycle
+    const int          cycle
 ){
+    if (producer_position < 0) {
+        std::cerr << "[ERRO] Posição inválida de produtor: " << producer_position << '\n';
+        std::abort();
+    }
+    for (const int registered_position : producer_positions) {
+        if (registered_position == producer_position) {
+            std::cerr << "[ERRO] Produtor já registrado: " << producer_position << '\n';
+            std::abort();
+        }
+    }
+
     busy = true;
+    producer_positions.push_back(producer_position);
     allocated_rs.push_back(rs_id);
-    start_times.push_back(start_cycle);
+    start_times.push_back(cycle);
     // Começa em -1 para que "start_times" e "end_times" tenham o mesmo tamanho.
     // - Evita erros como "IndexOutOfBounds".
     end_times.push_back(-1);
 }
 
 // Público:
-bool Register::DeallocateRS( // Retorno "bool" pois o "for" pode não achar correspondente.
-    const std::string& rs_id,
-    const int          start_cycle,
-    const int          end_cycle
+bool Register::DeallocateProducer(
+    const int producer_position,
+    const int cycle
 ){
-    for (size_t i{}; i < allocated_rs.size(); i++) {
-        if (allocated_rs[i] == rs_id && start_times[i] == start_cycle) {
-            end_times[i] = end_cycle;
+    for (size_t i{}; i < producer_positions.size(); i++) {
+        if (producer_positions[i] == producer_position && end_times[i] == -1) {
+            end_times[i] = cycle;
             busy = HasPendingProducer();
             return true;
         }

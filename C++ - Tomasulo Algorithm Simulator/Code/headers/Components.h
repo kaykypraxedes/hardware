@@ -30,8 +30,10 @@ namespace processor {
 // ─── DICIONÁRIO ───────────────────────────────────────────────────
 
 /*
- * - Produtor: Módulo da RS que usa o registrador como destino para o
+ * - Produtor: Instrução que usa o registrador como destino para o
  * resultado da sua operação (basicamente aloca o registrador).
+ * Sua identidade lógica é a posição da instrução dentro da Thread;
+ * a RS identifica somente sua localização física atual.
  * Podem existir múltiplos produtores simultâneos do mesmo
  * registrador (WAW).
  */
@@ -74,8 +76,7 @@ class Register {
         std::vector<int> GetAllocationTimes() const;
 
         /**
-         * @brief Indica qual o produtor pendente mais recente
-         * (último "allocated_rs" com "end_times" = -1).
+         * @brief Indica a posição do produtor pendente mais recente.
          *
          * @details É esse produtor que novas instruções devem
          * aguardar em caso de WAW.
@@ -84,17 +85,22 @@ class Register {
          * em conjunto com a renomeação de registradores (flag que é
          * opcional).
          *
-         * @return std::string - Nome do último módulo da RS alocada
-         * pendente.
-         * @return "" - se não tiver nenhuma.
+         * @return Posição lógica do produtor ou -1 quando não houver.
          */
-        std::string GetCurrentRS() const;
+        int GetCurrentProducer() const;
 
         /**
-         * @brief Retorna todos os produtores desse registrador.
+         * @brief Retorna as posições lógicas dos produtores registrados.
          *
-         * @return const std::vector<std::string>& - Nome de todos os
-         * módulos da RS alocada.
+         * @return Vetor alinhado com GetAllocatedRS() e GetAllocationTimes().
+         */
+        const std::vector<int>& GetProducerPositions() const;
+
+        /**
+         * @brief Retorna o histórico das RSs físicas iniciais dos produtores.
+         *
+         * @return const std::vector<std::string>& - Nome da RS física
+         * inicial de cada produtor.
          */
         const std::vector<std::string>& GetAllocatedRS() const; // "const &" para evitar cópia de dados grandes.
 
@@ -107,76 +113,51 @@ class Register {
         void ToggleBusy();
 
         /**
-         * @brief Indica o cíclo de início do produtor pendente mais
-         * recente com o nome enviado.
-         *
-         * @param const std::string& rs_id - Nome do módulo da RS.
-         *
-         * @return int - "start_cycle" referente.
-         * @return -1 -  Não encontrou o produtor (não existe ou já
-         * finalizou).
-         */
-        int GetRSCycleStart(
-            const std::string& rs_id
-        ) const;
-
-        /**
          * @brief Verifica se o produtor já finalizou a operação e
          * liberou o registrador.
          *
-         * @details Evita ambiguidade quando o mesmo módulo da RS
-         * reutiliza várias vezes o mesmo registrador.
+         * @param producer_position Posição lógica do produtor.
          *
-         * @param const std::string& rs_id - Nome do módulo da RS.
-         * @param const int start_cycle - Cíclo de início da
-         * alocação.
-         * da RS (útil quando a mesma RS aloca várias vezes o mesmo
-         * registrador).
-         *
-         * @return true - A RS terminou a alocação.
-         * @return false - Ainda não terminou.
+         * @return true quando o produtor terminou; false quando ainda
+         * estiver pendente ou não existir.
          */
         bool IsDependencyResolved(
-            const std::string& rs_id,
-            const int          start_cycle
+            const int producer_position
         ) const;
 
         /**
          * @brief Registra o novo produtor do registrador.
          *
-         * @details Múltiplos produtores pendentes (WAW) ficam na
-         * sequência de "allocated_rs".
+         * @details A posição identifica a dependência; RS e ciclos são
+         * preservados somente como histórico físico e visual.
          *
-         * @param const std::string& rs_id - Nome do módulo da RS.
-         * @param const int start_cycle - Cíclo de início da
-         * alocação.
+         * @param producer_position Posição lógica da instrução.
+         * @param rs_id Nome da RS física inicial.
+         * @param cycle Ciclo de início da alocação.
          */
-        void AllocateRS(
+        void AllocateProducer(
+            const int          producer_position,
             const std::string& rs_id,
-            const int          start_cycle
+            const int          cycle
         );
 
         /**
-         * @brief Registra o fim a alocação daquele produtor.
+         * @brief Registra o fim da alocação daquele produtor.
          *
          * @details Esse fim não garante necessariamente
-         * "busy == false" pois podem ter mais produtores pendentes)
-         * e marca o fim de cíclo respectivo ao par
-         * ("rs_id" e "start_cycle")
+         * "busy == false" pois podem existir mais produtores pendentes,
+         * e marca o fim do ciclo correspondente à posição lógica.
          *
-         * @param const std::string& rs_id - Nome do módulo da RS.
-         * @param const int start_cycle - Cíclo de início da
-         * alocação.
-         * @param const int end_cycle - Cíclo de fim da alocação.
+         * @param producer_position Posição lógica da instrução.
+         * @param cycle Ciclo de fim da alocação.
          *
          * @return true - Desalocado com sucesso.
          * @return false - Não desalocou (o for pode não ter
          * encontrado nenhuma correspondência).
          */
-        bool DeallocateRS(
-            const std::string& rs_id,
-            const int          start_cycle,
-            const int          end_cycle
+        bool DeallocateProducer(
+            const int producer_position,
+            const int cycle
         );
     private:
         // Atributos:
@@ -219,6 +200,7 @@ class Register {
         std::vector<int>         start_times;
         std::vector<int>         end_times;    // Pares (inicio[n] - fim[n]); fim == -1 enquanto pendente.
         std::vector<std::string> allocated_rs;
+        std::vector<int>         producer_positions;
 
         // Método:
 
