@@ -15,6 +15,7 @@
 #include "Components.h"
 #include <string>
 #include <vector>
+#include <cstddef>       // para std::size_t
 #include <unordered_map>
 #include <algorithm>     // para std::find
 #include <cctype>        // para std::tolower
@@ -222,7 +223,48 @@ class Instruction {
         int GetPosition()   const;
         int GetExLatency()  const;
         int GetMemLatency() const;
+
         INSTRUCTION_TYPE GetInstructionType() const;
+
+        /**
+         * @brief Retorna a quantidade de etapas da descrição completa.
+         *
+         * @return Quantidade de etapas da instrução.
+         */
+        std::size_t GetStageCount() const;
+
+        /**
+         * @brief Retorna o tipo de uma etapa específica.
+         *
+         * @param stage Índice da etapa na descrição completa.
+         *
+         * @return Tipo da etapa indicada.
+         */
+        INSTRUCTION_TYPE GetInstructionType(
+            const std::size_t stage
+        ) const;
+
+        /**
+         * @brief Retorna a latência EX de uma etapa específica.
+         *
+         * @param stage Índice da etapa na descrição completa.
+         *
+         * @return Latência EX da etapa indicada.
+         */
+        int GetExLatency(
+            const std::size_t stage
+        ) const;
+
+        /**
+         * @brief Retorna a latência MEM de uma etapa específica.
+         *
+         * @param stage Índice da etapa na descrição completa.
+         *
+         * @return Latência MEM da etapa indicada.
+         */
+        int GetMemLatency(
+            const std::size_t stage
+        ) const;
 
         // "const &" para evitar cópia de dados grandes.
 
@@ -256,21 +298,43 @@ class Instruction {
         const std::vector<Register>& GetMemSourceRegisters() const;
 
         /**
+         * @brief Retorna as fontes EX de uma etapa específica.
+         *
+         * @param stage Índice da etapa na descrição completa.
+         *
+         * @return Fontes EX da etapa indicada.
+         */
+        const std::vector<Register>& GetExSourceRegisters(
+            const std::size_t stage
+        ) const;
+
+        /**
+         * @brief Retorna as fontes MEM de uma etapa específica.
+         *
+         * @param stage Índice da etapa na descrição completa.
+         *
+         * @return Fontes MEM da etapa indicada.
+         */
+        const std::vector<Register>& GetMemSourceRegisters(
+            const std::size_t stage
+        ) const;
+
+        /**
          * @brief Retorna a sequência completa de tipos da instrução.
          *
-         * @return Vetor ordenado pelos estágios ainda pendentes.
+         * @return Vetor ordenado com todas as etapas da instrução.
          */
         const std::vector<INSTRUCTION_TYPE>& GetInstructionTypes() const;
 
         /**
-         * @brief Retorna as latências EX de todos os estágios pendentes.
+         * @brief Retorna as latências EX de todas as etapas.
          *
          * @return Vetor alinhado com GetInstructionTypes().
          */
         const std::vector<int>& GetExLatencies() const;
 
         /**
-         * @brief Retorna as latências MEM de todos os estágios pendentes.
+         * @brief Retorna as latências MEM de todas as etapas.
          *
          * @return Vetor alinhado com GetInstructionTypes().
          */
@@ -289,13 +353,6 @@ class Instruction {
          * @return Vetor externo alinhado com GetInstructionTypes().
          */
         const std::vector<std::vector<Register>>& GetAllMemSourceRegisters() const;
-
-        /**
-         * @brief Retorna a RS física ocupada pela etapa atual.
-         *
-         * @return Identificador vazio quando a instrução não ocupa uma RS.
-         */
-        const std::string& GetCurrentRS() const;
 
         // Demais métodos:
 
@@ -329,22 +386,6 @@ class Instruction {
             const std::vector<int>& new_ex_latencies,
             const std::vector<int>& new_mem_latencies
         );
-
-        /**
-         * @brief Atualiza a localização física da etapa atual.
-         *
-         * @param rs Identificador da RS; vazio representa nenhuma ocupação.
-         */
-        void SetCurrentRS(
-            const std::string& rs
-        );
-
-        /**
-         * @brief Remove atomicamente uma etapa intermediária concluída.
-         *
-         * @details A etapa final nunca pode ser removida por esse método.
-         */
-        void AdvanceStage();
 
     protected:
         // Atributos:
@@ -399,8 +440,6 @@ class Instruction {
         std::vector<int>                     mem_latencies;
         std::vector<std::vector<Register>>   ex_source_registers;
         std::vector<std::vector<Register>>   mem_source_registers;
-        std::string                          current_rs;
-
         /**
          * @brief Retorna a latência-base de MEM correspondente ao tipo.
          *
@@ -416,6 +455,15 @@ class Instruction {
         void ValidateStageVectors() const;
 
         /**
+         * @brief Confirma que o índice pertence à descrição completa.
+         *
+         * @param stage Índice consultado.
+         */
+        void ValidateStageIndex(
+            const std::size_t stage
+        ) const;
+
+        /**
          * @brief Confirma a validade das latências efetivas de cada etapa.
          *
          * @param ex_values Latências efetivas de EX.
@@ -426,10 +474,6 @@ class Instruction {
             const std::vector<int>& mem_values
         ) const;
 
-        /**
-         * @brief Remove o primeiro elemento de todos os vetores por etapa.
-         */
-        void RemoveCurrentStage();
 };
 
 } // namespace processor

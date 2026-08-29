@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 #include <memory>    // para std::shared_ptr
+#include <cstddef>   // para std::size_t
 #include <cstdlib>   // para std::abort
 #include <iostream>  // para std::cerr
 
@@ -47,37 +48,42 @@ class RS {
         bool                       IsBusy()              const;
         int                        GetCountdown()        const;
         int                        GetFUPosition()       const;
+        std::size_t                GetCurrentStage()     const;
         INSTRUCTION_PHASE_TOMASULO GetInstructionPhase() const;
         // "const &" para evitar cópia (não usado em tipos pequenos por ganho marginal pequeno).
         const Instruction&              GetCurrentInstruction()  const;
         const std::string&              GetId()                  const;
         const std::vector<int>&         GetTimes()               const;
         const std::vector<std::string>& GetInstructions()        const;
-        const std::vector<int>& GetExQ()  const;
-        const std::vector<int>& GetMemQ() const;
+        const std::vector<Register>&    GetExValues()             const;
+        const std::vector<int>&         GetExDependencies()       const;
+        const std::vector<Register>&    GetMemValues()            const;
+        const std::vector<int>&         GetMemDependencies()      const;
 
         // Demais métodos:
 
         /**
          * @brief Tenta alocar a instrução na RS.
          *
-         * @details Se a RS estiver disponível, extrai os dados que
-         * já estão prontos (V) e quais estão na espera (Q) e marca
-         * no histórico.
+         * @details Se a RS estiver disponível, captura V/Q somente para a
+         * etapa atual e reserva destinos apenas na primeira admissão lógica.
          *
          * @param const std::shared_ptr<Instruction>& instruction -
          * Instrução que vai ser alocada.
-         * @param CDB& cdb - CDB com o banco de registradores (para
-         * verificar a disponibilidade dos dados).
+         * @param register_status Estado funcional dos registradores.
          * @param const int cycle - Ciclo atual (início da alocação).
+         * @param new_instruction Indica a primeira admissão lógica.
+         * @param stage Índice da etapa alocada na descrição completa.
          *
          * @return true - Conseguiu fazer a alocação (issue).
          * @return false - RS estava indisponível.
          */
         bool AddIssue(
             const std::shared_ptr<Instruction>& instruction,
-            CDB&                                cdb,
-            const int                           cycle
+            RegisterStatusTable&                register_status,
+            const int                           cycle,
+            const bool                          new_instruction,
+            const std::size_t                   stage = 0
         );
 
         /**
@@ -87,8 +93,7 @@ class RS {
          * @details Se sim, ele tenta fazer a alocação de uma FU e
          * faz as devidas marcações (qual a nova fase e o ciclo).
          *
-         * @param CDB& cdb - CDB com o banco de registradores (para
-         * verificar a disponibilidade).
+         * @param register_status Estado funcional consultado para reconhecer conclusões.
          * @param FUNCTIONAL_UNITS& fu - Todas as unidades
          * funcionais.
          * @param const int cycle - Ciclo atual.
@@ -98,9 +103,9 @@ class RS {
          * estava em espera).
          */
         bool UpdateDependencies(
-            CDB&              cdb,
-            FUNCTIONAL_UNITS& fu,
-            const int         cycle
+            const RegisterStatusTable& register_status,
+            FUNCTIONAL_UNITS&          fu,
+            const int                  cycle
         );
 
         /**
@@ -140,9 +145,9 @@ class RS {
          *
          * @param const int cycle - Ciclo atual (fim).
          */
-    void Release(
-        const int cycle
-    );
+        void Release(
+            const int cycle
+        );
     private:
         // Atributos:
         // - Elementos do RS:
@@ -150,13 +155,14 @@ class RS {
         int                          allocation_countdown{-1};
         int                          fu_position{-1};
         std::string                  id;    // Nome do RS ("load1", "addInt3", etc.).
-        std::vector<Register>        ex_V;  // Registradores prontos (V) separados por ciclo do pipeline que eles travam.
-        std::vector<Register>        mem_V;
-        std::vector<int>             ex_Q;   // Posição lógica do produtor; -1 indica ausência.
-        std::vector<int>             mem_Q;
         // - Elementos da instrução:
         std::shared_ptr<Instruction> current_instruction;    // Instrução (compartilhada com a tabela/ROB).
+        std::size_t                   current_stage{};
         INSTRUCTION_PHASE_TOMASULO   phase{INSTRUCTION_PHASE_TOMASULO::UNUSED};
+        std::vector<Register>        ex_V;
+        std::vector<int>             ex_Q;
+        std::vector<Register>        mem_V;
+        std::vector<int>             mem_Q;
         // - Histórico:
         std::vector<int>             allocation_times;       // De 2 em 2, início da alocação e fim da alocação.
         std::vector<std::string>     allocated_instructions; // De 1 em 1, instruções alocadas na RS.
@@ -167,76 +173,54 @@ class RS {
 
         /**
          * @brief Realiza a limpeza e redefinição dos dados para o
-         * novo issue, e ambém marca a nova alocação nos vetores
-         * (V/Q).
+         * novo Issue e marca a nova ocupação física no histórico.
          *
          * @param const std::shared_ptr<Instruction>& instruction -
          * Ponteiro para a instrução.
          * const int cycle - Ciclo atual.
+         * @param stage Índice da etapa alocada.
          */
         void SetupNewIssue(
             const std::shared_ptr<Instruction>& instruction,
-            const int                           cycle
+            const int                           cycle,
+            const std::size_t                   stage
         );
 
         /**
-         * @brief Faz a leitura efetiva do registrador da fonte "idx"
-         * e verifica se a alocação é em V[idx] (dado pronto) ou em
-         * Q[idx] (dependente).
-         *
-         * @param const bool is_mem - Flag para identificar se é o
-         * registrador representa uma fonte que opera na fase de EX
-         * ou MEM.
-         * @param const size_t idx - Posição dentro do vetor de
-         * fontes.
-         * @param const Register& src - Registrador alvo (que vai
-         * ser procurado no CDB).
-         * @param CDB& cdb - CDB com o banco de registradores para
-         * acessar o registrador alvo.
+         * @brief Captura V/Q para um grupo de fontes da etapa atual.
          */
-        void ReadSourceOperand(
-            const bool      is_mem,
-            const size_t    idx,
-            const Register& src,
-            CDB&            cdb
+        void CaptureSources(
+            const std::vector<Register>& sources,
+            std::vector<Register>&       values,
+            std::vector<int>&            dependencies,
+            const RegisterStatusTable&   register_status,
+            const int                    consumer_position
         );
 
         /**
-         * @brief Marca no CDB todos os registradores de destino da
-         * instrução como pendentes do produtor lógico.
-         *
-         * @param const std::vector<Register>& dests - Registradores
-         * de destino.
-         * @param producer_position Posição lógica da instrução.
-         * @param CDB& cdb - CDB com o banco de registradores para
-         * acessar o registrador alvo.
-         * @param const int cycle - Ciclo atual.
+         * @brief Reconhece conclusões para Qs vinculados ao Issue atual.
          */
-        void AllocateDestInCDB(
-            const std::vector<Register>& dests,
+        void RefreshDependencyGroup(
+            const std::vector<Register>& sources,
+            std::vector<Register>&       values,
+            std::vector<int>&            dependencies,
+            const RegisterStatusTable&   register_status
+        );
+
+        /**
+         * @brief Resolve localmente ocorrências exatas de um broadcast.
+         */
+        void ResolveDependencyInGroup(
+            const std::vector<Register>& sources,
+            std::vector<Register>&       values,
+            std::vector<int>&            dependencies,
             const int                    producer_position,
-            CDB&                         cdb,
-            const int                    cycle
+            const Register&              value
         );
 
-        // - UpdateDependencies()
-
-        /**
-         * @brief Verifica se a dependência de registrador (Q) já foi
-         * resolvida para marcar o registrador na operação (V).
-         *
-         * @param const bool is_mem - Flag para identificar se é o
-         * registrador representa uma fonte que opera na fase de EX
-         * ou MEM.
-         * @param const size_t idx - Posição dentro do vetor de
-         * fontes.
-         * @param CDB& cdb - CDB com o banco de registradores para
-         * acessar o registrador alvo.
-         */
-        void CheckDependency(
-            const bool   is_mem,
-            const size_t idx,
-            CDB&         cdb
+        static bool SameReference(
+            const Register& left,
+            const Register& right
         );
 
         /**

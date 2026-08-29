@@ -66,7 +66,7 @@ $(EXEC): $(OBJS)
 # --- Testbenchs (suas regras originais com dependências) ---
 # --- Testbenchs (regra genérica com dependências automáticas) ---
 $(OBJDIR)/tb_%: $(TSTDIR)/tb_%.cpp $(OBJS) | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) -MMD -MP -MF $(OBJDIR)/$*.d $< $(filter-out $(MAIN_OBJ),$(OBJS)) -o $@
+	$(CXX) $(CXXFLAGS) -MMD -MP -MF $(OBJDIR)/tb_$*.d $< $(filter-out $(MAIN_OBJ),$(OBJS)) -o $@
 
 # Inclui dependências dos testbenchs
 -include $(patsubst $(OBJDIR)/%,$(OBJDIR)/%.d,$(TB_BINS))

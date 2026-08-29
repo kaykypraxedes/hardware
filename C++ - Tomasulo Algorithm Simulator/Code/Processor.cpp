@@ -167,23 +167,30 @@ void Processor::AddInstructions() {
         // Verificou em todas as threads e nenhuma estava disponível.
         if (thread_turns >= total_threads) break;
 
-        bool ok{threads[thread_pointer].Issue(current_cycle)};
+        ISSUE_RESULT issue_result{threads[thread_pointer].Issue(current_cycle)};
+
         // Issue deu certo.
-        if (ok) {
+        if (issue_result.outcome != ISSUE_OUTCOME::BLOCKED) {
             dispatched++;
-            Instruction& i{*threads[thread_pointer].GetTable()[threads[thread_pointer].GetCurrentInstructionPosition() - 1].instruction};
+            const bool new_instruction{
+                issue_result.outcome == ISSUE_OUTCOME::NEW_INSTRUCTION
+            };
+
             // Verifica se a instrução é um Branch:
             // - Precisa interromper a adição de instruções no Issue se não tem previsor.
-            if(i.GetInstructionType() == INSTRUCTION_TYPE::BRANCH &&
+            if (new_instruction &&
+                issue_result.instruction_type == INSTRUCTION_TYPE::BRANCH &&
                 mt_model != MULTITHREADING_MODEL::SMT && // Como SMT rotaciona, instruções após o Branch não são lançadas.
                 !has_predictor)
                 break;
+
             // SMT: rotaciona após issue bem-sucedido:
             // - Garante alternância entre threads a cada dispatch.
             if (mt_model == MULTITHREADING_MODEL::SMT) AdvanceRoundRobinPointer(thread_pointer, threads.size());
             // Granulação Grossa: só rotaciona quando a instrução num "stall longo" (switch_instructions):
             // - Simula casos como um cache miss que fariam a rotação na Granulação Grossa.
-            else if (mt_model == MULTITHREADING_MODEL::COARSE_GRAINED && threads[thread_pointer].IsSwitchCycle())
+            else if (new_instruction && mt_model == MULTITHREADING_MODEL::COARSE_GRAINED &&
+                threads[thread_pointer].IsSwitchCycle())
                 AdvanceRoundRobinPointer(thread_pointer, threads.size());
             // Granulação Fina: Mantém a mesma thread (sem alteração).
         }

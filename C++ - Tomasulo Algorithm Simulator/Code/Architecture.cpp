@@ -18,7 +18,7 @@ void FillCDB(
     const int  mask
 ){
     for (int i{}; i < count; i++)
-        cdb.registers.push_back(Register(reg_class, id_base + i, mask));
+        cdb.register_status.AddReference(Register(reg_class, id_base + i, mask));
 }
 
 bool IsRegister(
@@ -70,20 +70,47 @@ int Instruction::GetPosition()   const { return position; }
 
 // Público:
 int Instruction::GetExLatency()  const {
-    ValidateStageVectors();
-    return ex_latencies.front();
+    return GetExLatency(0);
 }
 
 // Público:
 int Instruction::GetMemLatency() const {
-    ValidateStageVectors();
-    return mem_latencies.front();
+    return GetMemLatency(0);
 }
 
 // Público:
 INSTRUCTION_TYPE Instruction::GetInstructionType() const {
+    return GetInstructionType(0);
+}
+
+// Público:
+std::size_t Instruction::GetStageCount() const {
     ValidateStageVectors();
-    return instruction_types.front();
+    return instruction_types.size();
+}
+
+// Público:
+INSTRUCTION_TYPE Instruction::GetInstructionType(
+    const std::size_t stage
+) const {
+    ValidateStageIndex(stage);
+    return instruction_types[stage];
+}
+
+// Público:
+int Instruction::GetExLatency(
+    const std::size_t stage
+) const {
+    ValidateStageIndex(stage);
+    return ex_latencies[stage];
+}
+
+// Público:
+int Instruction::GetMemLatency(
+    const std::size_t stage
+) const {
+    ValidateStageIndex(stage);
+    return mem_latencies[stage];
 }
 
 // Público:
@@ -94,14 +121,28 @@ const std::vector<Register>& Instruction::GetDestRegisters()      const { return
 
 // Público:
 const std::vector<Register>& Instruction::GetExSourceRegisters()  const {
-    ValidateStageVectors();
-    return ex_source_registers.front();
+    return GetExSourceRegisters(0);
 }
 
 // Público:
 const std::vector<Register>& Instruction::GetMemSourceRegisters() const {
-    ValidateStageVectors();
-    return mem_source_registers.front();
+    return GetMemSourceRegisters(0);
+}
+
+// Público:
+const std::vector<Register>& Instruction::GetExSourceRegisters(
+    const std::size_t stage
+) const {
+    ValidateStageIndex(stage);
+    return ex_source_registers[stage];
+}
+
+// Público:
+const std::vector<Register>& Instruction::GetMemSourceRegisters(
+    const std::size_t stage
+) const {
+    ValidateStageIndex(stage);
+    return mem_source_registers[stage];
 }
 
 // Público:
@@ -134,9 +175,6 @@ const std::vector<std::vector<Register>>& Instruction::GetAllMemSourceRegisters(
     return mem_source_registers;
 }
 
-// Público:
-const std::string& Instruction::GetCurrentRS() const { return current_rs; }
-
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
 Instruction::Instruction(
@@ -164,7 +202,6 @@ void Instruction::Parse(
     dest_registers.clear();
     ex_source_registers.clear();
     mem_source_registers.clear();
-    current_rs.clear();
 
     // Verifica se foi passado uma string vazia.
     if (str.empty()) {
@@ -224,27 +261,6 @@ void Instruction::SetLatencies(
     mem_latencies = effective_mem_latencies;
 }
 
-// Público:
-void Instruction::SetCurrentRS(
-    const std::string& rs
-){
-    current_rs = rs;
-}
-
-// Público:
-void Instruction::AdvanceStage() {
-    ValidateStageVectors();
-    if (instruction_types.size() == 1) {
-        std::cerr << "[ERRO] A etapa final da instrução não pode ser removida.\n";
-        std::abort();
-    }
-
-    RemoveCurrentStage();
-    current_rs.clear();
-    ValidateStageVectors();
-    ValidateLatencies(ex_latencies, mem_latencies);
-}
-
 // Protegido:
 void Instruction::AddStage(
     const INSTRUCTION_TYPE       instruction_type,
@@ -290,6 +306,20 @@ void Instruction::ValidateStageVectors() const {
 }
 
 // Privado:
+void Instruction::ValidateStageIndex(
+    const std::size_t stage
+) const {
+    ValidateStageVectors();
+    if (stage >= instruction_types.size()) {
+        std::cerr <<
+            "[ERRO] Índice de etapa fora da descrição da instrução.\n"
+            "- Índice: " << stage << '\n' <<
+            "- Quantidade de etapas: " << instruction_types.size() << '\n';
+        std::abort();
+    }
+}
+
+// Privado:
 void Instruction::ValidateLatencies(
     const std::vector<int>& ex_values,
     const std::vector<int>& mem_values
@@ -316,15 +346,6 @@ void Instruction::ValidateLatencies(
             std::abort();
         }
     }
-}
-
-// Privado:
-void Instruction::RemoveCurrentStage() {
-    instruction_types.erase(instruction_types.begin());
-    ex_latencies.erase(ex_latencies.begin());
-    mem_latencies.erase(mem_latencies.begin());
-    ex_source_registers.erase(ex_source_registers.begin());
-    mem_source_registers.erase(mem_source_registers.begin());
 }
 
 } // namespace processor

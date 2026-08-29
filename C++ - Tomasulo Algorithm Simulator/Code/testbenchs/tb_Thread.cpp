@@ -3,6 +3,8 @@
 #include "../headers/Thread.h"
 #include "../headers/Components.h"
 #include "tb_Helpers.h"
+#include "tb_SyntheticInstruction.h"
+#include <memory> // para std::unique_ptr e std::make_unique
 #include <vector>
 
 using namespace processor;
@@ -10,6 +12,26 @@ using namespace processor;
 static const std::vector<int> DEFAULT_NUM_RS    = {5,5,5,4,3,2};
 static const std::vector<int> DEFAULT_NUM_FUS   = {1,1,1,1,1,2};
 static const int              DEFAULT_DISPATCH_WIDTH = 1;
+
+// Cria uma instrução sintética já decodificada na posição solicitada.
+static std::unique_ptr<Instruction> MakeSyntheticInstruction(
+    const int          position,
+    const std::string& plan
+) {
+    auto instruction{std::make_unique<SyntheticInstruction>(position)};
+    instruction->Parse(plan);
+    return instruction;
+}
+
+// Cria uma instrução da arquitetura simplificada com posição explícita.
+static std::unique_ptr<Instruction> MakeSimplifiedInstruction(
+    const int          position,
+    const std::string& text
+) {
+    auto instruction{std::make_unique<InstructionSimplified>(position)};
+    instruction->Parse(text);
+    return instruction;
+}
 
 int main() {
 
@@ -28,9 +50,10 @@ int main() {
         check("GetTable().size() == 2",                    t.GetTable().size() == 2);
         check("tabela[0].instruction->GetPosition() == 0",  t.GetTable()[0].instruction->GetPosition() == 0);
         check("tabela[1].instruction->GetPosition() == 1",  t.GetTable()[1].instruction->GetPosition() == 1);
-        check("tabela[0].issue_cycle == -1 (não emitido)", t.GetTable()[0].issue_cycle == -1);
+        check("tabela[0].issue_cycles vazio (não emitido)", t.GetTable()[0].issue_cycles.empty());
 
-        check("GetCDB().registers.size() == 66 (R0-31 + F32-63 + M6-65)", t.GetCDB().registers.size() == 66);
+        check("GetCDB().register_status.Size() == 66 (R0-31 + F32-63 + M6-65)",
+            t.GetCDB().register_status.Size() == 66);
 
         check("GetRS().load.size() == 5",                  t.GetRS().load.size() == 5);
         check("GetRS().store.size() == 5",                 t.GetRS().store.size() == 5);
@@ -83,6 +106,27 @@ int main() {
         check("memLat continua 1 (base)", t3.GetTable()[0].instruction->GetMemLatency() == 1);
     }
 
+    section("1.5 Thread() — instruções pré-decodificadas");
+    {
+        std::vector<std::unique_ptr<Instruction>> instructions;
+        instructions.push_back(MakeSyntheticInstruction(0, "multi"));
+
+        Thread t(std::move(instructions), {{0, {1, 1, 1}, {1, 0, 1}}});
+        check("sobrecarga preserva plano multi-etapa",
+            t.GetTable()[0].instruction->GetInstructionTypes() ==
+                std::vector<INSTRUCTION_TYPE>({
+                    INSTRUCTION_TYPE::LOAD,
+                    INSTRUCTION_TYPE::INT_MUL,
+                    INSTRUCTION_TYPE::STORE
+                }));
+
+        check("sobrecarga rejeita posição descontínua", Aborts([]() {
+            std::vector<std::unique_ptr<Instruction>> invalid;
+            invalid.push_back(MakeSyntheticInstruction(1, "multi"));
+            Thread thread(std::move(invalid));
+        }));
+    }
+
     /*
     // Teste das flags de segurança do programa (abortam a execução):
 
@@ -125,18 +169,30 @@ int main() {
         std::vector<std::string> prog = {"add r3, r1, r2", "sub r5, r3, r4"};
         Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
 
-        bool ok1 = t.Issue(1);
-        check("ciclo 1: Issue retorna true",              ok1);
+        ISSUE_RESULT result1{t.Issue(1)};
+        check("ciclo 1: retorna NEW_INSTRUCTION",
+            result1.outcome == ISSUE_OUTCOME::NEW_INSTRUCTION);
+        check("ciclo 1: identifica posição e tipo emitidos",
+            result1.position == 0 &&
+            result1.instruction_type == INSTRUCTION_TYPE::INT_BASIC);
         check("ciclo 1: Posição avança para 1",           t.GetCurrentInstructionPosition() == 1);
-        check("ciclo 1: tabela[0].issue_cycle == 1",      t.GetTable()[0].issue_cycle == 1);
+        check("ciclo 1: tabela[0].issue_cycles.front() == 1",      t.GetTable()[0].issue_cycles.front() == 1);
 
-        bool ok2 = t.Issue(2);
-        check("ciclo 2: Issue retorna true",              ok2);
+        ISSUE_RESULT result2{t.Issue(2)};
+        check("ciclo 2: retorna NEW_INSTRUCTION",
+            result2.outcome == ISSUE_OUTCOME::NEW_INSTRUCTION);
+        check("ciclo 2: identifica posição e tipo emitidos",
+            result2.position == 1 &&
+            result2.instruction_type == INSTRUCTION_TYPE::INT_BASIC);
         check("ciclo 2: Posição avança para 2",           t.GetCurrentInstructionPosition() == 2);
-        check("ciclo 2: tabela[1].issue_cycle == 2",      t.GetTable()[1].issue_cycle == 2);
+        check("ciclo 2: tabela[1].issue_cycles.front() == 2",      t.GetTable()[1].issue_cycles.front() == 2);
 
-        bool ok3 = t.Issue(3);
-        check("ciclo 3: retorna false (sem mais instruções)", !ok3);
+        ISSUE_RESULT result3{t.Issue(3)};
+        check("ciclo 3: retorna BLOCKED (sem mais instruções)",
+            result3.outcome == ISSUE_OUTCOME::BLOCKED);
+        check("resultado bloqueado não identifica instrução",
+            result3.position == -1 &&
+            result3.instruction_type == INSTRUCTION_TYPE::INVALID);
     }
 
     section("2.2 Issue() — RS cheia bloqueia emissão");
@@ -148,8 +204,12 @@ int main() {
         Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
         for (int c = 1; c <= 5; c++)       t.Issue(c);
         check("Posição == 5 após 5 LOADs", t.GetCurrentInstructionPosition() == 5);
-        bool cheio =                       t.Issue(6);
-        check("6o LOAD retorna false (RS cheia)", !cheio);
+        ISSUE_RESULT cheio{t.Issue(6)};
+        check("6o LOAD retorna BLOCKED (RS cheia)",
+            cheio.outcome == ISSUE_OUTCOME::BLOCKED);
+        check("bloqueio por RS cheia não identifica instrução",
+            cheio.position == -1 &&
+            cheio.instruction_type == INSTRUCTION_TYPE::INVALID);
         check("Posição não avança",        t.GetCurrentInstructionPosition() == 5);
     }
 
@@ -158,9 +218,10 @@ int main() {
         std::vector<std::string> prog = {"add r1,r2,r3", "add r4,r5,r6", "add r7,r8,r9"};
         Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/2);
 
-        check("1a issue ok",  t.Issue(1));
-        check("2a issue ok",  t.Issue(2));
-        check("3a issue bloqueada (ROB cheio, capacidade 2)", !t.Issue(3));
+        check("1a issue nova", t.Issue(1).outcome == ISSUE_OUTCOME::NEW_INSTRUCTION);
+        check("2a issue nova", t.Issue(2).outcome == ISSUE_OUTCOME::NEW_INSTRUCTION);
+        check("3a issue bloqueada (ROB cheio, capacidade 2)",
+            t.Issue(3).outcome == ISSUE_OUTCOME::BLOCKED);
         check("posicao nao avancou (continua em 2)", t.GetCurrentInstructionPosition() == 2);
     }
 
@@ -169,14 +230,19 @@ int main() {
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
         Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
 
-        t.Issue(1); // bnez emitido, unresolved_branch_position = 0
+        ISSUE_RESULT branch_result{t.Issue(1)}; // bnez emitido, unresolved_branch_position = 0
+        check("Branch retorna evento novo explícito",
+            branch_result.outcome == ISSUE_OUTCOME::NEW_INSTRUCTION &&
+            branch_result.position == 0 &&
+            branch_result.instruction_type == INSTRUCTION_TYPE::BRANCH);
         check("Posição avança para 1 após issue do bnez", t.GetCurrentInstructionPosition() == 1);
 
         // Issue() em si NÃO verifica unresolved_branch_position (só StartExOrMemPhase verifica),
         // então o add consegue ser emitido para a RS aqui — o bloqueio real acontece no EX,
         // testado na seção 5.
-        bool ok = t.Issue(2);
-        check("add consegue ser emitido (bloqueio é no EX, não no Issue)", ok);
+        ISSUE_RESULT add_result{t.Issue(2)};
+        check("add consegue ser emitido (bloqueio é no EX, não no Issue)",
+            add_result.outcome == ISSUE_OUTCOME::NEW_INSTRUCTION);
     }
 
     /*
@@ -204,7 +270,7 @@ int main() {
         Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
 
         t.Issue(1);
-        check("ciclo 1: issue registrado", t.GetTable()[0].issue_cycle == 1);
+        check("ciclo 1: issue registrado", t.GetTable()[0].issue_cycles.front() == 1);
 
         t.ExMem(2);
         t.Wr(2);
@@ -232,7 +298,7 @@ int main() {
         }
 
         auto tab = t.GetTable();
-        check("mul: issue == 1",                 tab[0].issue_cycle == 1);
+        check("mul: issue == 1",                 tab[0].issue_cycles.front() == 1);
         check("mul: ex_cycles[0] == 2 (inicio)", tab[0].ex_cycles.size() >= 1 && tab[0].ex_cycles[0] == 2);
         check("mul: ex_cycles[1] == 5 (fim)",    tab[0].ex_cycles.size() == 2 && tab[0].ex_cycles[1] == 5);
         check("mul: WR == 6",                    tab[0].wr_cycle == 6);
@@ -245,7 +311,7 @@ int main() {
         Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
 
         t.Issue(1);
-        check("LOAD: issue == 1", t.GetTable()[0].issue_cycle == 1);
+        check("LOAD: issue == 1", t.GetTable()[0].issue_cycles.front() == 1);
 
         t.ExMem(2);
         check("LOAD: ex_cycles[0] == 2 (inicio)",
@@ -297,21 +363,38 @@ int main() {
         Thread t(prog, {{0, {1}, {3}}}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/4);
 
         t.Issue(1);
+        check("STORE cria uma entrada do ROB aguardando execução",
+            t.GetROBEntries().size() == 1 &&
+            t.GetROBEntries()[0].position == 0 &&
+            !t.GetROBEntries()[0].ready &&
+            t.GetROBEntries()[0].ready_cycle == -1 &&
+            t.GetROBEntries()[0].store_state == ROB_STORE_STATE::WAITING_EXECUTION);
         t.ExMem(2); t.Wr(2); // IS -> EX (ex_cycles == [2,2], lat=1)
         // Com ROB, ao terminar o EX a RS já é agendada para liberação — não espera o MEM de verdade.
         t.ExMem(3); t.Wr(3);
         check("STORE c/ ROB: RS já liberada (não fica presa em MEM)", !t.GetRS().store[0].IsBusy());
+        check("STORE concluído aguarda temporização na cabeça do ROB",
+            t.GetROBEntries()[0].store_state == ROB_STORE_STATE::WAITING_MEMORY &&
+            !t.GetROBEntries()[0].ready &&
+            t.GetROBEntries()[0].ready_cycle == -1);
         check("STORE c/ ROB: mem_cycles fica vazio (latência simulada só no Commit)",
             t.GetTable()[0].mem_cycles.empty());
         check("STORE c/ ROB: wr_cycle nunca é marcado", t.GetTable()[0].wr_cycle == -1);
 
         // Commit() simula a latência de MEM (3 ciclos) a partir da PRIMEIRA vez que chega no topo do ROB.
         t.Commit(10);
-        check("commit 1/3: ainda não commitou (lat=3)", t.GetTable()[0].commit_cycle == -1);
+        check("commit 1/3: STORE iniciou memória com ready_cycle explícito",
+            t.GetTable()[0].commit_cycle == -1 &&
+            t.GetROBEntries()[0].store_state == ROB_STORE_STATE::EXECUTING_MEMORY &&
+            t.GetROBEntries()[0].ready_cycle == 12 &&
+            !t.GetROBEntries()[0].ready);
         t.Commit(11);
         check("commit 2/3: ainda não commitou", t.GetTable()[0].commit_cycle == -1);
         t.Commit(12);
-        check("commit 3/3: commitou no ciclo 12", t.GetTable()[0].commit_cycle == 12);
+        check("commit 3/3: commitou no ciclo 12 e removeu a cabeça",
+            t.GetTable()[0].commit_cycle == 12 && t.GetROBEntries().empty());
+        check("temporização do STORE nunca foi gravada no trace",
+            t.GetTable()[0].mem_cycles.empty());
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -334,12 +417,12 @@ int main() {
         t.ExMem(5); t.Wr(5);
 
         auto tab = t.GetTable();
-        check("RAW: add issue == 1",                           tab[0].issue_cycle == 1);
+        check("RAW: add issue == 1",                           tab[0].issue_cycles.front() == 1);
         check("RAW: add ex_cycles[0] == 2 (inicio)",           tab[0].ex_cycles.size() >= 1 && tab[0].ex_cycles[0] == 2);
         check("RAW: add ex_cycles[1] == 2 (fim)",              tab[0].ex_cycles.size() == 2 && tab[0].ex_cycles[1] == 2);
         check("RAW: add WR == 3",                              tab[0].wr_cycle == 3);
 
-        check("RAW: sub issue == 2",                           tab[1].issue_cycle == 2);
+        check("RAW: sub issue == 2",                           tab[1].issue_cycles.front() == 2);
         check("RAW: sub ex_cycles[0] == 4 (inicio, após RAW)", tab[1].ex_cycles.size() >= 1 && tab[1].ex_cycles[0] == 4);
         check("RAW: sub ex_cycles[1] == 4 (fim)",              tab[1].ex_cycles.size() == 2 && tab[1].ex_cycles[1] == 4);
         check("RAW: sub WR == 5",                              tab[1].wr_cycle == 5);
@@ -453,7 +536,7 @@ int main() {
         Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS); // 1 FU int_basic_alu
 
         cycle(t, 1); // bnez emitido (unresolved_branch_position = 0)
-        check("ciclo 1: bnez emitido", t.GetTable()[0].issue_cycle == 1);
+        check("ciclo 1: bnez emitido", t.GetTable()[0].issue_cycles.front() == 1);
 
         cycle(t, 2); // bnez entra em EX (2-2); add emitido, filtrado pelo stall
         check("ciclo 2: bnez em EX", t.GetTable()[0].ex_cycles.size() >= 1);
@@ -481,7 +564,25 @@ int main() {
               !t.GetTable()[1].ex_cycles.empty() && t.GetTable()[1].ex_cycles[0] == 2);
     }
 
-    section("5.3 Commit() de BRANCH sem previsor: serializa 1 por ciclo mesmo com ROB");
+    section("5.3 Branch final marca ready_cycle no ciclo de resolução");
+    {
+        std::vector<std::string> prog = {"bnez r1, foo"};
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/4);
+
+        t.Issue(1);
+        t.ExMem(2); t.Wr(2);
+        check("Branch pronto vem do ROB, no ciclo final do EX",
+            t.GetROBEntries().size() == 1 &&
+            t.GetROBEntries()[0].ready &&
+            t.GetROBEntries()[0].ready_cycle == 2 &&
+            t.GetTable()[0].commit_cycle == -1);
+
+        t.Commit(2);
+        check("Branch pode commitar no ciclo de resolução",
+            t.GetTable()[0].commit_cycle == 2 && t.GetROBEntries().empty());
+    }
+
+    section("5.4 Commit() de BRANCH sem previsor: serializa 1 por ciclo mesmo com ROB");
     {
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
         Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/4,
@@ -496,7 +597,7 @@ int main() {
               t.GetTable()[1].commit_cycle > t.GetTable()[0].commit_cycle);
     }
 
-    section("5.4 Branch SEM ROB com EX latência 4: add só entra em EX após o branch terminar");
+    section("5.5 Branch SEM ROB com EX latência 4: add só entra em EX após o branch terminar");
     {
         // bnez com exLat=4 (via latency_overrides). Com 1 FU o add também seria atrasado
         // por hazard estrutural — a flag e a FU agem na mesma direção.
@@ -519,7 +620,7 @@ int main() {
               t.GetTable()[1].ex_cycles.size() >= 1 && t.GetTable()[1].ex_cycles[0] == 6);
     }
 
-    section("5.5 Branch SEM ROB com EX latência 4 e 2 FUs: flag segura até o fim do EX");
+    section("5.6 Branch SEM ROB com EX latência 4 e 2 FUs: flag segura até o fim do EX");
     {
         // Com 2 FUs int_basic_alu não há hazard estrutural mascarando o teste:
         // o add só pode entrar em EX quando a flag for limpa (fim do EX do branch).
@@ -548,18 +649,37 @@ int main() {
     std::cout << "\n";
     print_title("6. Commit() (tudo com ROB)");
 
-    section("6.1 Commit() em ordem, respeitando commit_pointer");
+    section("6.1 ready_cycle e cabeça do ROB controlam Commit em ordem");
     {
-        std::vector<std::string> prog = {"add r1,r2,r3", "sub r4,r5,r6"}; // independentes
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/4);
+        std::vector<std::string> prog = {"mul r1,r2,r3", "add r4,r5,r6"};
+        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, /*dispatch_width=*/2, /*rob_capacity=*/4);
 
-        t.Issue(1); t.Issue(2);
-        for (int c = 2; c <= 5; c++) { t.ExMem(c); t.Wr(c); }
-        for (int c = 6; c <= 8; c++) t.Commit(c);
+        t.Issue(1); t.Issue(1);
+        for (int c = 2; c <= 3; c++) {
+            t.ExMem(c); t.Wr(c); t.Commit(c);
+        }
+        check("resultado mais novo fica pronto sem ultrapassar a cabeça",
+            t.GetROBEntries().size() == 2 &&
+            !t.GetROBEntries()[0].ready &&
+            t.GetROBEntries()[1].ready &&
+            t.GetROBEntries()[1].ready_cycle == 4 &&
+            t.GetTable()[1].commit_cycle == -1);
 
-        auto tab = t.GetTable();
-        check("posição 0 commitou antes ou junto da posição 1",
-              tab[0].commit_cycle > 0 && tab[0].commit_cycle <= tab[1].commit_cycle);
+        for (int c = 4; c <= 6; c++) {
+            t.ExMem(c); t.Wr(c); t.Commit(c);
+        }
+        check("resultado da cabeça espera o ciclo posterior ao WR",
+            t.GetROBEntries()[0].ready &&
+            t.GetROBEntries()[0].ready_cycle == 7 &&
+            t.GetTable()[0].wr_cycle == 6 &&
+            t.GetTable()[0].commit_cycle == -1 &&
+            t.GetTable()[1].commit_cycle == -1);
+
+        t.Commit(7);
+        check("cabeça e resultado posterior commitam em ordem no ciclo elegível",
+            t.GetTable()[0].commit_cycle == 7 &&
+            t.GetTable()[1].commit_cycle == 7 &&
+            t.GetROBEntries().empty());
     }
 
     section("6.2 fu.commit limita commits por ciclo");
@@ -584,12 +704,96 @@ int main() {
         Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/2);
 
         t.Issue(1); t.Issue(2);
-        check("ROB cheio (cap=2): 3a issue falha", !t.Issue(3));
+        check("ROB cheio (cap=2): 3a issue falha",
+            t.Issue(3).outcome == ISSUE_OUTCOME::BLOCKED);
 
         for (int c = 2; c <= 4; c++) { t.ExMem(c); t.Wr(c); }
         for (int c = 5; c <= 6; c++) t.Commit(c);
 
-        check("após commit liberar o ROB, 3a issue consegue entrar", t.Issue(7));
+        check("após commit liberar o ROB, 3a issue consegue entrar",
+            t.Issue(7).outcome == ISSUE_OUTCOME::NEW_INSTRUCTION);
+    }
+
+    section("6.4 STORE só inicia memória depois de alcançar a cabeça");
+    {
+        std::vector<std::string> prog = {"mul r1,r2,r3", "s.d f2, 0(r3)"};
+        Thread t(
+            prog,
+            {{1, {1}, {3}}},
+            DEFAULT_NUM_RS,
+            DEFAULT_NUM_FUS,
+            {},
+            /*dispatch_width=*/2,
+            /*rob_capacity=*/4
+        );
+
+        t.Issue(1); t.Issue(1);
+        for (int c = 2; c <= 3; c++) {
+            t.ExMem(c); t.Wr(c); t.Commit(c);
+        }
+        check("STORE concluído atrás da cabeça não inicia temporização",
+            t.GetROBEntries().size() == 2 &&
+            t.GetROBEntries()[1].store_state == ROB_STORE_STATE::WAITING_MEMORY &&
+            t.GetROBEntries()[1].ready_cycle == -1 &&
+            t.GetTable()[1].mem_cycles.empty());
+
+        for (int c = 4; c <= 6; c++) {
+            t.ExMem(c); t.Wr(c); t.Commit(c);
+        }
+        check("STORE continua aguardando enquanto a cabeça não é elegível",
+            t.GetROBEntries().size() == 2 &&
+            t.GetROBEntries()[1].store_state == ROB_STORE_STATE::WAITING_MEMORY &&
+            t.GetROBEntries()[1].ready_cycle == -1);
+
+        t.Commit(7);
+        check("STORE inicia memória ao tornar-se cabeça",
+            t.GetTable()[0].commit_cycle == 7 &&
+            t.GetTable()[1].commit_cycle == -1 &&
+            t.GetROBEntries().size() == 1 &&
+            t.GetROBEntries()[0].position == 1 &&
+            t.GetROBEntries()[0].store_state == ROB_STORE_STATE::EXECUTING_MEMORY &&
+            t.GetROBEntries()[0].ready_cycle == 9);
+        t.Commit(8);
+        t.Commit(9);
+        check("STORE commita após latência sem alterar trace MEM",
+            t.GetTable()[1].commit_cycle == 9 &&
+            t.GetTable()[1].mem_cycles.empty() &&
+            t.GetROBEntries().empty());
+    }
+
+    section("6.5 STORE na cabeça espera concluir a execução final");
+    {
+        std::vector<std::string> prog = {"s.d f2, 0(r3)"};
+        Thread t(
+            prog,
+            {{0, {4}, {2}}},
+            DEFAULT_NUM_RS,
+            DEFAULT_NUM_FUS,
+            {},
+            DEFAULT_DISPATCH_WIDTH,
+            /*rob_capacity=*/4
+        );
+
+        t.Issue(1);
+        for (int c = 2; c <= 5; c++) {
+            t.ExMem(c); t.Wr(c); t.Commit(c);
+        }
+        check("STORE não inicia memória durante o EX",
+            t.GetTable()[0].ex_cycles == std::vector<int>({2, 5}) &&
+            t.GetTable()[0].commit_cycle == -1 &&
+            t.GetROBEntries()[0].store_state == ROB_STORE_STATE::WAITING_EXECUTION &&
+            t.GetROBEntries()[0].ready_cycle == -1);
+
+        t.ExMem(6); t.Wr(6); t.Commit(6);
+        check("STORE inicia memória somente depois da liberação final",
+            t.GetROBEntries()[0].store_state == ROB_STORE_STATE::EXECUTING_MEMORY &&
+            t.GetROBEntries()[0].ready_cycle == 7 &&
+            t.GetTable()[0].commit_cycle == -1);
+        t.Commit(7);
+        check("STORE lento commita após EX e MEM funcionais",
+            t.GetTable()[0].commit_cycle == 7 &&
+            t.GetTable()[0].mem_cycles.empty() &&
+            t.GetROBEntries().empty());
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -622,7 +826,7 @@ int main() {
 
         int cycle = 1;
         while (t.GetCurrentInstructionPosition() < static_cast<int>(t.GetTable().size()))
-            if (t.Issue(cycle)) cycle++;
+            if (t.Issue(cycle).outcome != ISSUE_OUTCOME::BLOCKED) cycle++;
         int max_cycles = 50;
         while (max_cycles-- > 0) {
             t.ExMem(cycle);
@@ -633,11 +837,217 @@ int main() {
 
         auto tab = t.GetTable();
         check("integração: todas as instruções passaram por issue",
-              tab[0].issue_cycle > 0 && tab[1].issue_cycle > 0 && tab[2].issue_cycle > 0);
+              tab[0].issue_cycles.front() > 0 && tab[1].issue_cycles.front() > 0 && tab[2].issue_cycles.front() > 0);
         check("integração: todas as instruções commitaram",
               tab[0].commit_cycle > 0 && tab[1].commit_cycle > 0 && tab[2].commit_cycle > 0);
         check("integração: ordem de commit respeitada (posição 0 <= 1 <= 2)",
               tab[0].commit_cycle <= tab[1].commit_cycle && tab[1].commit_cycle <= tab[2].commit_cycle);
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 8. INSTRUÇÕES MULTI-RS
+    // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("8. INSTRUÇÕES MULTI-RS");
+
+    section("8.1 LOAD -> INT_MUL -> STORE usa três Issues e uma identidade");
+    {
+        std::vector<std::unique_ptr<Instruction>> instructions;
+        instructions.push_back(MakeSyntheticInstruction(0, "multi"));
+        Thread t(
+            std::move(instructions),
+            {{0, {1, 1, 1}, {1, 0, 1}}},
+            DEFAULT_NUM_RS,
+            DEFAULT_NUM_FUS
+        );
+
+        const std::vector<INSTRUCTION_TYPE> original_types{
+            t.GetTable()[0].instruction->GetInstructionTypes()
+        };
+        const std::vector<int> original_ex_latencies{
+            t.GetTable()[0].instruction->GetExLatencies()
+        };
+        const std::vector<int> original_mem_latencies{
+            t.GetTable()[0].instruction->GetMemLatencies()
+        };
+
+        ISSUE_RESULT first_issue{t.Issue(1)};
+        check("primeiro Issue avança o frontend",
+            first_issue.outcome == ISSUE_OUTCOME::NEW_INSTRUCTION &&
+            first_issue.position == 0 &&
+            first_issue.instruction_type == INSTRUCTION_TYPE::LOAD &&
+            t.GetCurrentInstructionPosition() == 1);
+        check("primeiro Issue cria entrada in-flight na etapa zero",
+            t.GetInFlightEntries().size() == 1 &&
+            t.GetInFlightEntries()[0].current_stage == 0 &&
+            t.GetInFlightEntries()[0].state == IN_FLIGHT_STATE::ALLOCATED);
+
+        t.ExMem(2); t.Wr(2);
+        check("etapa em execução não recebe segundo Issue",
+            t.GetInFlightEntries()[0].state == IN_FLIGHT_STATE::EXECUTING &&
+            t.Issue(2).outcome == ISSUE_OUTCOME::BLOCKED);
+
+        t.ExMem(3); t.Wr(3);
+        check("LOAD intermediário libera a RS e avança o cursor",
+            t.GetInFlightEntries()[0].current_stage == 1 &&
+            t.GetInFlightEntries()[0].state == IN_FLIGHT_STATE::WAITING_ISSUE &&
+            t.GetInFlightEntries()[0].next_issue_cycle == 4 &&
+            t.GetTable()[0].instruction->GetInstructionType() == INSTRUCTION_TYPE::LOAD);
+        check("fim no ciclo 3 não permite Issue no mesmo ciclo",
+            t.Issue(3).outcome == ISSUE_OUTCOME::BLOCKED);
+        check("destino permanece reservado após LOAD intermediário",
+            t.GetCDB().register_status.FindLatestProducerBefore(Register('R', 6), 1) == 0 &&
+            !t.GetCDB().register_status.IsProducerResolved(Register('R', 6), 0) &&
+            t.GetTable()[0].wr_cycle == -1);
+
+        ISSUE_RESULT second_issue{t.Issue(4)};
+        check("INT_MUL recebe Issue interno explícito no ciclo seguinte",
+            second_issue.outcome == ISSUE_OUTCOME::INTERNAL_STAGE &&
+            second_issue.position == 0 &&
+            second_issue.instruction_type == INSTRUCTION_TYPE::INT_MUL &&
+            t.GetInFlightEntries()[0].state == IN_FLIGHT_STATE::ALLOCATED &&
+            t.GetCurrentInstructionPosition() == 1);
+        t.ExMem(5); t.Wr(5);
+        check("INT_MUL intermediário libera a RS e avança o cursor",
+            t.GetInFlightEntries()[0].current_stage == 2 &&
+            t.GetInFlightEntries()[0].state == IN_FLIGHT_STATE::WAITING_ISSUE &&
+            t.GetInFlightEntries()[0].next_issue_cycle == 6 &&
+            t.GetTable()[0].instruction->GetInstructionType() == INSTRUCTION_TYPE::LOAD);
+        check("fim no ciclo 5 não permite Issue no mesmo ciclo",
+            t.Issue(5).outcome == ISSUE_OUTCOME::BLOCKED);
+        check("destino permanece reservado após INT_MUL intermediário",
+            t.GetCDB().register_status.FindLatestProducerBefore(Register('R', 6), 1) == 0 &&
+            !t.GetCDB().register_status.IsProducerResolved(Register('R', 6), 0) &&
+            t.GetTable()[0].wr_cycle == -1);
+
+        ISSUE_RESULT third_issue{t.Issue(6)};
+        check("STORE recebe terceiro Issue interno sem avançar frontend",
+            third_issue.outcome == ISSUE_OUTCOME::INTERNAL_STAGE &&
+            third_issue.position == 0 &&
+            third_issue.instruction_type == INSTRUCTION_TYPE::STORE &&
+            t.GetInFlightEntries()[0].state == IN_FLIGHT_STATE::ALLOCATED &&
+            t.GetCurrentInstructionPosition() == 1);
+        t.ExMem(7); t.Wr(7);
+        check("STORE permanece em execução entre EX e MEM",
+            t.GetInFlightEntries()[0].state == IN_FLIGHT_STATE::EXECUTING &&
+            t.Issue(7).outcome == ISSUE_OUTCOME::BLOCKED);
+        t.ExMem(8); t.Wr(8);
+        check("etapa final aguarda WR sem novo Issue",
+            t.Issue(8).outcome == ISSUE_OUTCOME::BLOCKED &&
+            t.GetInFlightEntries()[0].state == IN_FLIGHT_STATE::WAITING_WR);
+        check("destino só é liberado pelo resultado final",
+            t.GetCDB().register_status.FindLatestProducerBefore(Register('R', 6), 1) == 0 &&
+            !t.GetCDB().register_status.IsProducerResolved(Register('R', 6), 0));
+
+        t.ExMem(9); t.Wr(9);
+        const TABLE_ROW& row{t.GetTable()[0]};
+        check("cronologia multi-RS é exata",
+            row.issue_cycles == std::vector<int>({1, 4, 6}) &&
+            row.ex_cycles == std::vector<int>({2, 2, 5, 5, 7, 7}) &&
+            row.mem_cycles == std::vector<int>({3, 3, 8, 8}));
+        check("resultado final libera destino e encerra a instrução",
+            t.GetCDB().register_status.IsProducerResolved(Register('R', 6), 0) &&
+            t.GetInFlightEntries()[0].state == IN_FLIGHT_STATE::FINISHED &&
+            t.ExMem(10));
+        check("posição lógica permanece imutável", row.instruction->GetPosition() == 0);
+        check("descrição completa permanece imutável após a execução",
+            row.instruction->GetInstructionTypes() == original_types &&
+            row.instruction->GetExLatencies() == original_ex_latencies &&
+            row.instruction->GetMemLatencies() == original_mem_latencies);
+    }
+
+    section("8.2 ROB cheio bloqueia instrução nova, mas não Issue interno");
+    {
+        std::vector<std::unique_ptr<Instruction>> instructions;
+        instructions.push_back(MakeSyntheticInstruction(0, "multi"));
+        instructions.push_back(MakeSimplifiedInstruction(1, "add r7, r1, r2"));
+        Thread t(
+            std::move(instructions),
+            {{0, {1, 1, 1}, {1, 0, 1}}},
+            DEFAULT_NUM_RS,
+            DEFAULT_NUM_FUS,
+            {},
+            DEFAULT_DISPATCH_WIDTH,
+            /*rob_capacity=*/1
+        );
+
+        check("primeira instrução ocupa a única entrada do ROB",
+            t.Issue(1).outcome == ISSUE_OUTCOME::NEW_INSTRUCTION);
+        check("primeiro Issue cria exatamente uma entrada lógica",
+            t.GetROBEntries().size() == 1 &&
+            t.GetROBEntries()[0].position == 0 &&
+            t.GetROBEntries()[0].store_state == ROB_STORE_STATE::WAITING_EXECUTION);
+        check("ROB cheio bloqueia a próxima instrução",
+            t.Issue(1).outcome == ISSUE_OUTCOME::BLOCKED);
+        t.ExMem(2); t.Wr(2); t.Commit(2);
+        t.ExMem(3); t.Wr(3); t.Commit(3);
+        check("ciclo de término ainda não reemite a etapa",
+            t.GetInFlightEntries()[0].state == IN_FLIGHT_STATE::WAITING_ISSUE &&
+            t.GetInFlightEntries()[0].next_issue_cycle == 4 &&
+            t.Issue(3).outcome == ISSUE_OUTCOME::BLOCKED);
+        check("Issue interno ignora capacidade cheia e preserva cursor",
+            t.Issue(4).outcome == ISSUE_OUTCOME::INTERNAL_STAGE &&
+            t.GetCurrentInstructionPosition() == 1);
+        check("Issue interno reutiliza a entrada existente do ROB",
+            t.GetROBEntries().size() == 1 &&
+            t.GetROBEntries()[0].position == 0 &&
+            t.GetROBEntries()[0].store_state == ROB_STORE_STATE::WAITING_EXECUTION);
+        check("ROB não admitiu a segunda posição",
+            t.GetTable()[0].issue_cycles == std::vector<int>({1, 4}) &&
+            t.GetTable()[1].issue_cycles.empty());
+    }
+
+    section("8.3 Candidato bloqueado não impede etapa apta de outro grupo");
+    {
+        std::vector<std::unique_ptr<Instruction>> instructions;
+        instructions.push_back(MakeSyntheticInstruction(0, "multi"));
+        instructions.push_back(MakeSimplifiedInstruction(1, "mul r7, r1, r2"));
+        instructions.push_back(MakeSyntheticInstruction(2, "load_store"));
+        const std::vector<int> constrained_rs{2, 1, 1, 1, 1, 1};
+        Thread t(
+            std::move(instructions),
+            {
+                {0, {1, 1, 1}, {1, 0, 1}},
+                {1, {6}, {0}},
+                {2, {1, 1}, {1, 1}}
+            },
+            constrained_rs,
+            DEFAULT_NUM_FUS,
+            {},
+            /*dispatch_width=*/3
+        );
+
+        const ISSUE_RESULT first_new{t.Issue(1)};
+        const ISSUE_RESULT second_new{t.Issue(1)};
+        const ISSUE_RESULT third_new{t.Issue(1)};
+        check("três instruções novas recebem Issue no ciclo 1",
+            first_new.outcome == ISSUE_OUTCOME::NEW_INSTRUCTION &&
+            second_new.outcome == ISSUE_OUTCOME::NEW_INSTRUCTION &&
+            third_new.outcome == ISSUE_OUTCOME::NEW_INSTRUCTION);
+        t.ExMem(2); t.Wr(2);
+        t.ExMem(3); t.Wr(3);
+        check("etapa recém-concluída não reemite no ciclo 3",
+            t.Issue(3).outcome == ISSUE_OUTCOME::BLOCKED);
+        t.ExMem(4); t.Wr(4);
+        check("LOAD concluído no ciclo 4 não reemite no mesmo ciclo",
+            t.Issue(4).outcome == ISSUE_OUTCOME::BLOCKED &&
+            t.GetTable()[2].mem_cycles == std::vector<int>({4, 4}));
+        t.ExMem(5); t.Wr(5);
+        ISSUE_RESULT available_internal{t.Issue(5)};
+        check("STORE mais novo recebe Issue enquanto INT_MUL antigo segue bloqueado",
+            available_internal.outcome == ISSUE_OUTCOME::INTERNAL_STAGE &&
+            available_internal.position == 2 &&
+            available_internal.instruction_type == INSTRUCTION_TYPE::STORE &&
+            t.GetTable()[0].issue_cycles == std::vector<int>({1}) &&
+            t.GetInFlightEntries()[0].current_stage == 1 &&
+            t.GetInFlightEntries()[0].state == IN_FLIGHT_STATE::WAITING_ISSUE &&
+            t.GetTable()[0].instruction->GetInstructionType() == INSTRUCTION_TYPE::LOAD &&
+            t.GetInFlightEntries()[1].state == IN_FLIGHT_STATE::EXECUTING &&
+            t.GetTable()[2].issue_cycles == std::vector<int>({1, 5}) &&
+            t.GetInFlightEntries()[2].current_stage == 1 &&
+            t.GetInFlightEntries()[2].state == IN_FLIGHT_STATE::ALLOCATED &&
+            t.GetCurrentInstructionPosition() == 3);
     }
 
     std::cout << "\n-----------------------------\n";

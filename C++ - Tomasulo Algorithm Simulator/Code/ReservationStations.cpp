@@ -4,16 +4,12 @@
 // ─── ATENÇÃO ──────────────────────────────────────────────────────
 /*
  * O funcionamento detalhado das funções e as características dos
- * elementos desse módulo são abordados no header.
+ * elementos desse módulo são abordados em "header.h".
  */
 
 namespace processor {
 
 // ─── HELPERS ──────────────────────────────────────────────────────
-static bool IsInvalidRegister(const Register& reg) {
-    return reg.GetType() == 'Z'; // É inválido se for igual.
-}
-
 static std::vector<FU>& GetFUGroup(
     FUNCTIONAL_UNITS&                fu,
     const INSTRUCTION_TYPE           type,
@@ -54,6 +50,9 @@ int RS::GetCountdown()  const { return allocation_countdown; }
 int RS::GetFUPosition() const { return fu_position; }
 
 // Público:
+std::size_t RS::GetCurrentStage() const { return current_stage; }
+
+// Público:
 INSTRUCTION_PHASE_TOMASULO RS::GetInstructionPhase()  const { return phase; }
 
 // Público:
@@ -69,10 +68,16 @@ const Instruction& RS::GetCurrentInstruction()        const { return *current_in
 const std::vector<std::string>& RS::GetInstructions() const { return allocated_instructions; }
 
 // Público:
-const std::vector<int>& RS::GetExQ()  const { return ex_Q; }
+const std::vector<Register>& RS::GetExValues() const { return ex_V; }
 
 // Público:
-const std::vector<int>& RS::GetMemQ() const { return mem_Q; }
+const std::vector<int>& RS::GetExDependencies() const { return ex_Q; }
+
+// Público:
+const std::vector<Register>& RS::GetMemValues() const { return mem_V; }
+
+// Público:
+const std::vector<int>& RS::GetMemDependencies() const { return mem_Q; }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
@@ -85,8 +90,10 @@ RS::RS(
 // Público:
 bool RS::AddIssue(
     const std::shared_ptr<Instruction>& instruction,
-    CDB&                                cdb,
-    const int                           cycle
+    RegisterStatusTable&                register_status,
+    const int                           cycle,
+    const bool                          new_instruction,
+    const std::size_t                   stage
 ){
     // RS ocupado.
     if (busy) return false;
@@ -98,49 +105,57 @@ bool RS::AddIssue(
         std::abort();
     }
 
+    if (stage >= instruction->GetStageCount()) {
+        std::cerr <<
+            "[ERRO] Etapa inválida passada para a RS.\n"
+            "- Etapa: " << stage << '\n' <<
+            "- Quantidade de etapas: " << instruction->GetStageCount() << '\n';
+        std::abort();
+    }
+
     // Aloca a nova instrução no RS.
-    SetupNewIssue(instruction, cycle);
+    SetupNewIssue(instruction, cycle, stage);
 
-    // Define V[i] e Q[i] para cada fonte da instrução.
-    std::vector<Register> sources{instruction->GetExSourceRegisters()};
-    for (size_t i{}; i < sources.size(); i++)
-        ReadSourceOperand(false, i, sources[i], cdb);
-    sources = instruction->GetMemSourceRegisters();
-    for (size_t i{}; i < sources.size(); i++)
-        ReadSourceOperand(true, i, sources[i], cdb);
-
-    // Marca os registradores destino no CDB (pode haver mais de um, ex.: x86 reg + EFLAGS).
-    AllocateDestInCDB(
-        instruction->GetDestRegisters(),
-        producer_position,
-        cdb,
-        cycle
+    // Captura somente as fontes consumidas pela etapa atual.
+    CaptureSources(
+        instruction->GetExSourceRegisters(stage),
+        ex_V,
+        ex_Q,
+        register_status,
+        producer_position
     );
+    CaptureSources(
+        instruction->GetMemSourceRegisters(stage),
+        mem_V,
+        mem_Q,
+        register_status,
+        producer_position
+    );
+
+    // Destinos arquiteturais pertencem à primeira admissão lógica.
+    if (new_instruction) {
+        for (const Register& dest : instruction->GetDestRegisters()) {
+            if (dest.GetType() == 'Z') continue;
+            register_status.AllocateProducer(dest, producer_position, id, cycle);
+        }
+    }
     return true;
 }
 
 // Privado:
 void RS::SetupNewIssue(
     const std::shared_ptr<Instruction>& instruction,
-    const int                           cycle
+    const int                           cycle,
+    const std::size_t                   stage
 ){
     // Aloca a instrução:
     // - Valores default.
     busy                 = true;
     current_instruction  = instruction;
-    current_instruction->SetCurrentRS(id);
+    current_stage        = stage;
     phase                = INSTRUCTION_PHASE_TOMASULO::IS;
     allocation_countdown = -1;
     fu_position          = -1;
-
-    // Insere os V e Q da instrução.
-    // - Os vetores estão vazios por padrão e o espaço é alocado com a necessidade.
-    size_t sources_size{current_instruction->GetExSourceRegisters().size()};
-    ex_V.assign(sources_size, Register{});
-    ex_Q.assign(sources_size, -1);
-    sources_size = current_instruction->GetMemSourceRegisters().size();
-    mem_V.assign(sources_size, Register{});
-    mem_Q.assign(sources_size, -1);
 
     // Marcação da nova alocação no histórico.
     allocated_instructions.push_back(current_instruction->GetInstructionString());
@@ -148,48 +163,56 @@ void RS::SetupNewIssue(
 }
 
 // Privado:
-void RS::ReadSourceOperand(
-    const bool      is_mem,
-    const size_t    idx,
-    const Register& src,
-    CDB&            cdb
-){
-    // Não tem fonte.
-    if (IsInvalidRegister(src)) return;
+void RS::CaptureSources(
+    const std::vector<Register>& sources,
+    std::vector<Register>&       values,
+    std::vector<int>&            dependencies,
+    const RegisterStatusTable&   register_status,
+    const int                    consumer_position
+) {
+    values.assign(sources.size(), Register{});
+    dependencies.assign(sources.size(), -1);
 
-    // Acessa o registrador alvo no CDB e verifica se ele está com uma dependencia atualmente.
-    const Register& regCDB{GetReg(cdb, src)};
-    const int producer_position{regCDB.GetCurrentProducer()};
-    Register& V_idx{is_mem ? mem_V[idx] : ex_V[idx]};
-    int&      Q_idx{is_mem ? mem_Q[idx] : ex_Q[idx]};
+    // Captura o produtor lógico anterior correto para cada fonte.
+    for (std::size_t source{}; source < sources.size(); source++) {
+        const Register& reference{sources[source]};
+        if (reference.GetType() == 'Z') continue;
 
-    // Define o V ou o Q a depender do estado da alocação:
-    // 1. Sem resultado pendente.
-    if (producer_position == -1) V_idx = src;
-    // 2. Resultado pendente.
-    else Q_idx = producer_position;
+        const int producer_position{
+            register_status.FindLatestProducerBefore(reference, consumer_position)
+        };
+        if (producer_position == -1 ||
+            register_status.IsProducerResolved(reference, producer_position)) {
+            values[source] = reference;
+        }
+        else dependencies[source] = producer_position;
+    }
 }
 
 // Privado:
-void RS::AllocateDestInCDB(
-    const std::vector<Register>& dests,
-    const int                    producer_position,
-    CDB&                         cdb,
-    const int                    cycle
-){
-    for (const Register& dest : dests) {
-        // Não tem destino.
-        if (IsInvalidRegister(dest)) continue;
+void RS::RefreshDependencyGroup(
+    const std::vector<Register>& sources,
+    std::vector<Register>&       values,
+    std::vector<int>&            dependencies,
+    const RegisterStatusTable&   register_status
+) {
+    // Produtores mais novos nunca substituem o Q capturado no Issue.
+    for (std::size_t source{}; source < dependencies.size(); source++) {
+        const int producer_position{dependencies[source]};
+        if (producer_position == -1) continue;
 
-        GetReg(cdb, dest).AllocateProducer(producer_position, id, cycle);
+        if (register_status.IsProducerResolved(sources[source], producer_position)) {
+            values[source] = sources[source];
+            dependencies[source] = -1;
+        }
     }
 }
 
 // Público:
 bool RS::UpdateDependencies(
-    CDB&              cdb,
-    FUNCTIONAL_UNITS& fu,
-    const int         cycle
+    const RegisterStatusTable& register_status,
+    FUNCTIONAL_UNITS&          fu,
+    const int                  cycle
 ){
     // Se o RS estiver vazio ou com sua execução travada por dependencias.
     if (!busy || allocation_countdown != -1) return false;
@@ -197,45 +220,22 @@ bool RS::UpdateDependencies(
     // Se já estiver na fase WR (-1, mas não atualiza mais).
     if (phase == INSTRUCTION_PHASE_TOMASULO::WR) return false;
 
-    // Verifica se os Q[i] já desapareceram (se sim, marca o V[i] correspondente).
-    for (size_t i{}; i < ex_Q.size(); i++)
-        CheckDependency(false, i, cdb);
-    for (size_t i{}; i < mem_Q.size(); i++)
-        CheckDependency(true, i, cdb);
+    // Reconhece produtores concluídos mesmo quando o broadcast não alcançou a RS.
+    RefreshDependencyGroup(
+        current_instruction->GetExSourceRegisters(current_stage),
+        ex_V,
+        ex_Q,
+        register_status
+    );
+    RefreshDependencyGroup(
+        current_instruction->GetMemSourceRegisters(current_stage),
+        mem_V,
+        mem_Q,
+        register_status
+    );
 
     // Aloca as FUs a depender da necessidade e fase da instrução.
     return AdvancePhaseAllocation(fu, cycle);
-}
-
-// Privado:
-void RS::CheckDependency(
-    const bool   is_mem,
-    const size_t idx,
-    CDB&         cdb
-){
-    // Define os parâmetros da atualização:
-    // - Registrador fonte da posição "idx" da instrução.
-    const Register& reg{
-        is_mem ?
-        current_instruction->GetMemSourceRegisters()[idx] :
-        current_instruction->GetExSourceRegisters()[idx]
-    };
-    // - V[idx]/Q[idx] atuais.
-    Register& V_idx{is_mem ? mem_V[idx] : ex_V[idx]};
-    int&      Q_idx{is_mem ? mem_Q[idx] : ex_Q[idx]};
-
-    // Já existe um V ou se Q já foi resolvido.
-    if (V_idx.GetType() != 'Z' || Q_idx == -1) return;
-
-    Register& regCDB{GetReg(cdb, reg)};
-
-    // Verifica se já resolveu nesse cíclo para atualizar.
-    if (regCDB.IsDependencyResolved(Q_idx)) {
-        // Mantém o Q_idx para não atrapalhar a organização:
-        // - V[i] ainda é correspondente a Q[i], não a Q[i-1].
-        V_idx = reg;
-        Q_idx = -1;
-    }
 }
 
 // Privado:
@@ -243,7 +243,7 @@ bool RS::AdvancePhaseAllocation(
     FUNCTIONAL_UNITS& fu,
     const int         cycle
 ){
-    INSTRUCTION_TYPE type{current_instruction->GetInstructionType()};
+    INSTRUCTION_TYPE type{current_instruction->GetInstructionType(current_stage)};
     bool is_load_store{(type == INSTRUCTION_TYPE::LOAD) || (type == INSTRUCTION_TYPE::STORE)};
 
     // EX -> MEM:
@@ -253,7 +253,12 @@ bool RS::AdvancePhaseAllocation(
         for (const int producer_position : mem_Q)
             if (producer_position != -1) return false;
 
-        return TryAllocateFU(fu, INSTRUCTION_PHASE_TOMASULO::MEM, cycle, current_instruction->GetMemLatency());
+        return TryAllocateFU(
+            fu,
+            INSTRUCTION_PHASE_TOMASULO::MEM,
+            cycle,
+            current_instruction->GetMemLatency(current_stage)
+        );
     }
 
     // IS -> EX:
@@ -265,7 +270,12 @@ bool RS::AdvancePhaseAllocation(
     for (const int producer_position : ex_Q)
         if (producer_position != -1) return false;
 
-    return TryAllocateFU(fu, INSTRUCTION_PHASE_TOMASULO::EX, cycle, current_instruction->GetExLatency());
+    return TryAllocateFU(
+        fu,
+        INSTRUCTION_PHASE_TOMASULO::EX,
+        cycle,
+        current_instruction->GetExLatency(current_stage)
+    );
 }
 
 // Privado:
@@ -285,7 +295,13 @@ bool RS::TryAllocateFU(
     }
 
     // Procura uma unidade funcional livre.
-    std::vector<FU>& fu_group{GetFUGroup(fu, current_instruction->GetInstructionType(), target_phase)};
+    std::vector<FU>& fu_group{
+        GetFUGroup(
+            fu,
+            current_instruction->GetInstructionType(current_stage),
+            target_phase
+        )
+    };
     fu_position = FindFreeFU(fu_group);
 
     if (fu_position == -1) return false; // Não encontrou.
@@ -329,7 +345,7 @@ bool RS::UpdateCountdown(
     if (allocation_countdown > 0) return false;
 
     // Instrução acabou de chegar no 0 da sua execução:
-    INSTRUCTION_TYPE type{current_instruction->GetInstructionType()};
+    INSTRUCTION_TYPE type{current_instruction->GetInstructionType(current_stage)};
 
     // Libera a unidade funcional que estava sendo usada.
     ReleaseFU(fu, phase, cycle);
@@ -358,7 +374,13 @@ void RS::ReleaseFU(
     // A FU já estava desalocada (nada a fazer).
     if (fu_position == -1) return;
 
-    std::vector<FU>& fu_group{GetFUGroup(fu, current_instruction->GetInstructionType(), finished_phase)};
+    std::vector<FU>& fu_group{
+        GetFUGroup(
+            fu,
+            current_instruction->GetInstructionType(current_stage),
+            finished_phase
+        )
+    };
 
     // Verifica se a posição da FU é válida:
     if (fu_position < -1 || fu_position >= static_cast<int>(fu_group.size())) {
@@ -380,13 +402,46 @@ void RS::ResolveDependency(
     const int       producer_position,
     const Register& value
 ){
-    // Não dá Q[i].erase(i) para manter a posição equivalente entre Vn e Qn.
-    // - Se fosse removido o Qj, o Qk iria para a posição 0 e o Vk (V[1]) não o acharia.
-    for (size_t i{}; i < ex_Q.size(); i++)
-        if (ex_Q[i] == producer_position) { ex_V[i] = value; ex_Q[i] = -1; }
+    ResolveDependencyInGroup(
+        current_instruction->GetExSourceRegisters(current_stage),
+        ex_V,
+        ex_Q,
+        producer_position,
+        value
+    );
+    ResolveDependencyInGroup(
+        current_instruction->GetMemSourceRegisters(current_stage),
+        mem_V,
+        mem_Q,
+        producer_position,
+        value
+    );
+}
 
-    for (size_t i{}; i < mem_Q.size(); i++)
-        if (mem_Q[i] == producer_position) { mem_V[i] = value; mem_Q[i] = -1; }
+// Privado:
+void RS::ResolveDependencyInGroup(
+    const std::vector<Register>& sources,
+    std::vector<Register>&       values,
+    std::vector<int>&            dependencies,
+    const int                    producer_position,
+    const Register&              value
+) {
+    for (std::size_t source{}; source < dependencies.size(); source++) {
+        if (dependencies[source] != producer_position ||
+            !SameReference(sources[source], value)) continue;
+        values[source] = value;
+        dependencies[source] = -1;
+    }
+}
+
+// Privado:
+bool RS::SameReference(
+    const Register& left,
+    const Register& right
+) {
+    return left.GetType() == right.GetType() &&
+           left.GetId()   == right.GetId() &&
+           left.GetMask() == right.GetMask();
 }
 
 // Público:
@@ -394,15 +449,15 @@ void RS::Release(
     const int cycle
 ){
     allocation_times.push_back(cycle);
-    current_instruction->SetCurrentRS("");
-    busy                 = false;
-    allocation_countdown = -1;
-    fu_position          = -1;
-    // Vetores empty.
+    current_instruction.reset();
+    current_stage = 0;
     ex_V.clear();
     ex_Q.clear();
     mem_V.clear();
     mem_Q.clear();
+    busy                 = false;
+    allocation_countdown = -1;
+    fu_position          = -1;
     phase = INSTRUCTION_PHASE_TOMASULO::UNUSED;
 }
 

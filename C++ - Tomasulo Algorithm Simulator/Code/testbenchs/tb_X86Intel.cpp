@@ -550,28 +550,29 @@ int main() {
     section("10.1 Slots esperados, identidade e isolamento");
     {
         const CDB cdb{InstructionX86Intel::MakeCDB()};
-        check("CDB x86 possui exatamente 90 slots", cdb.registers.size() == 90);
-        check("Cada slot possui identidade (type,id,mask) única", has_unique_registers(cdb.registers));
+        const std::vector<Register> references{cdb.register_status.GetReferences()};
+        check("CDB x86 possui exatamente 90 slots", cdb.register_status.Size() == 90);
+        check("Cada slot possui identidade (type,id,mask) única", has_unique_registers(references));
 
         bool xmm_ok{true};
         for (int id{32}; id < 48; id++)
-            xmm_ok = xmm_ok && has_mask(cdb.registers, 'F', id, 0xFF);
+            xmm_ok = xmm_ok && has_mask(references, 'F', id, 0xFF);
         check("XMM0-XMM15 existem e ocupam slots distintos", xmm_ok);
 
         bool flags_ok{true};
         for (int id{80}; id <= 85; id++)
-            flags_ok = flags_ok && has_mask(cdb.registers, 'G', id, 0xFF);
+            flags_ok = flags_ok && has_mask(references, 'G', id, 0xFF);
         check("CF/PF/AF/ZF/SF/OF existem em slots independentes", flags_ok);
     }
 
     section("10.2 print_banks cobre o CDB uma vez e sem overflow");
     {
         const CDB cdb{InstructionX86Intel::MakeCDB()};
-        std::vector<bool> covered(cdb.registers.size(), false);
+        std::vector<bool> covered(cdb.register_status.Size(), false);
         bool ranges_ok{true};
         for (const auto& bank : cdb.print_banks) {
             if (bank.base < 0 || bank.count < 0 ||
-                static_cast<size_t>(bank.base + bank.count) > cdb.registers.size()) {
+                static_cast<size_t>(bank.base + bank.count) > cdb.register_status.Size()) {
                 ranges_ok = false;
                 continue;
             }

@@ -73,6 +73,20 @@ std::string CycleStr(
     return (c <= 0 ? "--" : std::to_string(c));
 }
 
+// Formata todos os Issues sem alterar a apresentação das instruções unitárias.
+std::string FormatIssueCycles(
+    const std::vector<int>& cycles
+) {
+    if (cycles.empty()) return "--";
+
+    std::ostringstream output;
+    for (std::size_t i{}; i < cycles.size(); i++) {
+        if (i > 0) output << "; ";
+        output << cycles[i];
+    }
+    return output.str();
+}
+
 std::string FormatCycles(
     const std::vector<int>& v
 ){
@@ -263,7 +277,7 @@ void PrintTable(
                   << l.instruction->GetInstructionString()
 
                   << std::setw(W_ISSUE)
-                  << CycleStr(l.issue_cycle)
+                  << FormatIssueCycles(l.issue_cycles)
 
                   << std::setw(W_EX)
                   << FormatCycles(l.ex_cycles)
@@ -445,14 +459,17 @@ int main() {
 
     // Imprime o CDB por faixas de impressão (print_banks) na ordem definida pela arquitetura:
     // - O índice exibido é relativo ao banco (id − base), preservando o formato original.
+    const std::vector<processor::REGISTER_STATUS_VIEW> statuses{
+        cdb.register_status.GetStatuses()
+    };
     for (const auto& bank : cdb.print_banks) {
-        std::vector<processor::Register> group(
-            cdb.registers.begin() + bank.base,
-            cdb.registers.begin() + bank.base + bank.count
+        std::vector<processor::REGISTER_STATUS_VIEW> group(
+            statuses.begin() + bank.base,
+            statuses.begin() + bank.base + bank.count
         );
         processor::PrintComponentGroup(std::string(1, bank.reg_class), group,
-            [](const auto& r) { return r.GetAllocationTimes(); },
-            [](const auto& r) { return r.GetAllocatedRS(); });
+            [](const auto& status) { return status.allocation_times; },
+            [](const auto& status) { return status.allocated_rs; });
     }
 
     std::cout << "══════════════════════════════════════════════════════════\n";

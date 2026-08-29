@@ -3,40 +3,9 @@
 #include "../headers/Architecture.h"
 #include "../headers/InstructionFactory.h"
 #include "tb_Helpers.h"
+#include "tb_SyntheticInstruction.h"
 
 using namespace processor;
-
-// ─── CLASSES ──────────────────────────────────────────────────────
-
-/**
- * @brief Instrução sintética usada para testar um plano multi-etapa.
- */
-class SyntheticInstruction : public Instruction {
-    public:
-        SyntheticInstruction() : Instruction(0) {}
-
-    private:
-        std::vector<std::string> SplitInstruction(
-            const std::string& str
-        ) const override {
-            return {str};
-        }
-
-        bool SetStages(
-            const std::vector<std::string>& tokens
-        ) override {
-            if (tokens[0] != "multi") return false;
-
-            AddStage(INSTRUCTION_TYPE::LOAD, {}, {});
-            AddStage(INSTRUCTION_TYPE::INT_MUL, {}, {});
-            AddStage(INSTRUCTION_TYPE::STORE, {}, {});
-            return true;
-        }
-
-        void NormalizeInstruction(
-            std::vector<std::string>&
-        ) override {}
-};
 
 // ─── HELPERS ──────────────────────────────────────────────────────
 
@@ -67,7 +36,7 @@ int main() {
     print_title("1. LATÊNCIAS VETORIAIS");
 
     section("1.1 Derivação das latências-base por etapa");
-    SyntheticInstruction instruction;
+    SyntheticInstruction instruction(30);
     instruction.Parse("multi");
 
     const std::vector<INSTRUCTION_TYPE> expected_types{
@@ -107,7 +76,43 @@ int main() {
     check("zeros de MEM restauram LOAD/STORE e preservam zero intermediário",
         instruction.GetMemLatencies() == expected_mem);
 
-    print_title("2. REJEIÇÃO DE OVERRIDES INVÁLIDOS");
+    print_title("2. DESCRIÇÃO DAS ETAPAS");
+
+    check("fontes EX permanecem separadas por etapa",
+        instruction.GetAllExSourceRegisters().size() == 3 &&
+        instruction.GetAllExSourceRegisters()[0].size() == 1 &&
+        instruction.GetAllExSourceRegisters()[1].size() == 2 &&
+        instruction.GetAllExSourceRegisters()[2].size() == 1);
+    check("fontes MEM existem somente na etapa STORE",
+        instruction.GetAllMemSourceRegisters().size() == 3 &&
+        instruction.GetAllMemSourceRegisters()[0].empty() &&
+        instruction.GetAllMemSourceRegisters()[1].empty() &&
+        instruction.GetAllMemSourceRegisters()[2].size() == 2);
+    check("destino arquitetural permanece descritivo",
+        instruction.GetDestRegisters().size() == 1 &&
+        instruction.GetDestRegisters()[0].GetId() == 6);
+
+    check("getters indexados consultam cada etapa sem alterar o plano",
+        instruction.GetStageCount() == 3 &&
+        instruction.GetInstructionType(0) == INSTRUCTION_TYPE::LOAD &&
+        instruction.GetInstructionType(1) == INSTRUCTION_TYPE::INT_MUL &&
+        instruction.GetInstructionType(2) == INSTRUCTION_TYPE::STORE &&
+        instruction.GetExSourceRegisters(1).size() == 2 &&
+        instruction.GetExSourceRegisters(1)[0].GetId() == 6 &&
+        instruction.GetMemSourceRegisters(2).size() == 2);
+    check("getters escalares preservam o significado original",
+        instruction.GetInstructionType() == INSTRUCTION_TYPE::LOAD &&
+        instruction.GetInstructionTypes() == expected_types);
+    check("índice fora da descrição aborta", Aborts([&instruction]() {
+        instruction.GetInstructionType(3);
+    }));
+
+    instruction.Parse("multi");
+    check("Parse repetido restaura a mesma descrição completa",
+        instruction.GetInstructionTypes() == expected_types &&
+        instruction.GetAllExSourceRegisters().size() == 3);
+
+    print_title("3. REJEIÇÃO DE OVERRIDES INVÁLIDOS");
 
     check("quantidade EX divergente aborta", Aborts([&instruction]() {
         instruction.SetLatencies({1, 2}, {1, 0, 1});
@@ -133,7 +138,7 @@ int main() {
         invalid.Parse("multi");
     }));
 
-    print_title("3. COMPATIBILIDADE DAS ARQUITETURAS");
+    print_title("4. COMPATIBILIDADE DAS ARQUITETURAS");
 
     check("ArchSimplified mantém plano unitário",
         HasValidUnitPlan(ARCHITECTURE::SIMPLIFIED, "add r1, r2, r3"));

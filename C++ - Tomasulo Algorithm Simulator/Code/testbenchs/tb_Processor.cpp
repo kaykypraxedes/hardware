@@ -81,7 +81,7 @@ int main() {
         check("add: terminou (não atingiu limite)", end_cycle != -1);
 
         auto tab = p.GetThreadTable(0);
-        check("add: issue == 1",                tab[0].issue_cycle == 1);
+        check("add: issue == 1",                tab[0].issue_cycles.front() == 1);
         check("add: ex_cycles[0] == 2 (inicio)", tab[0].ex_cycles.size() >= 1 && tab[0].ex_cycles[0] == 2);
         check("add: ex_cycles[1] == 2 (fim)",    tab[0].ex_cycles.size() == 2 && tab[0].ex_cycles[1] == 2);
         check("add: WR == 3",                    tab[0].wr_cycle == 3);
@@ -99,7 +99,7 @@ int main() {
         check("LOAD: terminou", end_cycle != -1);
 
         auto tab = p.GetThreadTable(0);
-        check("LOAD: issue == 1",                  tab[0].issue_cycle == 1);
+        check("LOAD: issue == 1",                  tab[0].issue_cycles.front() == 1);
         check("LOAD: ex_cycles[0] == 2 (inicio)",  tab[0].ex_cycles.size() >= 1 && tab[0].ex_cycles[0] == 2);
         check("LOAD: ex_cycles[1] == 2 (fim)",     tab[0].ex_cycles.size() == 2 && tab[0].ex_cycles[1] == 2);
         check("LOAD: mem_cycles[0] == 3 (inicio)", tab[0].mem_cycles.size() >= 1 && tab[0].mem_cycles[0] == 3);
@@ -118,7 +118,7 @@ int main() {
         runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
 
-        check("mul: issue == 1",                 tab[0].issue_cycle == 1);
+        check("mul: issue == 1",                 tab[0].issue_cycles.front() == 1);
         check("mul: ex_cycles[0] == 2 (inicio)", tab[0].ex_cycles.size() >= 1 && tab[0].ex_cycles[0] == 2);
         check("mul: ex_cycles[1] == 5 (fim)",    tab[0].ex_cycles.size() == 2 && tab[0].ex_cycles[1] == 5);
         check("mul: WR == 6",                    tab[0].wr_cycle == 6);
@@ -167,8 +167,8 @@ int main() {
         runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
 
-        check("Superscalar: add[0] issue == 1", tab[0].issue_cycle == 1);
-        check("Superscalar: add[1] issue == 1", tab[1].issue_cycle == 1);
+        check("Superscalar: add[0] issue == 1", tab[0].issue_cycles.front() == 1);
+        check("Superscalar: add[1] issue == 1", tab[1].issue_cycles.front() == 1);
         check("Superscalar: ambas terminam no mesmo WR",
               tab[0].wr_cycle == tab[1].wr_cycle);
     }
@@ -185,10 +185,10 @@ int main() {
         auto t0 = p.GetThreadTable(0);
         auto t1 = p.GetThreadTable(1);
 
-        check("FINA: T0[0] issue == 1", t0[0].issue_cycle == 1);
-        check("FINA: T0[1] issue == 2", t0[1].issue_cycle == 2);
-        check("FINA: T1[0] issue == 3", t1[0].issue_cycle == 3);
-        check("FINA: T1[1] issue == 4", t1[1].issue_cycle == 4);
+        check("FINA: T0[0] issue == 1", t0[0].issue_cycles.front() == 1);
+        check("FINA: T0[1] issue == 2", t0[1].issue_cycles.front() == 2);
+        check("FINA: T1[0] issue == 3", t1[0].issue_cycles.front() == 3);
+        check("FINA: T1[1] issue == 4", t1[1].issue_cycles.front() == 4);
     }
 
     section("3.3 2 threads, SMT, largura=2: 1 issue por thread por ciclo");
@@ -203,8 +203,8 @@ int main() {
         auto t0 = p.GetThreadTable(0);
         auto t1 = p.GetThreadTable(1);
 
-        check("SMT: T0[0] issue == 1", t0[0].issue_cycle == 1);
-        check("SMT: T1[0] issue == 1", t1[0].issue_cycle == 1);
+        check("SMT: T0[0] issue == 1", t0[0].issue_cycles.front() == 1);
+        check("SMT: T1[0] issue == 1", t1[0].issue_cycles.front() == 1);
     }
 
     section("3.4 Multithreading: COARSE_GRAINED com ciclos de troca (switch_instructions)");
@@ -222,8 +222,8 @@ int main() {
         auto t0 = p.GetThreadTable(0);
         auto t1 = p.GetThreadTable(1);
 
-        check("Coarse-grained: T0 executou issue", t0[0].issue_cycle > 0);
-        check("Coarse-grained: T1 alternou e executou issue após switch", t1[0].issue_cycle > 0);
+        check("Coarse-grained: T0 executou issue", t0[0].issue_cycles.front() > 0);
+        check("Coarse-grained: T1 alternou e executou issue após switch", t1[0].issue_cycles.front() > 0);
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -245,9 +245,9 @@ int main() {
         check("RAW: terminou", end_cycle != -1);
 
         auto tab = p.GetThreadTable(0);
-        check("RAW: add issue == 1", tab[0].issue_cycle == 1);
+        check("RAW: add issue == 1", tab[0].issue_cycles.front() == 1);
         check("RAW: add WR == 3",    tab[0].wr_cycle == 3);
-        check("RAW: sub issue == 2", tab[1].issue_cycle == 2);
+        check("RAW: sub issue == 2", tab[1].issue_cycles.front() == 2);
         check("RAW: sub EX começa no ciclo 4 (após WR do add)",
               tab[1].ex_cycles.size() >= 1 && tab[1].ex_cycles[0] == 4);
         check("RAW: sub WR == 5",    tab[1].wr_cycle == 5);
@@ -307,8 +307,8 @@ int main() {
         runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
 
-        check("Stall RS: add[0] emitido no ciclo 1 (ocupou a única RS)", tab[0].issue_cycle == 1);
-        check("Stall RS: add[1] estolou e foi emitido depois (após a RS liberar)", tab[1].issue_cycle > tab[0].issue_cycle);
+        check("Stall RS: add[0] emitido no ciclo 1 (ocupou a única RS)", tab[0].issue_cycles.front() == 1);
+        check("Stall RS: add[1] estolou e foi emitido depois (após a RS liberar)", tab[1].issue_cycles.front() > tab[0].issue_cycles.front());
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -318,10 +318,10 @@ int main() {
     std::cout << "\n";
     print_title("5. BRANCH");
 
-    section("5.1 BRANCH sem ROB e sem previsor: dispatch para após o bnez");
+    section("5.1 BRANCH sem ROB e sem previsor: largura 2 para após o bnez");
     {
         std::vector<std::string> prog = {"bnez r1, fim", "add r2, r3, r4"};
-        Processor p(1, 1, false,
+        Processor p(1, 2, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,
                        MULTITHREADING_MODEL::NONE,
                        prog);
@@ -329,9 +329,10 @@ int main() {
         runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
 
-        check("BRANCH: bnez issue == 1",      tab[0].issue_cycle == 1);
+        check("BRANCH: bnez issue == 1",      tab[0].issue_cycles.front() == 1);
         check("BRANCH: bnez EX começa no ciclo 2", tab[0].ex_cycles.size() >= 1 && tab[0].ex_cycles[0] == 2);
-        check("BRANCH: add emitido após bnez", tab[1].issue_cycle > tab[0].issue_cycle);
+        check("BRANCH: add não usa a segunda posição de dispatch do ciclo 1",
+            tab[1].issue_cycles.front() == 2);
         check("BRANCH: add WR registrado",     tab[1].wr_cycle > 0);
     }
 
@@ -374,7 +375,23 @@ int main() {
         check("Store: passou pelo commit corretamente", tab[1].commit_cycle > 0);
     }
 
-    section("6.3 Branch Especulativo (has_predictor=true): Previsor evita stall no Issue");
+    section("6.3 Branch com ROB sem previsor: largura 2 para após o bnez");
+    {
+        std::vector<std::string> prog = {"bnez r1, fim", "add r2, r3, r4"};
+        Processor p(1, 2, false,
+                       PROCESSOR_TYPE::TOMASULO_ESPECULATIVE,
+                       MULTITHREADING_MODEL::NONE,
+                       prog);
+
+        runUntilEnd(p);
+        auto tab = p.GetThreadTable(0);
+
+        check("ROB sem previsor: bnez issue == 1", tab[0].issue_cycles.front() == 1);
+        check("ROB sem previsor: add aguarda o próximo ciclo de dispatch",
+            tab[1].issue_cycles.front() == 2);
+    }
+
+    section("6.4 Branch Especulativo (has_predictor=true): Previsor evita stall no Issue");
     {
         // bnez e add podem entrar no ciclo 1 porque dispatch=2 e tem previsor+ROB
         std::vector<std::string> prog = {"bnez r1, fim", "add r2, r3, r4"};
@@ -386,8 +403,8 @@ int main() {
         runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
 
-        check("Predictor: bnez issue == 1", tab[0].issue_cycle == 1);
-        check("Predictor: add issue não foi estolado (emitido ciclo 1)", tab[1].issue_cycle == 1);
+        check("Predictor: bnez issue == 1", tab[0].issue_cycles.front() == 1);
+        check("Predictor: add issue não foi estolado (emitido ciclo 1)", tab[1].issue_cycles.front() == 1);
     }
 
     std::cout << "\n-----------------------------\n";

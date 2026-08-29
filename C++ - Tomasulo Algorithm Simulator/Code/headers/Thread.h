@@ -22,7 +22,9 @@
 #include "Components.h"
 #include <string>
 #include <vector>
+#include <deque>     // para std::deque
 #include <memory>    // para std::unique_ptr e std::shared_ptr
+#include <cstddef>   // para std::size_t
 #include <algorithm> // para std::stable_sort
 #include <cstdlib>   // para std::abort
 #include <iostream>  // para std::cerr
@@ -30,6 +32,74 @@
 namespace processor {
 
 // ─── STRUCT ───────────────────────────────────────────────────────
+
+/**
+ * @brief Resultados possíveis de uma tentativa de Issue.
+ */
+enum class ISSUE_OUTCOME {
+    BLOCKED,
+    INTERNAL_STAGE,
+    NEW_INSTRUCTION
+};
+
+/**
+ * @brief Resultado explícito de uma tentativa de Issue.
+ *
+ * @details Resultados bloqueados mantêm posição e tipo inválidos. Issues
+ * bem-sucedidos identificam diretamente a etapa emitida.
+ */
+struct ISSUE_RESULT {
+    ISSUE_OUTCOME    outcome{ISSUE_OUTCOME::BLOCKED};
+    int              position{-1};
+    INSTRUCTION_TYPE instruction_type{INSTRUCTION_TYPE::INVALID};
+};
+
+/**
+ * @brief Estados funcionais da temporização de STORE no ROB.
+ */
+enum class ROB_STORE_STATE {
+    NOT_STORE,
+    WAITING_EXECUTION,
+    WAITING_MEMORY,
+    EXECUTING_MEMORY
+};
+
+/**
+ * @brief Estado funcional de uma instrução admitida no ROB.
+ *
+ * @details A posição vincula a entrada ao estado in-flight. ready_cycle
+ * representa o primeiro ciclo em que a cabeça pode receber Commit.
+ */
+struct ROB_ENTRY {
+    int             position{-1};
+    bool            ready{false};
+    int             ready_cycle{-1};
+    ROB_STORE_STATE store_state{ROB_STORE_STATE::NOT_STORE};
+};
+
+/**
+ * @brief Estados funcionais de uma instrução admitida no pipeline.
+ */
+enum class IN_FLIGHT_STATE {
+    WAITING_ISSUE,
+    ALLOCATED,
+    EXECUTING,
+    WAITING_WR,
+    FINISHED
+};
+
+/**
+ * @brief Estado dinâmico de uma instrução admitida.
+ *
+ * @details A descrição permanece em Instruction. Esta entrada mantém a
+ * etapa selecionada, seu ciclo de vida e a próxima elegibilidade multi-RS.
+ */
+struct IN_FLIGHT_ENTRY {
+    std::shared_ptr<Instruction> instruction;
+    std::size_t                  current_stage{};
+    IN_FLIGHT_STATE              state{IN_FLIGHT_STATE::ALLOCATED};
+    int                          next_issue_cycle{-1};
+};
 
 /**
  * @brief Estrutura que agrupa todas as informações necessárias para
@@ -41,9 +111,9 @@ namespace processor {
  * estrutura pronta para evitar escrita duplicada de código).
  */
 struct TABLE_ROW {
-    // - Thread é a "dona" do objeto via shared_ptr (RS e ROB guardam cópias do ponteiro).
+    // - Thread é a "dona" do objeto via shared_ptr (a RS guarda uma cópia do ponteiro).
     std::shared_ptr<Instruction> instruction;
-    int                          issue_cycle{-1};
+    std::vector<int>             issue_cycles;
     std::vector<int>             ex_cycles;
     std::vector<int>             mem_cycles;
     int                          wr_cycle{-1};
@@ -80,6 +150,35 @@ class Thread {
             const ARCHITECTURE                   arch = ARCHITECTURE::SIMPLIFIED
         );
 
+        /**
+         * @brief Constrói a thread a partir de instruções já decodificadas.
+         *
+         * @details A sobrecarga separa o pipeline da origem textual das
+         * instruções. As posições precisam ser contíguas e coincidir com os
+         * índices da tabela.
+         *
+         * @param instructions Instruções transferidas para a tabela.
+         * @param latency_overrides Latências específicas por posição.
+         * @param num_rs Quantidade de RSs por grupo.
+         * @param num_fus Quantidade de FUs por grupo.
+         * @param switch_cycles Posições de troca para granulação grossa.
+         * @param dispatch_width Largura de Issue e Commit.
+         * @param rob_capacity Capacidade do ROB; zero desabilita o ROB.
+         * @param has_predictor Indica presença de previsor de desvios.
+         * @param arch Arquitetura usada para construir o CDB.
+         */
+        Thread(
+            std::vector<std::unique_ptr<Instruction>> instructions,
+            const std::vector<LATENCY_OVERRIDE>&      latency_overrides = {},
+            const std::vector<int>&                   num_rs = {},
+            const std::vector<int>&                   num_fus = {},
+            const std::vector<int>&                   switch_cycles = {},
+            const int                                 dispatch_width = 1,
+            const int                                 rob_capacity = 0,
+            const bool                                has_predictor = false,
+            const ARCHITECTURE                        arch = ARCHITECTURE::SIMPLIFIED
+        );
+
         // Getters:
         int GetCurrentInstructionPosition() const;
         // "const &" para evitar cópia (para tipos básicos o ganho é marginal).
@@ -87,6 +186,8 @@ class Thread {
         const RESERVATION_STATION&    GetRS()    const;
         const FUNCTIONAL_UNITS&       GetFU()    const;
         const std::vector<TABLE_ROW>& GetTable() const;
+        const std::vector<IN_FLIGHT_ENTRY>& GetInFlightEntries() const;
+        const std::deque<ROB_ENTRY>& GetROBEntries() const;
 
         // Demais métodos:
 
@@ -107,10 +208,10 @@ class Thread {
          *
          * @param const int cycle - Ciclo atual.
          *
-         * @return true - Instrução adicionada.
-         * @return false - Nenhuma unidade da RS disponível.
+         * @return Resultado discriminando bloqueio, etapa interna ou nova
+         * instrução.
          */
-        bool Issue(
+        ISSUE_RESULT Issue(
             const int cycle
         );
 
@@ -180,12 +281,11 @@ class Thread {
         FUNCTIONAL_UNITS         fu;
         std::vector<int>         wr_buffer;
         std::vector<int>         pending_wr_buffer;
-        std::vector<TABLE_ROW>   instruction_table;
-        std::vector<std::shared_ptr<Instruction>> rob; // Guarda ponteiros compartilhados.
+        std::vector<TABLE_ROW>      instruction_table;
+        std::vector<IN_FLIGHT_ENTRY> in_flight_entries;
+        std::deque<ROB_ENTRY>        rob;
         // - Elementos auxiliares/histórico:
-        int                      num_finished_instructions{};
         int                      num_committed_instructions{};
-        int                      commit_pointer{};
         int                      unresolved_branch_position{-1};
         std::vector<int>         switch_cycles;        // Para processadores com granulação grossa.
 
@@ -216,6 +316,97 @@ class Thread {
             const int               dispatch_width,
             const ARCHITECTURE      arch
         );
+
+        /**
+         * @brief Tenta alocar a etapa atual de uma posição específica.
+         *
+         * @details Issues internos reutilizam identidade e ROB. Somente a
+         * próxima posição do frontend pode criar uma nova entrada lógica.
+         *
+         * @param position Posição lógica da instrução.
+         * @param cycle Ciclo atual.
+         * @param new_instruction Indica primeira admissão pelo frontend.
+         *
+         * @return Resultado explícito da tentativa de alocação.
+         */
+        ISSUE_RESULT TryIssue(
+            const int  position,
+            const int  cycle,
+            const bool new_instruction
+        );
+
+        /**
+         * @brief Verifica se uma posição lógica já possui entrada no ROB.
+         *
+         * @param position Posição procurada.
+         *
+         * @return true quando a posição já está presente.
+         */
+        bool IsInROB(
+            const int position
+        ) const;
+
+        /**
+         * @brief Retorna a entrada do ROB associada à posição lógica.
+         *
+         * @param position Posição procurada.
+         *
+         * @return Referência para a entrada validada.
+         */
+        ROB_ENTRY& GetROBEntry(
+            const int position
+        );
+
+        /**
+         * @brief Marca o resultado final de uma entrada como pronto.
+         *
+         * @param position Posição lógica concluída.
+         * @param ready_cycle Primeiro ciclo permitido para Commit.
+         */
+        void MarkROBReady(
+            const int position,
+            const int ready_cycle
+        );
+
+        /**
+         * @brief Libera um STORE concluído para a temporização da memória.
+         *
+         * @param position Posição lógica do STORE.
+         */
+        void MarkStoreWaitingMemory(
+            const int position
+        );
+
+        /**
+         * @brief Avança a temporização do STORE que está na cabeça do ROB.
+         *
+         * @param rob_entry Entrada da cabeça.
+         * @param in_flight_entry Estado dinâmico associado.
+         * @param cycle Ciclo atual.
+         */
+        void AdvanceStoreCommit(
+            ROB_ENTRY&             rob_entry,
+            const IN_FLIGHT_ENTRY& in_flight_entry,
+            const int              cycle
+        );
+
+        /**
+         * @brief Retorna a entrada dinâmica correspondente à posição lógica.
+         *
+         * @param position Posição lógica admitida.
+         *
+         * @return Referência para a entrada validada.
+         */
+        IN_FLIGHT_ENTRY& GetInFlightEntry(
+            const int position
+        );
+
+        /**
+         * @brief Verifica se todas as instruções concluíram a execução final.
+         *
+         * @return true quando todas foram admitidas e estão em FINISHED.
+         */
+        bool HasFinishedExecution() const;
 
         // - EX/MEM
 
@@ -256,13 +447,10 @@ class Thread {
          * @param const int position - Posição da instrução na
          * tabela.
          * @param const int cycle - Ciclo atual.
-         * @param const INSTRUCTION_TYPE instr_type - Tipo da
-         * instrução (para identificar o grupo de RS).
          */
         void WriteResultOnComponents(
-            const int              position,
-            const int              cycle,
-            const INSTRUCTION_TYPE instr_type
+            const int position,
+            const int cycle
         );
 
         /**

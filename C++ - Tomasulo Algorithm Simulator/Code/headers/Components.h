@@ -41,11 +41,7 @@ namespace processor {
 // ─── CLASSE ───────────────────────────────────────────────────────
 
 /**
- * @brief Registrador individual do banco.
- *
- * @details A implementação atual não armazenamento de valores
- * (adaptação necessária caso seja usado como base para a
- * implementação de um emulador).
+ * @brief Referência arquitetural imutável de registrador.
  */
 class Register {
     public:
@@ -62,113 +58,13 @@ class Register {
         char GetType() const;
         int  GetId()   const;
         int  GetMask() const;
-        bool GetBusy() const;
-
-        // Não são "const &" pois enviam dados de variáveis locais (apagados ao final da função).
-
-        /**
-         * @brief Agrupa em um vetor com todos os tempos de alocação
-         * em pares (posições pares são os "start_cycles" e os
-         * impares são os "end_cycles" correspondentes).
-         *
-         * @return std::vector<int> - Tempos de alocação.
-         */
-        std::vector<int> GetAllocationTimes() const;
-
-        /**
-         * @brief Indica a posição do produtor pendente mais recente.
-         *
-         * @details É esse produtor que novas instruções devem
-         * aguardar em caso de WAW.
-         *
-         * A lógica se mantem funcional e eficiente apesar do seu uso
-         * em conjunto com a renomeação de registradores (flag que é
-         * opcional).
-         *
-         * @return Posição lógica do produtor ou -1 quando não houver.
-         */
-        int GetCurrentProducer() const;
-
-        /**
-         * @brief Retorna as posições lógicas dos produtores registrados.
-         *
-         * @return Vetor alinhado com GetAllocatedRS() e GetAllocationTimes().
-         */
-        const std::vector<int>& GetProducerPositions() const;
-
-        /**
-         * @brief Retorna o histórico das RSs físicas iniciais dos produtores.
-         *
-         * @return const std::vector<std::string>& - Nome da RS física
-         * inicial de cada produtor.
-         */
-        const std::vector<std::string>& GetAllocatedRS() const; // "const &" para evitar cópia de dados grandes.
-
-        // Demais métodos:
-
-        /**
-         * @brief Inverte a flag "busy" do registrador (se era "true"
-         * vira false e vice-versa).
-         */
-        void ToggleBusy();
-
-        /**
-         * @brief Verifica se o produtor já finalizou a operação e
-         * liberou o registrador.
-         *
-         * @param producer_position Posição lógica do produtor.
-         *
-         * @return true quando o produtor terminou; false quando ainda
-         * estiver pendente ou não existir.
-         */
-        bool IsDependencyResolved(
-            const int producer_position
-        ) const;
-
-        /**
-         * @brief Registra o novo produtor do registrador.
-         *
-         * @details A posição identifica a dependência; RS e ciclos são
-         * preservados somente como histórico físico e visual.
-         *
-         * @param producer_position Posição lógica da instrução.
-         * @param rs_id Nome da RS física inicial.
-         * @param cycle Ciclo de início da alocação.
-         */
-        void AllocateProducer(
-            const int          producer_position,
-            const std::string& rs_id,
-            const int          cycle
-        );
-
-        /**
-         * @brief Registra o fim da alocação daquele produtor.
-         *
-         * @details Esse fim não garante necessariamente
-         * "busy == false" pois podem existir mais produtores pendentes,
-         * e marca o fim do ciclo correspondente à posição lógica.
-         *
-         * @param producer_position Posição lógica da instrução.
-         * @param cycle Ciclo de fim da alocação.
-         *
-         * @return true - Desalocado com sucesso.
-         * @return false - Não desalocou (o for pode não ter
-         * encontrado nenhuma correspondência).
-         */
-        bool DeallocateProducer(
-            const int producer_position,
-            const int cycle
-        );
     private:
-        // Atributos:
-        // - Elementos do registrador (valor default).
-        char                     type{'Z'};
-        bool                     busy{false};
+        char type{'Z'};
 
         /**
          * @brief Localização física do registrador.
          */
-        int                      id{-1};
+        int  id{-1};
 
         /**
          * @brief Máscara de bits para identificação de sobreposição
@@ -194,23 +90,136 @@ class Register {
          * ou o "ah" só bloqueiam o "ax" (visto que eles ocupam
          * máscaras que não se intersectam).
          */
-        int                      mask{255};    // Em binário: 255 = 11111111 (usa 100% do registrador principal).
+        int  mask{255};
+};
 
-        // - Dados para a impressão (debugging).
-        std::vector<int>         start_times;
-        std::vector<int>         end_times;    // Pares (inicio[n] - fim[n]); fim == -1 enquanto pendente.
-        std::vector<std::string> allocated_rs;
-        std::vector<int>         producer_positions;
+/**
+ * @brief Visualização somente leitura de um slot do Register Status.
+ */
+struct REGISTER_STATUS_VIEW {
+    Register                 reference;
+    bool                     busy{false};
+    std::vector<int>         producer_positions;
+    std::vector<std::string> allocated_rs;
+    std::vector<int>         allocation_times;
+};
 
-        // Método:
+/**
+ * @brief Mantém produtores lógicos e trace por referência arquitetural exata.
+ */
+class RegisterStatusTable {
+    public:
+        /**
+         * @brief Adiciona uma referência exata ao layout.
+         */
+        void AddReference(
+            const Register& reference
+        );
 
         /**
-         * @brief Procura produtores pendentes.
-         *
-         * @return true - Ainda existem.
-         * @return false - Não existem.
+         * @brief Retorna uma visualização somente leitura do slot.
          */
-        bool HasPendingProducer() const;
+        REGISTER_STATUS_VIEW FindStatus(
+            const Register& reference
+        ) const;
+
+        /**
+         * @brief Registra um produtor funcional e seu evento inicial de trace.
+         */
+        void AllocateProducer(
+            const Register&    reference,
+            const int          producer_position,
+            const std::string& rs_id,
+            const int          cycle
+        );
+
+        /**
+         * @brief Conclui um produtor funcional e seu evento de trace.
+         *
+         * @return true quando encontrou o produtor pendente.
+         */
+        bool DeallocateProducer(
+            const Register& reference,
+            const int       producer_position,
+            const int       cycle
+        );
+
+        /**
+         * @brief Encontra o produtor de maior posição anterior à consumidora.
+         *
+         * @return Posição do produtor, concluído ou pendente; -1 se ausente.
+         */
+        int FindLatestProducerBefore(
+            const Register& reference,
+            const int       consumer_position
+        ) const;
+
+        /**
+         * @brief Verifica se um produtor conhecido concluiu.
+         */
+        bool IsProducerResolved(
+            const Register& reference,
+            const int       producer_position
+        ) const;
+
+        /**
+         * @brief Deriva busy da existência de produtores pendentes.
+         */
+        bool IsBusy(
+            const Register& reference
+        ) const;
+
+        /**
+         * @brief Retorna as referências na ordem do layout.
+         */
+        std::vector<Register> GetReferences() const;
+
+        /**
+         * @brief Retorna visualizações na ordem do layout.
+         */
+        std::vector<REGISTER_STATUS_VIEW> GetStatuses() const;
+
+        /**
+         * @brief Retorna a quantidade de referências do layout.
+         */
+        std::size_t Size() const;
+    private:
+        struct PRODUCER_RECORD {
+            int  position{-1};
+            bool pending{false};
+        };
+
+        struct TRACE_RECORD {
+            int         producer_position{-1};
+            std::string rs_id;
+            int         start_cycle{-1};
+            int         end_cycle{-1};
+        };
+
+        struct STATUS_ENTRY {
+            Register                     reference;
+            std::vector<PRODUCER_RECORD> producers;
+            std::vector<TRACE_RECORD>    trace;
+        };
+
+        std::vector<STATUS_ENTRY> entries;
+
+        STATUS_ENTRY& FindEntry(
+            const Register& reference
+        );
+
+        const STATUS_ENTRY& FindEntry(
+            const Register& reference
+        ) const;
+
+        static bool SameReference(
+            const Register& left,
+            const Register& right
+        );
+
+        static REGISTER_STATUS_VIEW MakeView(
+            const STATUS_ENTRY& entry
+        );
 };
 
 // ─── STRUCTS ──────────────────────────────────────────────────────
@@ -226,26 +235,13 @@ struct CDB_BANK {
 };
 
 /**
- * @brief Common Data Bus (CDB): Simplificação de implementação.
- * Ferramenta para a transmissão dos dados entre os componentes.
+ * @brief Contêiner temporário do Register Status e dos metadados de impressão.
  *
- * @details Essa implementação já representa a escrita do dado
- * nos registradores reais em fase pré-commit (as instruções
- * buscam sempre o dado mais atualizado, independente se ele está
- * armazenado nos registradores intermediários do ROB ou no banco
- * de registradores - pós-commit).
- *
- * - Essa simplificação é um possível ponto de modificação em caso de
- * aproveitamento da estrutura do projeto para a montagem de um
- * emulador que efetivamente realiza as operações (o flush iria ter
- * que alterar dados que já estavam consolidados no banco).
- *
- * - Uma possível adaptação seria criar um vetor rob_registers que
- * armazenariam os dados pré-commit e limpá-los após o commit (esses
- * sendo a ferramenta de busca primária de dados - mais atualizados).
+ * @details O evento real de broadcast permanece coordenado pela Thread até
+ * a separação definitiva do CDB.
  */
 struct CDB {
-    std::vector<Register> registers;
+    RegisterStatusTable   register_status;
     std::vector<CDB_BANK> print_banks;
 };
 
@@ -289,21 +285,6 @@ struct FUNCTIONAL_UNITS {
 };
 
 // ─── HELPER ───────────────────────────────────────────────────────
-
-/**
- * @brief Identifica dentro do banco de registradores (no CDB) o
- * registrador alvo.
- *
- * @param const CDB& cdb - Banco de registradores.
- * @param const Register& reg - Registrador alvo.
- *
- * @return Register& - Referência ao registrador dentro do CDB (esse
- * não pode ser "const", portanto).
- */
-Register& GetReg( // Não é "static" para não forçar uma reimplementação em cada .cpp que o utiliza (igual).
-    CDB&            cdb,
-    const Register& reg
-);
 
 } // namespace processor
 

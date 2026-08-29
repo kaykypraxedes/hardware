@@ -124,8 +124,7 @@ static void BroadcastOnCDBAndRS(
     if (dest.GetType() == 'Z') return;
 
     // Desaloca diretamente a identidade lógica, sem depender da RS física atual.
-    Register& reg{GetReg(cdb, dest)};
-    if (!reg.DeallocateProducer(position, cycle)) {
+    if (!cdb.register_status.DeallocateProducer(dest, position, cycle)) {
         std::cerr <<
             "[ERRO] Falha na desalocação do produtor!\n"
             "- Posição: " << position << '\n' <<
@@ -138,37 +137,27 @@ static void BroadcastOnCDBAndRS(
         ResolveDependencyInGroup(*group, position, dest);
 }
 
-static void ReleaseRS(
-    std::vector<RS>& group,
-    const int        position,
-    const int        cycle
+static void ReleaseRSByPosition(
+    RESERVATION_STATION& rs,
+    const int            position,
+    const int            cycle
 ) {
-    // Libera o módulo da RS que terminou o WR (identificada pela posição da instrução).
-    for (RS& r : group) {
-        if (r.IsBusy() &&
-            r.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR &&
-            r.GetCurrentInstruction().GetPosition() == position) {
-
-            r.Release(cycle);
-            break; // Já encontrou a célula correta (não precisa continuar iterando).
+    // Libera a única RS ocupada pela identidade lógica.
+    for (std::vector<RS>* group : GetAllRSGroups(rs)) {
+        for (RS& current : *group) {
+            if (current.IsBusy() &&
+                current.GetCurrentInstruction().GetPosition() == position) {
+                current.Release(cycle);
+                return;
+            }
         }
     }
-}
 
-static void ReleaseRSStoreWithROB( // ReleaseRS() para Store com ROB (a célula da RS é liberada ainda na fase MEM).
-    std::vector<RS>& group,
-    const int        position,
-    const int        cycle
-) {
-    for (RS& r : group) {
-        // Ignora a checagem da fase WR para evitar que o processador trave (já que Store não tem a fase WR marcada).
-        if (r.IsBusy() &&
-            r.GetCurrentInstruction().GetPosition() == position) {
-
-            r.Release(cycle);
-            break; // Já encontrou a célula correta (não precisa continuar iterando).
-        }
-    }
+    std::cerr <<
+        "[ERRO] RS da instrução não encontrada para liberação.\n"
+        "- Posição: " << position << '\n' <<
+        "- Ciclo: " << cycle << '\n';
+    std::abort();
 }
 
 // ==================================================================
@@ -191,6 +180,16 @@ const FUNCTIONAL_UNITS& Thread::GetFU()          const { return fu; }
 // Público:
 const std::vector<TABLE_ROW>& Thread::GetTable() const { return instruction_table; }
 
+// Público:
+const std::vector<IN_FLIGHT_ENTRY>& Thread::GetInFlightEntries() const {
+    return in_flight_entries;
+}
+
+// Público:
+const std::deque<ROB_ENTRY>& Thread::GetROBEntries() const {
+    return rob;
+}
+
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
 // Público:
 Thread::Thread(
@@ -204,6 +203,31 @@ Thread::Thread(
     const bool                           has_predictor,
     const ARCHITECTURE                   arch
 ) :
+    Thread(
+        InstructionFactory::ParseTrace(assembly, arch),
+        latency_overrides,
+        num_rs,
+        num_fus,
+        switch_cycles,
+        dispatch_width,
+        rob_capacity,
+        has_predictor,
+        arch
+    )
+{}
+
+// Público:
+Thread::Thread(
+    std::vector<std::unique_ptr<Instruction>> instructions,
+    const std::vector<LATENCY_OVERRIDE>&      latency_overrides,
+    const std::vector<int>&                   num_rs,
+    const std::vector<int>&                   num_fus,
+    const std::vector<int>&                   switch_cycles,
+    const int                                 dispatch_width,
+    const int                                 rob_capacity,
+    const bool                                has_predictor,
+    const ARCHITECTURE                        arch
+) :
     has_rob        (rob_capacity > 0),
     rob_capacity   (rob_capacity > 0 ? rob_capacity : 1),
     has_predictor  (has_predictor),
@@ -215,15 +239,22 @@ Thread::Thread(
         std::abort();
     }
 
-    // Passa as instruções para a tabela:
-    std::vector<std::unique_ptr<Instruction>> parsed{InstructionFactory::ParseTrace(assembly, arch)};
-    for (std::unique_ptr<Instruction>& inst : parsed) {
+    // Passa as instruções para a tabela e confirma a identidade posicional.
+    for (std::size_t position{}; position < instructions.size(); position++) {
+        std::unique_ptr<Instruction>& instruction{instructions[position]};
+        if (!instruction || instruction->GetPosition() != static_cast<int>(position)) {
+            std::cerr <<
+                "[ERRO] Posição inválida na sequência de instruções.\n"
+                "- Índice esperado: " << position << '\n';
+            std::abort();
+        }
+
         // Ignora propositalmente os outros valores de instruction_table para que eles recebam o default.
         // - Gera warning (por passar menos elementos do que deve na struct) ignorado pela diretiva.
         #pragma GCC diagnostic push
         #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
         // Converte de unique_ptr para shared_ptr ao guardar na tabela para que RS e ROB compartilhem o MESMO objeto.
-        instruction_table.push_back({std::shared_ptr<Instruction>(std::move(inst))});
+        instruction_table.push_back({std::shared_ptr<Instruction>(std::move(instruction))});
         #pragma GCC diagnostic pop
     }
 
@@ -304,25 +335,89 @@ bool Thread::IsSwitchCycle() {
 
 // ─── ISSUE ────────────────────────────────────────────────────────
 // Público:
-bool Thread::Issue(
+ISSUE_RESULT Thread::Issue(
     const int cycle
 ){
-    // Todas as instruções já foram adicionadas.
-    if (current_instruction_position >= static_cast<int>(instruction_table.size())) return false;
+    // Etapas internas aptas possuem prioridade por posição lógica.
+    for (IN_FLIGHT_ENTRY& entry : in_flight_entries) {
+        if (entry.state != IN_FLIGHT_STATE::WAITING_ISSUE ||
+            entry.next_issue_cycle > cycle) continue;
 
-    // ROB já está cheio (apenas em Tomasulo especulativo).
-    if (rob.size() >= static_cast<size_t>(rob_capacity)) return false;
+        const int position{entry.instruction->GetPosition()};
+        ISSUE_RESULT result{TryIssue(position, cycle, false)};
+        if (result.outcome != ISSUE_OUTCOME::BLOCKED) return result;
+    }
 
-    const std::shared_ptr<Instruction>& instruction{instruction_table[current_instruction_position].instruction};
-    INSTRUCTION_TYPE type{instruction->GetInstructionType()};
+    // Todas as instruções novas já foram adicionadas.
+    if (current_instruction_position >= static_cast<int>(instruction_table.size())) return {};
+
+    return TryIssue(current_instruction_position, cycle, true);
+}
+
+// Privado:
+ISSUE_RESULT Thread::TryIssue(
+    const int  position,
+    const int  cycle,
+    const bool new_instruction
+) {
+    std::shared_ptr<Instruction> instruction;
+    std::size_t current_stage{};
+    IN_FLIGHT_ENTRY* entry{};
+
+    // A primeira admissão começa na etapa zero. Issues internos reutilizam o cursor existente.
+    if (new_instruction) {
+        if (position != static_cast<int>(in_flight_entries.size())) {
+            std::cerr <<
+                "[ERRO] Ordem inválida na criação da entrada in-flight.\n"
+                "- Posição: " << position << '\n' <<
+                "- Entradas existentes: " << in_flight_entries.size() << '\n';
+            std::abort();
+        }
+        instruction = instruction_table[position].instruction;
+    }
+    else {
+        entry = &GetInFlightEntry(position);
+        if (entry->state != IN_FLIGHT_STATE::WAITING_ISSUE ||
+            entry->next_issue_cycle > cycle) {
+            std::cerr <<
+                "[ERRO] Issue interno de entrada não elegível.\n"
+                "- Posição: " << position << '\n' <<
+                "- Estado: " << static_cast<int>(entry->state) << '\n' <<
+                "- Próximo ciclo: " << entry->next_issue_cycle << '\n' <<
+                "- Ciclo atual: " << cycle << '\n';
+            std::abort();
+        }
+        instruction = entry->instruction;
+        current_stage = entry->current_stage;
+    }
+
+    INSTRUCTION_TYPE type{instruction->GetInstructionType(current_stage)};
 
     // Verifica se a instrução é válida:
     if (type == INSTRUCTION_TYPE::INVALID) {
         std::cerr <<
             "[ERRO] Tentativa de adicionar instrução inválida no issue! \n" <<
             "- Instrução: " << instruction->GetInstructionString() << '\n'  <<
-            "- Posição: "   << current_instruction_position << '\n';
+            "- Posição: "   << position << '\n';
         std::abort();
+    }
+
+    // Somente a primeira admissão cria uma entrada no ROB.
+    if (has_rob) {
+        const bool already_in_rob{IsInROB(position)};
+        if (!new_instruction && !already_in_rob) {
+            std::cerr <<
+                "[ERRO] Issue interno sem entrada correspondente no ROB.\n"
+                "- Posição: " << position << '\n';
+            std::abort();
+        }
+        if (new_instruction && already_in_rob) {
+            std::cerr <<
+                "[ERRO] Tentativa de duplicar posição no ROB.\n"
+                "- Posição: " << position << '\n';
+            std::abort();
+        }
+        if (new_instruction && rob.size() >= static_cast<size_t>(rob_capacity)) return {};
     }
 
     // Identifica o tipo de grupo de RS necessário para alocar e procura uma vaga.
@@ -330,15 +425,50 @@ bool Thread::Issue(
 
     for (RS& r : group) {
         // Se conseguiu adicionar:
-        if (r.AddIssue(instruction, cdb, cycle)) {
+        if (r.AddIssue(
+            instruction,
+            cdb.register_status,
+            cycle,
+            new_instruction,
+            current_stage
+        )) {
 
             // 1. Marca na tabela o IS da instrução.
-            instruction_table[current_instruction_position].issue_cycle = cycle;
+            instruction_table[position].issue_cycles.push_back(cycle);
+
+            // Issue interno preserva frontend, branch e entrada do ROB.
+            if (!new_instruction) {
+                entry->state = IN_FLIGHT_STATE::ALLOCATED;
+                entry->next_issue_cycle = -1;
+                return {
+                    ISSUE_OUTCOME::INTERNAL_STAGE,
+                    position,
+                    type
+                };
+            }
+
+            // A entrada dinâmica nasce somente depois do primeiro Issue bem-sucedido.
+            in_flight_entries.push_back({
+                instruction,
+                current_stage,
+                IN_FLIGHT_STATE::ALLOCATED,
+                -1
+            });
 
             // 2.1. Se tem um ROB:
             if (has_rob){
-                // - Adiciona a instrução no ROB (MESMO shared_ptr da tabela - sem cópia).
-                rob.push_back(instruction_table[current_instruction_position].instruction);
+                // Adiciona uma única entrada funcional para a instrução lógica.
+                const std::size_t final_stage{instruction->GetStageCount() - 1};
+                const bool final_store{
+                    instruction->GetInstructionType(final_stage) == INSTRUCTION_TYPE::STORE
+                };
+                rob.push_back({
+                    position,
+                    false,
+                    -1,
+                    final_store ? ROB_STORE_STATE::WAITING_EXECUTION :
+                        ROB_STORE_STATE::NOT_STORE
+                });
 
                 /*
                  * Vale ressaltar que não é feita a verificação se a instrução
@@ -352,15 +482,146 @@ bool Thread::Issue(
             // - Se for um branch, marca para as instruções posteriores serem atrasadas.
             // - Obrigatóriamente sem previsor de desvio.
             else if (type == INSTRUCTION_TYPE::BRANCH)
-                unresolved_branch_position = current_instruction_position;
+                unresolved_branch_position = position;
 
             // 3. Passa para a próxima instrução.
             current_instruction_position++;
 
-            return true;
+            return {
+                ISSUE_OUTCOME::NEW_INSTRUCTION,
+                position,
+                type
+            };
         }
     }
+    return {};
+}
+
+// Privado:
+bool Thread::IsInROB(
+    const int position
+) const {
+    for (const ROB_ENTRY& entry : rob)
+        if (entry.position == position) return true;
     return false;
+}
+
+// Privado:
+ROB_ENTRY& Thread::GetROBEntry(
+    const int position
+) {
+    for (ROB_ENTRY& entry : rob)
+        if (entry.position == position) return entry;
+
+    std::cerr <<
+        "[ERRO] Entrada do ROB não encontrada.\n"
+        "- Posição: " << position << '\n';
+    std::abort();
+}
+
+// Privado:
+void Thread::MarkROBReady(
+    const int position,
+    const int ready_cycle
+) {
+    ROB_ENTRY& entry{GetROBEntry(position)};
+    if (entry.store_state != ROB_STORE_STATE::NOT_STORE ||
+        entry.ready || entry.ready_cycle >= 0 || ready_cycle < 0) {
+        std::cerr <<
+            "[ERRO] Transição inválida para ROB pronto.\n"
+            "- Posição: " << position << '\n' <<
+            "- Pronto: " << entry.ready << '\n' <<
+            "- Ciclo registrado: " << entry.ready_cycle << '\n' <<
+            "- Novo ciclo: " << ready_cycle << '\n';
+        std::abort();
+    }
+
+    entry.ready = true;
+    entry.ready_cycle = ready_cycle;
+}
+
+// Privado:
+void Thread::MarkStoreWaitingMemory(
+    const int position
+) {
+    ROB_ENTRY& entry{GetROBEntry(position)};
+    if (entry.store_state != ROB_STORE_STATE::WAITING_EXECUTION ||
+        entry.ready || entry.ready_cycle >= 0) {
+        std::cerr <<
+            "[ERRO] STORE chegou à memória em estado inválido do ROB.\n"
+            "- Posição: " << position << '\n' <<
+            "- Estado: " << static_cast<int>(entry.store_state) << '\n';
+        std::abort();
+    }
+
+    entry.store_state = ROB_STORE_STATE::WAITING_MEMORY;
+}
+
+// Privado:
+void Thread::AdvanceStoreCommit(
+    ROB_ENTRY&             rob_entry,
+    const IN_FLIGHT_ENTRY& in_flight_entry,
+    const int              cycle
+) {
+    // STORE ainda não concluiu a execução final.
+    if (rob_entry.store_state == ROB_STORE_STATE::WAITING_EXECUTION) return;
+
+    if (rob_entry.store_state == ROB_STORE_STATE::NOT_STORE) {
+        std::cerr <<
+            "[ERRO] Temporização de STORE solicitada para entrada comum.\n"
+            "- Posição: " << rob_entry.position << '\n';
+        std::abort();
+    }
+
+    // A memória começa somente quando o STORE concluído alcança a cabeça.
+    if (rob_entry.store_state == ROB_STORE_STATE::WAITING_MEMORY) {
+        const int memory_latency{
+            in_flight_entry.instruction->GetMemLatency(in_flight_entry.current_stage)
+        };
+        if (memory_latency <= 0) {
+            std::cerr <<
+                "[ERRO] Latência de memória inválida para STORE.\n"
+                "- Posição: " << rob_entry.position << '\n' <<
+                "- Latência: " << memory_latency << '\n';
+            std::abort();
+        }
+
+        rob_entry.store_state = ROB_STORE_STATE::EXECUTING_MEMORY;
+        rob_entry.ready_cycle = cycle + memory_latency - 1;
+    }
+
+    if (rob_entry.store_state == ROB_STORE_STATE::EXECUTING_MEMORY &&
+        cycle >= rob_entry.ready_cycle)
+        rob_entry.ready = true;
+}
+
+// Privado:
+IN_FLIGHT_ENTRY& Thread::GetInFlightEntry(
+    const int position
+) {
+    if (position < 0 || position >= static_cast<int>(in_flight_entries.size()) ||
+        !in_flight_entries[position].instruction ||
+        in_flight_entries[position].instruction->GetPosition() != position) {
+        std::cerr <<
+            "[ERRO] Entrada in-flight inválida.\n"
+            "- Posição: " << position << '\n' <<
+            "- Entradas existentes: " << in_flight_entries.size() << '\n';
+        std::abort();
+    }
+    return in_flight_entries[position];
+}
+
+// Privado:
+bool Thread::HasFinishedExecution() const {
+    if (in_flight_entries.size() != instruction_table.size()) return false;
+
+    return std::all_of(
+        in_flight_entries.begin(),
+        in_flight_entries.end(),
+        [](const IN_FLIGHT_ENTRY& entry) {
+            return entry.state == IN_FLIGHT_STATE::FINISHED;
+        }
+    );
 }
 
 // ─── EX/MEM ───────────────────────────────────────────────────────
@@ -372,11 +633,11 @@ bool Thread::ExMem(
     if (static_cast<size_t>(num_committed_instructions) == instruction_table.size()) return true;
 
     // Sem ROB: Verifica se todas as instruções já passaram pelo WR.
-    if (!has_rob && static_cast<size_t>(num_finished_instructions) == instruction_table.size()) return true;
+    const bool execution_finished{HasFinishedExecution()};
+    if (!has_rob && execution_finished) return true;
 
     // Se ainda faltar instruções a serem executadas, ele as executa no ciclo.
-    if(static_cast<size_t>(num_finished_instructions) != instruction_table.size())
-        StartPhase(cycle);
+    if (!execution_finished) StartPhase(cycle);
     return false;
 }
 
@@ -405,8 +666,15 @@ void Thread::StartPhase(
             if (unresolved_branch_position >= 0 && inst_position > unresolved_branch_position) continue;
 
             // Previne que STORE com ROB seja escalonado para WR (nesse caso é apenas commit).
-            INSTRUCTION_TYPE type{r.GetCurrentInstruction().GetInstructionType()};
-            if (type == INSTRUCTION_TYPE::STORE && has_rob && r.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM) continue;
+            IN_FLIGHT_ENTRY& entry{GetInFlightEntry(inst_position)};
+            INSTRUCTION_TYPE type{
+                entry.instruction->GetInstructionType(entry.current_stage)
+            };
+            const bool final_stage{
+                entry.current_stage + 1 == entry.instruction->GetStageCount()
+            };
+            if (type == INSTRUCTION_TYPE::STORE && has_rob && final_stage &&
+                r.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM) continue;
 
             candidates.push_back(&r);
         }
@@ -418,16 +686,34 @@ void Thread::StartPhase(
     // Avança as instruções de fase:
     for (RS* r : candidates) {
         // Verifica se conseguiu mudar a instrução de fase:
-        if (r->UpdateDependencies(cdb, fu, cycle)) {
+        if (r->UpdateDependencies(cdb.register_status, fu, cycle)) {
 
             // Marca na tabela:
             int position{r->GetCurrentInstruction().GetPosition()};
+            IN_FLIGHT_ENTRY& entry{GetInFlightEntry(position)};
 
-            if (r->GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::EX)
+            if (r->GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::EX) {
+                if (entry.state != IN_FLIGHT_STATE::ALLOCATED) {
+                    std::cerr <<
+                        "[ERRO] Entrada iniciou EX fora do estado ALLOCATED.\n"
+                        "- Posição: " << position << '\n' <<
+                        "- Estado: " << static_cast<int>(entry.state) << '\n';
+                    std::abort();
+                }
+                entry.state = IN_FLIGHT_STATE::EXECUTING;
                 instruction_table[position].ex_cycles.push_back(cycle);
+            }
 
-            else if (r->GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM)
+            else if (r->GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM) {
+                if (entry.state != IN_FLIGHT_STATE::EXECUTING) {
+                    std::cerr <<
+                        "[ERRO] Entrada iniciou MEM fora do estado EXECUTING.\n"
+                        "- Posição: " << position << '\n' <<
+                        "- Estado: " << static_cast<int>(entry.state) << '\n';
+                    std::abort();
+                }
                 instruction_table[position].mem_cycles.push_back(cycle);
+            }
         }
     }
 }
@@ -460,14 +746,26 @@ void Thread::PerformWriteResult(
     while (!wr_buffer.empty() && writes < fu.wr) { // Limitado pela capacidade de WR simultâneo.
 
         int position{wr_buffer.front()};
-        INSTRUCTION_TYPE instr_type{instruction_table[position].instruction->GetInstructionType()};
+        IN_FLIGHT_ENTRY& entry{GetInFlightEntry(position)};
+        INSTRUCTION_TYPE instr_type{
+            entry.instruction->GetInstructionType(entry.current_stage)
+        };
         bool store_with_rob{instr_type == INSTRUCTION_TYPE::STORE && has_rob};
+
+        if (entry.state != IN_FLIGHT_STATE::WAITING_WR) {
+            std::cerr <<
+                "[ERRO] Entrada chegou ao WR fora do estado WAITING_WR.\n"
+                "- Posição: " << position << '\n' <<
+                "- Estado: " << static_cast<int>(entry.state) << '\n';
+            std::abort();
+        }
 
         // O estágio "wr" do "store" só é marcado se o o processador não possui ROB.
         if (store_with_rob) {
-            ReleaseRSStoreWithROB(rs.store, position, cycle);
+            ReleaseRSByPosition(rs, position, cycle);
             wr_buffer.erase(wr_buffer.begin());
-            num_finished_instructions++;
+            entry.state = IN_FLIGHT_STATE::FINISHED;
+            MarkStoreWaitingMemory(position);
             continue; // Não conta como um WR (não há resultado sendo escrito de fato).
         }
 
@@ -477,9 +775,14 @@ void Thread::PerformWriteResult(
             instruction_table[position].wr_cycle = cycle;
 
         // Propaga a informação nos componentes.
-        WriteResultOnComponents(position, cycle, instr_type);
+        WriteResultOnComponents(position, cycle);
         wr_buffer.erase(wr_buffer.begin());
-        num_finished_instructions++;
+        entry.state = IN_FLIGHT_STATE::FINISHED;
+
+        // Resultados comuns só podem receber Commit a partir do próximo ciclo.
+        // Branch é marcado na própria resolução do EX.
+        if (has_rob && instr_type != INSTRUCTION_TYPE::BRANCH)
+            MarkROBReady(position, cycle + 1);
 
         // Branch não ocupa porta de WR (não escreve em registrador nenhum).
         if (instr_type != INSTRUCTION_TYPE::BRANCH) writes++;
@@ -488,9 +791,8 @@ void Thread::PerformWriteResult(
 
 // Privado:
 void Thread::WriteResultOnComponents(
-    const int              position,
-    const int              cycle,
-    const INSTRUCTION_TYPE instr_type
+    const int position,
+    const int cycle
 ){
     // Nesse mesmo loop:
     // 1. Propaga o resultado no CDB e libera os registradores.
@@ -502,7 +804,7 @@ void Thread::WriteResultOnComponents(
         BroadcastOnCDBAndRS(cdb, rs, dest, position, cycle);
 
     // Libera a célula da RS produtora.
-    ReleaseRS(GetRSGroupForType(rs, instr_type), position, cycle);
+    ReleaseRSByPosition(rs, position, cycle);
 }
 
 // Privado:
@@ -527,9 +829,22 @@ void Thread::DetectPhaseTransitions(
 
             INSTRUCTION_PHASE_TOMASULO phase_after{r.GetInstructionPhase()};
             int position{r.GetCurrentInstruction().GetPosition()};
-            INSTRUCTION_TYPE type{r.GetCurrentInstruction().GetInstructionType()};
+            IN_FLIGHT_ENTRY& entry{GetInFlightEntry(position)};
+            if (entry.state != IN_FLIGHT_STATE::EXECUTING) {
+                std::cerr <<
+                    "[ERRO] Fase concluída fora do estado EXECUTING.\n"
+                    "- Posição: " << position << '\n' <<
+                    "- Estado: " << static_cast<int>(entry.state) << '\n';
+                std::abort();
+            }
+            INSTRUCTION_TYPE type{
+                entry.instruction->GetInstructionType(entry.current_stage)
+            };
             bool has_mem{type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE};
-            bool store_with_rob{type == INSTRUCTION_TYPE::STORE && has_rob};
+            bool final_stage{
+                entry.current_stage + 1 == entry.instruction->GetStageCount()
+            };
+            bool store_with_rob{type == INSTRUCTION_TYPE::STORE && has_rob && final_stage};
 
             // Caso 1: EX finalizado: falta MEM.
             if (phase_before == INSTRUCTION_PHASE_TOMASULO::EX && phase_after == INSTRUCTION_PHASE_TOMASULO::MEM) {
@@ -537,7 +852,10 @@ void Thread::DetectPhaseTransitions(
                 instruction_table[position].ex_cycles.push_back(cycle);
                 // O ciclo MEM do STORE é representado apenas quando ele não possui ROB.
                 // - Pula direto pro WR.
-                if (store_with_rob) pending_wr_buffer.push_back(position);
+                if (store_with_rob) {
+                    entry.state = IN_FLIGHT_STATE::WAITING_WR;
+                    pending_wr_buffer.push_back(position);
+                }
             }
             // Caso 2: * finalizado: falta WR.
             // - Não precisa verificar o phase_before por que mudou de fase para o final.
@@ -554,7 +872,21 @@ void Thread::DetectPhaseTransitions(
                     r.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR)
                     unresolved_branch_position = -1; // Valor default.
 
+                // Etapa intermediária libera hardware sem produzir resultado arquitetural.
+                if (!final_stage) {
+                    ReleaseRSByPosition(rs, position, cycle);
+                    entry.current_stage++;
+                    entry.state = IN_FLIGHT_STATE::WAITING_ISSUE;
+                    entry.next_issue_cycle = cycle + 1;
+                    continue;
+                }
+
+                // Branch final pode receber Commit no ciclo em que seu EX é resolvido.
+                if (has_rob && type == INSTRUCTION_TYPE::BRANCH)
+                    MarkROBReady(position, cycle);
+
                 // Coloca a instrução na fila de WR.
+                entry.state = IN_FLIGHT_STATE::WAITING_WR;
                 pending_wr_buffer.push_back(position);
             }
         }
@@ -572,47 +904,31 @@ void Thread::Commit(
     int writes{};
     // Até acabar as instruções ou até o limite de despacho.
     while (!rob.empty() && writes < fu.commit){
-        TABLE_ROW& row{instruction_table[commit_pointer]};
-        INSTRUCTION_TYPE type{row.instruction->GetInstructionType()};
-        bool is_store{type == INSTRUCTION_TYPE::STORE};
-        bool ready{false};
+        ROB_ENTRY& rob_entry{rob.front()};
+        const int position{rob_entry.position};
+        IN_FLIGHT_ENTRY& in_flight_entry{GetInFlightEntry(position)};
+        const std::size_t final_stage{
+            in_flight_entry.instruction->GetStageCount() - 1
+        };
+        const INSTRUCTION_TYPE type{
+            in_flight_entry.instruction->GetInstructionType(final_stage)
+        };
 
-        // Verifica se é um Store (caso especial, pois não tem WR).
-        if (is_store) {
-            // Verifica se a instrução já concluiu o MEM dela.
-            if (row.mem_cycles.empty()) {
-                row.mem_cycles.push_back(cycle); // Marca temporariamente o ciclo de início do MEM.
-            }
-            // Verifica se a instrução já acabou o MEM.
-            if (row.mem_cycles.size() == 1) {
-                int mem_end{row.mem_cycles.back() + row.instruction->GetMemLatency() - 1};
-                if (cycle >= mem_end) {
-                    row.mem_cycles.pop_back(); // Tira a marcação temporária da tabela.
-                    ready = true;
-                }
-            }
-        }
-        // Verifica se é um Branch (sem WR também, dependendo do EX completo).
-        else if (type == INSTRUCTION_TYPE::BRANCH) {
-            ready = (row.ex_cycles.size() == 2);
-        }
-        // Demais instruções.
-        else {
-            ready = (row.wr_cycle > 0 && row.wr_cycle < cycle);
-        }
+        // STORE avança sua temporização somente quando está na cabeça.
+        if (type == INSTRUCTION_TYPE::STORE)
+            AdvanceStoreCommit(rob_entry, in_flight_entry, cycle);
+
+        // A cabeça bloqueia todas as entradas posteriores até ficar pronta.
+        if (!rob_entry.ready || cycle < rob_entry.ready_cycle) break;
 
         // Marca na tabela:
-        if (ready) {
-            row.commit_cycle = cycle;
-            num_committed_instructions++;
-            writes++;
-            commit_pointer++;
-            rob.erase(rob.begin());
+        instruction_table[position].commit_cycle = cycle;
+        num_committed_instructions++;
+        writes++;
+        rob.pop_front();
 
-            // Se não tem previsor, as instruções após um Branch tem que ser em outro ciclo.
-            if (type == INSTRUCTION_TYPE::BRANCH && !(has_predictor && has_rob)) break;
-        }
-        else break;
+        // Se não tem previsor, as instruções após um Branch tem que ser em outro ciclo.
+        if (type == INSTRUCTION_TYPE::BRANCH && !(has_predictor && has_rob)) break;
     }
 }
 
