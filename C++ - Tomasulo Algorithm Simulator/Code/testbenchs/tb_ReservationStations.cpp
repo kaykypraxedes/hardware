@@ -20,13 +20,13 @@ static std::shared_ptr<Instruction> make_inst(
     return instruction;
 }
 
-static CDB makeCDB() {
-    // Mesmo caminho da Thread (InstructionFactory::MakeCDB): gera os slots
+static RegisterStatusTable MakeRegisterStatus() {
+    // Mesmo caminho da Thread: gera os slots
     // físicos com os ids corretos (R 0-31, F 32-63, M 64-65).
-    return InstructionFactory::MakeCDB(ARCHITECTURE::SIMPLIFIED);
+    return RegisterStatusTable(InstructionFactory::MakeRegisterLayout(ARCHITECTURE::SIMPLIFIED).references);
 }
 
-// Helpers de acesso ao CDB pelo nome arquitetural (F(cdb, 4) == F4 == slot 36).
+// Helpers de acesso ao Register Status pelo nome arquitetural (F(register_status, 4) == F4 == slot 36).
 // GetReg pesquisa apenas pelo id físico global — F<n> fica em 32 + n (faixa 32-63).
 static Register R(const int i) { return Register('R', i); }
 static Register F(const int i) { return Register('F', 32 + i); }
@@ -95,9 +95,9 @@ int main() {
     section("2.1 AddIssue() — instrução sem dependências (add r3, r1, r2)");
     {
         RS rs("int0");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         auto instr = make_inst("add r3, r1, r2", 0);
-        bool ok = rs.AddIssue(instr, cdb.register_status, 1, true);
+        bool ok = rs.AddIssue(instr, register_status, 1, true);
         check("AddIssue() retorna true",
             ok);
         check("IsBusy() == true",
@@ -114,76 +114,76 @@ int main() {
         check("GetTimes()[0] == 1 (ciclo de issue)",
               rs.GetTimes().size() == 1 && rs.GetTimes()[0] == 1);
         check("Register Status de R3 mantém produtor 0",
-            LatestPending(cdb.register_status, R(3)) == 0);
+            LatestPending(register_status, R(3)) == 0);
         check("RS mantém a instrução e a etapa alocadas",
             rs.GetCurrentInstruction().GetPosition() == instr->GetPosition() &&
             rs.GetCurrentStage() == 0);
         check("histórico do produtor preserva 'int0'",
-            cdb.register_status.FindStatus(R(3)).allocated_rs == std::vector<std::string>{"int0"});
+            register_status.FindStatus(R(3)).allocated_rs == std::vector<std::string>{"int0"});
     }
 
     section("2.2 AddIssue() — RS ocupada retorna false");
     {
         RS rs("int0");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         auto instr = make_inst("add r3, r1, r2");
-        rs.AddIssue(instr, cdb.register_status, 1, true);
+        rs.AddIssue(instr, register_status, 1, true);
 
         auto instr2 = make_inst("sub r5, r1, r2", 1);
-        bool dup = rs.AddIssue(instr2, cdb.register_status, 2, true);
+        bool dup = rs.AddIssue(instr2, register_status, 2, true);
         check("AddIssue em RS ocupada retorna false", !dup);
     }
 
     section("2.3 AddIssue() — dependência em ex_Q[0] (mul.d f4, f2, f0 quando f2 pendente)");
     {
         RS rs("fmul0");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         const int producer_position{7};
-        cdb.register_status.AllocateProducer(F(2), producer_position, "load0", 1);
+        register_status.AllocateProducer(F(2), producer_position, "load0", 1);
 
         auto instr = make_inst("mul.d f4, f2, f0", 8);
-        rs.AddIssue(instr, cdb.register_status, 2, true);
+        rs.AddIssue(instr, register_status, 2, true);
         check("ex_Q[0] == 7 (f2 pendente)", rs.GetExDependencies()[0] == producer_position);
         check("ex_Q[1] == -1 (f0 livre)",   rs.GetExDependencies()[1] == -1);
-        check("CDB.F[4] -> produtor 8", LatestPending(cdb.register_status, F(4)) == 8);
+        check("Register Status F[4] -> produtor 8", LatestPending(register_status, F(4)) == 8);
     }
 
     section("2.4 AddIssue() — 'add r1, r1, r2' sem auto-dependência");
     {
         RS rs("int1");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         auto instr = make_inst("add r1, r1, r2");
-        rs.AddIssue(instr, cdb.register_status, 1, true);
+        rs.AddIssue(instr, register_status, 1, true);
         check("Sem auto-dependência: ex_Q inteiramente resolvido (r1 e r2 estavam livres)",
             all_resolved(rs.GetExDependencies()));
     }
 
-    section("2.5 AddIssue() — MÚLTIPLOS DESTINOS: 'mult' aloca hi E lo simultaneamente no CDB");
+    section("2.5 AddIssue() — MÚLTIPLOS DESTINOS: 'mult' aloca hi E lo simultaneamente no Register Status");
     {
         RS rs("intmul1");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         auto instr = make_inst("mult r1, r2");
-        bool ok = rs.AddIssue(instr, cdb.register_status, 3, true);
+        bool ok = rs.AddIssue(instr, register_status, 3, true);
 
         check("AddIssue() retorna true",
             ok);
         check("ex_Q com 2 posições (r1, r2), ambas resolvidas",
             rs.GetExDependencies().size() == 2 &&
             all_resolved(rs.GetExDependencies()));
-        check("CDB HI marcado com produtor 0", LatestPending(cdb.register_status, HI()) == 0);
-        check("CDB LO marcado com produtor 0", LatestPending(cdb.register_status, LO()) == 0);
+        check("Register Status HI marcado com produtor 0", LatestPending(register_status, HI()) == 0);
+        check("Register Status LO marcado com produtor 0", LatestPending(register_status, LO()) == 0);
         check("histórico de HI preserva 'intmul1'",
-            cdb.register_status.FindStatus(HI()).allocated_rs == std::vector<std::string>{"intmul1"});
+            register_status.FindStatus(HI()).allocated_rs == std::vector<std::string>{"intmul1"});
     }
 
     section("2.6 AddIssue() — posição lógica negativa aborta");
     {
         check("instrução sem posição válida é rejeitada", Aborts([]() {
             RS rs("int_invalid");
-            CDB cdb = makeCDB();
+            RegisterStatusTable register_status{MakeRegisterStatus()};
             rs.AddIssue(
                 make_inst("add r3, r1, r2", -1),
-                cdb.register_status,
+                register_status,
                 1,
                 true
             );
@@ -200,38 +200,38 @@ int main() {
     section("3.1 UpdateDependencies() — instrução pronta (ex_Q resolvido) entra em EX");
     {
         RS rs("int2");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         FUNCTIONAL_UNITS fu = makeFU();
         auto instr = make_inst("add r3, r1, r2");
-        rs.AddIssue(instr, cdb.register_status, 1, true);
+        rs.AddIssue(instr, register_status, 1, true);
 
-        bool started = rs.UpdateDependencies(cdb.register_status, fu, 2);
+        bool started = rs.UpdateDependencies(register_status, fu, 2);
         check("UpdateDependencies retorna true (pronta)",  started);
         check("fase == EX após UpdateDependencies",        rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::EX);
         check("GetCountdown() == exLat == 1",              rs.GetCountdown() == 1);
         check("GetFUPosition() >= 0 (FU alocada)",         rs.GetFUPosition() >= 0);
 
-        bool second = rs.UpdateDependencies(cdb.register_status, fu, 2);
+        bool second = rs.UpdateDependencies(register_status, fu, 2);
         check("Segunda chamada retorna false (já em EX)",     !second);
     }
 
     section("3.2 UpdateDependencies() — aguarda ex_Q[0] ser liberado");
     {
         RS rs("fmul1");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         FUNCTIONAL_UNITS fu = makeFU();
         const int producer_position{7};
-        cdb.register_status.AllocateProducer(F(2), producer_position, "load0", 1);
+        register_status.AllocateProducer(F(2), producer_position, "load0", 1);
 
         auto instr = make_inst("mul.d f4, f2, f0", 8);
-        rs.AddIssue(instr, cdb.register_status, 2, true);
+        rs.AddIssue(instr, register_status, 2, true);
         check("ex_Q[0] == 7 antes de liberar", rs.GetExDependencies()[0] == producer_position);
 
-        bool before = rs.UpdateDependencies(cdb.register_status, fu, 3);
+        bool before = rs.UpdateDependencies(register_status, fu, 3);
         check("UpdateDependencies retorna false com ex_Q[0] pendente", !before);
 
-        cdb.register_status.DeallocateProducer(F(2), producer_position, 3);
-        bool after = rs.UpdateDependencies(cdb.register_status, fu, 4);
+        register_status.DeallocateProducer(F(2), producer_position, 3);
+        bool after = rs.UpdateDependencies(register_status, fu, 4);
         check("UpdateDependencies retorna true após ex_Q[0] liberado", after);
         check("fase == EX após liberar", rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::EX);
     }
@@ -239,48 +239,48 @@ int main() {
     section("3.3 STORE com endereço pronto (ex_Q) mas dado pendente (mem_Q) entra em EX");
     {
         RS rs("store1");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         FUNCTIONAL_UNITS fu = makeFU();
         const int producer_position{8};
-        cdb.register_status.AllocateProducer(F(8), producer_position, "fmul2", 1); // dado (f8) pendente; endereço (r1) livre
+        register_status.AllocateProducer(F(8), producer_position, "fmul2", 1); // dado (f8) pendente; endereço (r1) livre
 
         auto instr = make_inst("s.d f8, 0(r1)", 9);
-        rs.AddIssue(instr, cdb.register_status, 2, true);
+        rs.AddIssue(instr, register_status, 2, true);
         check("ex_Q (endereço) vazio",
             all_resolved(rs.GetExDependencies()));
         check("mem_Q[0] == 8 (dado pendente)",
             rs.GetMemDependencies().size() == 1 &&
             rs.GetMemDependencies()[0] == producer_position);
 
-        bool entered_ex = rs.UpdateDependencies(cdb.register_status, fu, 3);
+        bool entered_ex = rs.UpdateDependencies(register_status, fu, 3);
         check("STORE entra em EX mesmo com dado (mem_Q) pendente — EX só olha ex_Q", entered_ex);
 
         rs.UpdateCountdown(fu, 3);
         check("fase == MEM aguardando dado", rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM);
 
-        bool blocked = rs.UpdateDependencies(cdb.register_status, fu, 4);
+        bool blocked = rs.UpdateDependencies(register_status, fu, 4);
         check("MEM bloqueado enquanto mem_Q não resolve", !blocked);
 
-        cdb.register_status.DeallocateProducer(F(8), producer_position, 5);
-        bool mem_ok = rs.UpdateDependencies(cdb.register_status, fu, 5);
+        register_status.DeallocateProducer(F(8), producer_position, 5);
+        bool mem_ok = rs.UpdateDependencies(register_status, fu, 5);
         check("MEM inicia após dado (mem_Q) resolvido", mem_ok);
     }
 
     section("3.4 STORE com endereço pendente (ex_Q) NÃO entra em EX");
     {
         RS rs("store2");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         FUNCTIONAL_UNITS fu = makeFU();
         const int producer_position{9};
-        cdb.register_status.AllocateProducer(R(9), producer_position, "int5", 1); // endereço pendente
+        register_status.AllocateProducer(R(9), producer_position, "int5", 1); // endereço pendente
 
         auto instr = make_inst("s.d f0, 0(r9)", 10);
-        rs.AddIssue(instr, cdb.register_status, 2, true);
+        rs.AddIssue(instr, register_status, 2, true);
         check("ex_Q[0] == 9 (endereço pendente)",
             rs.GetExDependencies().size() == 1 &&
             rs.GetExDependencies()[0] == producer_position);
 
-        bool blocked = rs.UpdateDependencies(cdb.register_status, fu, 3);
+        bool blocked = rs.UpdateDependencies(register_status, fu, 3);
         check("STORE não entra em EX com endereço (ex_Q) pendente", !blocked);
         check("fase permanece ISSUE",             rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::IS);
     }
@@ -288,12 +288,12 @@ int main() {
     section("3.5 ResolveDependency() — captura direta via broadcast simulado");
     {
         RS rs("fmul3");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         const int producer_position{12};
-        cdb.register_status.AllocateProducer(F(2), producer_position, "load2", 1);
+        register_status.AllocateProducer(F(2), producer_position, "load2", 1);
 
         auto instr = make_inst("mul.d f4, f2, f0", 14);
-        rs.AddIssue(instr, cdb.register_status, 2, true);
+        rs.AddIssue(instr, register_status, 2, true);
         check("ex_Q[0] == 12 antes do broadcast",
             rs.GetExDependencies()[0] == producer_position);
 
@@ -303,9 +303,9 @@ int main() {
         // Posição lógica diferente não deve afetar nada.
         RS rs2("fmul4");
         const int other_producer{13};
-        cdb.register_status.AllocateProducer(F(10), other_producer, "load3", 1);
+        register_status.AllocateProducer(F(10), other_producer, "load3", 1);
         auto instr2 = make_inst("mul.d f12, f10, f0", 14);
-        rs2.AddIssue(instr2, cdb.register_status, 2, true);
+        rs2.AddIssue(instr2, register_status, 2, true);
         rs2.ResolveDependency(99, F(10));
         check("ResolveDependency com posição diferente não altera ex_Q",
             rs2.GetExDependencies()[0] == other_producer);
@@ -314,42 +314,42 @@ int main() {
     section("3.6 WAW — produtor antigo não resolve dependência do mais novo");
     {
         RS rs("fmul_waw");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         FUNCTIONAL_UNITS fu = makeFU();
         const Register source{F(2)};
-        cdb.register_status.AllocateProducer(source, 30, "load0", 1);
-        cdb.register_status.AllocateProducer(source, 31, "load1", 2);
+        register_status.AllocateProducer(source, 30, "load0", 1);
+        register_status.AllocateProducer(source, 31, "load1", 2);
 
         auto instruction = make_inst("mul.d f4, f2, f0", 32);
-        rs.AddIssue(instruction, cdb.register_status, 3, true);
+        rs.AddIssue(instruction, register_status, 3, true);
         check("Q captura somente o produtor lógico mais novo", rs.GetExDependencies()[0] == 31);
 
-        cdb.register_status.DeallocateProducer(source, 30, 4);
+        register_status.DeallocateProducer(source, 30, 4);
         rs.ResolveDependency(30, source);
         check("broadcast antigo não limpa Q do produtor novo", rs.GetExDependencies()[0] == 31);
-        check("instrução continua bloqueada", !rs.UpdateDependencies(cdb.register_status, fu, 4));
+        check("instrução continua bloqueada", !rs.UpdateDependencies(register_status, fu, 4));
 
-        cdb.register_status.DeallocateProducer(source, 31, 5);
+        register_status.DeallocateProducer(source, 31, 5);
         check("instrução inicia após o produtor correto finalizar",
-            rs.UpdateDependencies(cdb.register_status, fu, 5));
+            rs.UpdateDependencies(register_status, fu, 5));
     }
 
     section("3.7 Produtor mais recente concluído deixa a fonte pronta");
     {
         RS rs("int_completed_latest");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         const Register source{R(1)};
-        cdb.register_status.AllocateProducer(source, 10, "old_pending", 1);
-        cdb.register_status.AllocateProducer(source, 20, "latest_completed", 2);
-        cdb.register_status.DeallocateProducer(source, 20, 3);
+        register_status.AllocateProducer(source, 10, "old_pending", 1);
+        register_status.AllocateProducer(source, 20, "latest_completed", 2);
+        register_status.DeallocateProducer(source, 20, 3);
 
         auto instruction = make_inst("add r3, r1, r2", 30);
-        rs.AddIssue(instruction, cdb.register_status, 4, true);
+        rs.AddIssue(instruction, register_status, 4, true);
 
         check("fonte pronta não recua para produtor antigo pendente",
             rs.GetExDependencies()[0] == -1 &&
             rs.GetExValues()[0].GetId() == 1 &&
-            cdb.register_status.IsBusy(source));
+            register_status.IsBusy(source));
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -362,12 +362,12 @@ int main() {
     section("4.1 Fonte parcialmente pendente — só a posição [1] fica esperando");
     {
         RS rs("int8");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         const int producer_position{14};
-        cdb.register_status.AllocateProducer(R(2), producer_position, "load4", 1); // r2 (2a fonte) pendente; r1 (1a fonte) livre
+        register_status.AllocateProducer(R(2), producer_position, "load4", 1); // r2 (2a fonte) pendente; r1 (1a fonte) livre
 
         auto instr = make_inst("add r3, r1, r2", 15);
-        rs.AddIssue(instr, cdb.register_status, 2, true);
+        rs.AddIssue(instr, register_status, 2, true);
 
         check("ex_Q[0] == -1 (r1 estava livre)", rs.GetExDependencies()[0] == -1);
         check("ex_Q[1] == 14 (r2 pendente)",
@@ -377,12 +377,12 @@ int main() {
     section("4.2 Mesmo produtor em duas posições — 'add r3, r1, r1' com r1 pendente");
     {
         RS rs("int9");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         const int producer_position{15};
-        cdb.register_status.AllocateProducer(R(1), producer_position, "load5", 1);
+        register_status.AllocateProducer(R(1), producer_position, "load5", 1);
 
         auto instr = make_inst("add r3, r1, r1", 16);
-        rs.AddIssue(instr, cdb.register_status, 2, true);
+        rs.AddIssue(instr, register_status, 2, true);
         check("ex_Q[0] == 15",
             rs.GetExDependencies()[0] == producer_position);
         check("ex_Q[1] == 15 (mesma dependência nas duas posições)",
@@ -398,33 +398,33 @@ int main() {
     {
         RS rs_mult("intmul2");
         RS rs_mflo("int10");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         FUNCTIONAL_UNITS fu = makeFU();
 
         auto i_mult = make_inst("mult r1, r2", 16);
-        rs_mult.AddIssue(i_mult, cdb.register_status, 1, true); // hi/lo ficam pendentes de 'intmul2'
+        rs_mult.AddIssue(i_mult, register_status, 1, true); // hi/lo ficam pendentes de 'intmul2'
 
         auto i_mflo = make_inst("mflo r3", 17);
-        rs_mflo.AddIssue(i_mflo, cdb.register_status, 2, true);
+        rs_mflo.AddIssue(i_mflo, register_status, 2, true);
         check("mflo: ex_Q[0] == 16 (lo ainda pendente do mult)",
             rs_mflo.GetExDependencies().size() == 1 &&
             rs_mflo.GetExDependencies()[0] == 16);
 
-        cdb.register_status.DeallocateProducer(LO(), 16, 3); // simula fim do broadcast do mult
-        bool started = rs_mflo.UpdateDependencies(cdb.register_status, fu, 3);
+        register_status.DeallocateProducer(LO(), 16, 3); // simula fim do broadcast do mult
+        bool started = rs_mflo.UpdateDependencies(register_status, fu, 3);
         check("mflo entra em EX assim que 'lo' é liberado", started);
     }
 
     section("4.4 Instrução sem fontes EX — vetor vazio nunca bloqueia");
     {
         RS rs("int11");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         FUNCTIONAL_UNITS fu = makeFU();
         auto instr = make_inst("lui r1, #5");
-        rs.AddIssue(instr, cdb.register_status, 1, true);
+        rs.AddIssue(instr, register_status, 1, true);
 
         check("lui: ex_Q vazio (nenhuma fonte)", rs.GetExDependencies().empty());
-        bool started = rs.UpdateDependencies(cdb.register_status, fu, 2);
+        bool started = rs.UpdateDependencies(register_status, fu, 2);
         check("lui: entra em EX imediatamente (vetor vazio não bloqueia)", started);
     }
 
@@ -438,11 +438,11 @@ int main() {
     section("5.1 UpdateCountdown() — INT_BASIC (exLat=1): EX -> WR");
     {
         RS rs("int3");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         FUNCTIONAL_UNITS fu = makeFU();
         auto instr = make_inst("add r3, r1, r2");
-        rs.AddIssue(instr, cdb.register_status, 1, true);
-        rs.UpdateDependencies(cdb.register_status, fu, 2);
+        rs.AddIssue(instr, register_status, 1, true);
+        rs.UpdateDependencies(register_status, fu, 2);
 
         bool finished = rs.UpdateCountdown(fu, 2);
         check("UpdateCountdown retorna true (EX terminou)", finished);
@@ -453,18 +453,18 @@ int main() {
     section("5.2 UpdateCountdown() — LOAD (EX->MEM->WR)");
     {
         RS rs("load0");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         FUNCTIONAL_UNITS fu = makeFU();
         auto instr = make_inst("l.d f2, 0(r1)");
-        rs.AddIssue(instr, cdb.register_status, 1, true);
-        rs.UpdateDependencies(cdb.register_status, fu, 2);
+        rs.AddIssue(instr, register_status, 1, true);
+        rs.UpdateDependencies(register_status, fu, 2);
 
         bool ex_done = rs.UpdateCountdown(fu, 2);
         check("LOAD: UpdateCountdown sinaliza fim do EX", ex_done);
         check("LOAD: fase == MEM após EX",                 rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM);
         check("LOAD: countdown == -1 (aguarda iniciar MEM)", rs.GetCountdown() == -1);
 
-        bool started_mem = rs.UpdateDependencies(cdb.register_status, fu, 3);
+        bool started_mem = rs.UpdateDependencies(register_status, fu, 3);
         check("LOAD: UpdateDependencies inicia MEM no ciclo 3", started_mem);
         check("LOAD: countdown == latMEM == 1 após iniciar MEM", rs.GetCountdown() == 1);
 
@@ -476,21 +476,21 @@ int main() {
     section("5.3 UpdateCountdown() — STORE (EX->espera dado->MEM->WR)");
     {
         RS rs("store0");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         FUNCTIONAL_UNITS fu = makeFU();
         const int producer_position{18};
-        cdb.register_status.AllocateProducer(F(6), producer_position, "float_basico0", 1);
+        register_status.AllocateProducer(F(6), producer_position, "float_basico0", 1);
 
         auto instr = make_inst("s.d f6, 0(r2)", 19);
-        rs.AddIssue(instr, cdb.register_status, 2, true);
-        rs.UpdateDependencies(cdb.register_status, fu, 3);
+        rs.AddIssue(instr, register_status, 2, true);
+        rs.UpdateDependencies(register_status, fu, 3);
 
         bool ex_done = rs.UpdateCountdown(fu, 3);
         check("STORE: fim do EX sinalizado", ex_done);
         check("STORE: countdown == -1 após EX (aguarda dado)", rs.GetCountdown() == -1);
 
-        cdb.register_status.DeallocateProducer(F(6), producer_position, 4);
-        bool mem_ok = rs.UpdateDependencies(cdb.register_status, fu, 4);
+        register_status.DeallocateProducer(F(6), producer_position, 4);
+        bool mem_ok = rs.UpdateDependencies(register_status, fu, 4);
         check("STORE: UpdateDependencies inicia MEM após dado liberado", mem_ok);
         check("STORE: fase == MEM", rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM);
 
@@ -509,11 +509,11 @@ int main() {
     section("6.1 Release() — RS de inteiros liberada");
     {
         RS rs("int4");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         FUNCTIONAL_UNITS fu = makeFU();
         auto instr = make_inst("add r3, r1, r2");
-        rs.AddIssue(instr, cdb.register_status, 1, true);
-        rs.UpdateDependencies(cdb.register_status, fu, 2);
+        rs.AddIssue(instr, register_status, 1, true);
+        rs.UpdateDependencies(register_status, fu, 2);
         rs.UpdateCountdown(fu, 2);
 
         rs.Release(3);
@@ -532,14 +532,14 @@ int main() {
     section("6.2 Release() após LOAD — caminho de liberação completo e reuso");
     {
         RS rs("load1");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         FUNCTIONAL_UNITS fu = makeFU();
         auto instr = make_inst("l.d f4, 0(r2)", 0);
 
-        rs.AddIssue(instr, cdb.register_status, 1, true);
-        rs.UpdateDependencies(cdb.register_status, fu, 2);
+        rs.AddIssue(instr, register_status, 1, true);
+        rs.UpdateDependencies(register_status, fu, 2);
         rs.UpdateCountdown(fu, 2);
-        rs.UpdateDependencies(cdb.register_status, fu, 3);
+        rs.UpdateDependencies(register_status, fu, 3);
         rs.UpdateCountdown(fu, 3);
 
         check("LOAD antes de Release: fase == WR",  rs.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR);
@@ -558,25 +558,25 @@ int main() {
         check("LOAD: GetTimes()[0] == 1 (issue)",    rs.GetTimes()[0] == 1);
         check("LOAD: GetTimes()[1] == 4 (release)",  rs.GetTimes()[1] == 4);
         auto instr2 = make_inst("l.d f6, 0(r3)", 1);
-        bool reuse = rs.AddIssue(instr2, cdb.register_status, 5, true);
+        bool reuse = rs.AddIssue(instr2, register_status, 5, true);
         check("LOAD: RS pode ser reusada após Release",  reuse);
     }
 
     section("6.3 Reuso de RS — sem autodependência espúria (regressão do resíduo 'tag == id')");
     {
         RS rs("int7");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         FUNCTIONAL_UNITS fu = makeFU();
 
         auto i1 = make_inst("add r7, r1, r2", 20);
-        rs.AddIssue(i1, cdb.register_status, 1, true);
-        rs.UpdateDependencies(cdb.register_status, fu, 2);
+        rs.AddIssue(i1, register_status, 1, true);
+        rs.UpdateDependencies(register_status, fu, 2);
         rs.UpdateCountdown(fu, 2);           // WR
-        cdb.register_status.DeallocateProducer(R(7), 20, 3); // simula fim do broadcast
+        register_status.DeallocateProducer(R(7), 20, 3); // simula fim do broadcast
         rs.Release(3);
 
         auto i2 = make_inst("add r7, r7, r1", 21); // lê e escreve r7 de novo, mesma RS
-        rs.AddIssue(i2, cdb.register_status, 4, true);
+        rs.AddIssue(i2, register_status, 4, true);
         check("Sem autodependência espúria ao reler R7 já resolvido",
             all_resolved(rs.GetExDependencies()));
     }
@@ -585,48 +585,48 @@ int main() {
     {
         RS first_rs("int_first");
         RS second_rs("int_second");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         const Register source{R(1)};
-        cdb.register_status.AllocateProducer(source, 30, "load_old", 1);
+        register_status.AllocateProducer(source, 30, "load_old", 1);
 
         auto instruction = make_inst("add r3, r1, r2", 32);
-        first_rs.AddIssue(instruction, cdb.register_status, 2, true);
+        first_rs.AddIssue(instruction, register_status, 2, true);
         check("primeiro Issue captura o produtor antigo",
             first_rs.GetExDependencies()[0] == 30);
         first_rs.Release(2);
 
         // O novo Issue captura novamente a fonte no estado corrente.
-        cdb.register_status.AllocateProducer(source, 31, "load_new", 3);
-        cdb.register_status.DeallocateProducer(source, 30, 3);
-        bool internal_issue{second_rs.AddIssue(instruction, cdb.register_status, 4, false)};
+        register_status.AllocateProducer(source, 31, "load_new", 3);
+        register_status.DeallocateProducer(source, 30, 3);
+        bool internal_issue{second_rs.AddIssue(instruction, register_status, 4, false)};
 
         check("Issue interno recaptura o produtor lógico anterior mais recente",
             internal_issue && second_rs.GetExDependencies()[0] == 31);
         check("destino é reservado uma única vez",
-            cdb.register_status.FindStatus(R(3)).producer_positions == std::vector<int>{32});
+            register_status.FindStatus(R(3)).producer_positions == std::vector<int>{32});
         check("histórico do destino preserva somente a primeira RS",
-            cdb.register_status.FindStatus(R(3)).allocated_rs == std::vector<std::string>{"int_first"});
+            register_status.FindStatus(R(3)).allocated_rs == std::vector<std::string>{"int_first"});
     }
 
     section("6.5 Issue interno captura somente as fontes da nova etapa");
     {
         RS first_rs("load_stage");
         RS second_rs("mul_stage");
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         const Register first_source{R(1)};
         const Register second_source{R(6)};
-        cdb.register_status.AllocateProducer(first_source, 20, "first_old", 1);
-        cdb.register_status.AllocateProducer(second_source, 25, "second_old", 1);
+        register_status.AllocateProducer(first_source, 20, "first_old", 1);
+        register_status.AllocateProducer(second_source, 25, "second_old", 1);
 
         auto instruction{std::make_shared<SyntheticInstruction>(30)};
         instruction->Parse("multi");
-        first_rs.AddIssue(instruction, cdb.register_status, 2, true);
+        first_rs.AddIssue(instruction, register_status, 2, true);
         check("primeira etapa captura somente R1",
             first_rs.GetExDependencies() == std::vector<int>{20});
 
         first_rs.Release(3);
-        cdb.register_status.AllocateProducer(second_source, 35, "second_newer", 3);
-        second_rs.AddIssue(instruction, cdb.register_status, 4, false, 1);
+        register_status.AllocateProducer(second_source, 35, "second_newer", 3);
+        second_rs.AddIssue(instruction, register_status, 4, false, 1);
 
         check("nova etapa recaptura R6 e ignora produtor igual/posterior",
             second_rs.GetCurrentStage() == 1 &&
@@ -635,7 +635,7 @@ int main() {
             instruction->GetInstructionType() == INSTRUCTION_TYPE::LOAD &&
             instruction->GetInstructionTypes().size() == 3);
         check("destino permanece registrado uma única vez pela instrução",
-            cdb.register_status.FindStatus(second_source).producer_positions ==
+            register_status.FindStatus(second_source).producer_positions ==
                 std::vector<int>({25, 30, 35}));
     }
 
@@ -656,15 +656,15 @@ int main() {
         fu.float_mult_div_alu.push_back(FU{});
         fu.wr = 1;
 
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
         RS rs0("int0"), rs1("int1");
         auto i0 = make_inst("add r3, r1, r2", 0);
         auto i1 = make_inst("sub r5, r3, r4", 1);
-        rs0.AddIssue(i0, cdb.register_status, 1, true);
-        rs1.AddIssue(i1, cdb.register_status, 1, true);
+        rs0.AddIssue(i0, register_status, 1, true);
+        rs1.AddIssue(i1, register_status, 1, true);
 
-        rs0.UpdateDependencies(cdb.register_status, fu, 2);
-        bool blocked = rs1.UpdateDependencies(cdb.register_status, fu, 2);
+        rs0.UpdateDependencies(register_status, fu, 2);
+        bool blocked = rs1.UpdateDependencies(register_status, fu, 2);
         check("Segunda RS bloqueada quando FU esgotada", !blocked);
         check("rs1 ainda em ISSUE",
               rs1.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::IS);
@@ -673,49 +673,49 @@ int main() {
     section("7.2 Grupos de FU são independentes — EX (int_basic_alu) vs MEM (memory_access)");
     {
         FUNCTIONAL_UNITS fu = makeFU(1); // 1 FU por grupo, mais fácil de saturar
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
 
         RS rsA("load2"), rsB("load3");
         auto ldA = make_inst("l.d f2, 0(r1)", 0);
         auto ldB = make_inst("l.d f4, 0(r2)", 1);
-        rsA.AddIssue(ldA, cdb.register_status, 1, true);
-        rsB.AddIssue(ldB, cdb.register_status, 1, true);
+        rsA.AddIssue(ldA, register_status, 1, true);
+        rsB.AddIssue(ldB, register_status, 1, true);
 
-        rsA.UpdateDependencies(cdb.register_status, fu, 2); // ocupa int_basic_alu
+        rsA.UpdateDependencies(register_status, fu, 2); // ocupa int_basic_alu
         rsA.UpdateCountdown(fu, 2);         // libera int_basic_alu, vai para MEM (sem FU ainda)
 
-        bool rsB_ex = rsB.UpdateDependencies(cdb.register_status, fu, 2); // int_basic_alu livre de novo
+        bool rsB_ex = rsB.UpdateDependencies(register_status, fu, 2); // int_basic_alu livre de novo
         check("rsB usa int_basic_alu livre após rsA liberar", rsB_ex && rsB.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::EX);
 
-        bool memA = rsA.UpdateDependencies(cdb.register_status, fu, 3); // memory_access livre
+        bool memA = rsA.UpdateDependencies(register_status, fu, 3); // memory_access livre
         check("rsA inicia MEM (memory_access livre)", memA);
 
         rsB.UpdateCountdown(fu, 3);         // libera int_basic_alu, tenta ir para MEM
-        bool memB = rsB.UpdateDependencies(cdb.register_status, fu, 3);
+        bool memB = rsB.UpdateDependencies(register_status, fu, 3);
         check("rsB bloqueado no MEM: memory_access já ocupado por rsA", !memB);
     }
 
     section("7.3 Roteamento de FU — INT_MUL/INT_DIV usam int_mult_div_alu; int_basic_alu não é afetado");
     {
         FUNCTIONAL_UNITS fu = makeFU(1); // 1 FU por grupo, fácil de saturar
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
 
         RS rsMul("intmul0"), rsDiv("intdiv0"), rsAdd("intbasic0");
         auto iMul = make_inst("mult r1, r2", 0); // mult/div não têm destino explícito (vai para hi/lo)
         auto iDiv = make_inst("div r1, r2", 1);
         auto iAdd = make_inst("add r6, r1, r2", 2);
-        rsMul.AddIssue(iMul, cdb.register_status, 1, true);
-        rsDiv.AddIssue(iDiv, cdb.register_status, 1, true);
-        rsAdd.AddIssue(iAdd, cdb.register_status, 1, true);
+        rsMul.AddIssue(iMul, register_status, 1, true);
+        rsDiv.AddIssue(iDiv, register_status, 1, true);
+        rsAdd.AddIssue(iAdd, register_status, 1, true);
 
-        bool mulEx = rsMul.UpdateDependencies(cdb.register_status, fu, 2);
+        bool mulEx = rsMul.UpdateDependencies(register_status, fu, 2);
         check("INT_MUL entra em EX e ocupa int_mult_div_alu", mulEx);
         check("INT_MUL: countdown == exLat == 4", rsMul.GetCountdown() == 4);
 
-        bool divEx = rsDiv.UpdateDependencies(cdb.register_status, fu, 2);
+        bool divEx = rsDiv.UpdateDependencies(register_status, fu, 2);
         check("INT_DIV bloqueado: int_mult_div_alu saturado pelo MULT", !divEx);
 
-        bool addEx = rsAdd.UpdateDependencies(cdb.register_status, fu, 2);
+        bool addEx = rsAdd.UpdateDependencies(register_status, fu, 2);
         check("INT_BASIC não é afetado pela saturação de int_mult_div_alu", addEx);
         check("INT_BASIC: countdown == exLat == 1", rsAdd.GetCountdown() == 1);
     }
@@ -723,24 +723,24 @@ int main() {
     section("7.4 Roteamento de FU — FLOAT_BASIC usa float_basic_alu (independente de float_mult_div_alu)");
     {
         FUNCTIONAL_UNITS fu = makeFU(1);
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
 
         RS rsFadd("fbasic0"), rsFadd2("fbasic1"), rsFmul("fmul5");
         auto iFadd = make_inst("add.d f2, f0, f4", 0);
         auto iFadd2 = make_inst("sub.d f8, f0, f4", 1);
         auto iFmul = make_inst("mul.d f6, f0, f4", 2);
-        rsFadd.AddIssue(iFadd, cdb.register_status, 1, true);
-        rsFadd2.AddIssue(iFadd2, cdb.register_status, 1, true);
-        rsFmul.AddIssue(iFmul, cdb.register_status, 1, true);
+        rsFadd.AddIssue(iFadd, register_status, 1, true);
+        rsFadd2.AddIssue(iFadd2, register_status, 1, true);
+        rsFmul.AddIssue(iFmul, register_status, 1, true);
 
-        bool faddEx = rsFadd.UpdateDependencies(cdb.register_status, fu, 2);
+        bool faddEx = rsFadd.UpdateDependencies(register_status, fu, 2);
         check("FLOAT_BASIC (add.d) entra em EX e ocupa float_basic_alu", faddEx);
         check("FLOAT_BASIC: countdown == exLat == 9", rsFadd.GetCountdown() == 9);
 
-        bool fadd2Ex = rsFadd2.UpdateDependencies(cdb.register_status, fu, 2);
+        bool fadd2Ex = rsFadd2.UpdateDependencies(register_status, fu, 2);
         check("Segundo FLOAT_BASIC (sub.d) bloqueado: float_basic_alu saturado", !fadd2Ex);
 
-        bool fmulEx = rsFmul.UpdateDependencies(cdb.register_status, fu, 2);
+        bool fmulEx = rsFmul.UpdateDependencies(register_status, fu, 2);
         check("FLOAT_MUL não é afetado pela saturação de float_basic_alu", fmulEx);
         check("FLOAT_MUL: countdown == exLat == 14", rsFmul.GetCountdown() == 14);
     }
@@ -748,26 +748,110 @@ int main() {
     section("7.5 Roteamento de FU — FLOAT_MUL/FLOAT_DIV compartilham float_mult_div_alu");
     {
         FUNCTIONAL_UNITS fu = makeFU(1);
-        CDB cdb = makeCDB();
+        RegisterStatusTable register_status{MakeRegisterStatus()};
 
         RS rsFmul("fmul6"), rsFdiv("fdiv0"), rsFadd("fbasic2");
         auto iFmul = make_inst("mul.d f6, f0, f4", 0);
         auto iFdiv = make_inst("div.d f10, f0, f4", 1);
         auto iFadd = make_inst("add.d f12, f0, f4", 2);
-        rsFmul.AddIssue(iFmul, cdb.register_status, 1, true);
-        rsFdiv.AddIssue(iFdiv, cdb.register_status, 1, true);
-        rsFadd.AddIssue(iFadd, cdb.register_status, 1, true);
+        rsFmul.AddIssue(iFmul, register_status, 1, true);
+        rsFdiv.AddIssue(iFdiv, register_status, 1, true);
+        rsFadd.AddIssue(iFadd, register_status, 1, true);
 
-        bool fmulEx = rsFmul.UpdateDependencies(cdb.register_status, fu, 2);
+        bool fmulEx = rsFmul.UpdateDependencies(register_status, fu, 2);
         check("FLOAT_MUL entra em EX e ocupa float_mult_div_alu", fmulEx);
         check("FLOAT_MUL: countdown == exLat == 14", rsFmul.GetCountdown() == 14);
 
-        bool fdivEx = rsFdiv.UpdateDependencies(cdb.register_status, fu, 2);
+        bool fdivEx = rsFdiv.UpdateDependencies(register_status, fu, 2);
         check("FLOAT_DIV bloqueado: float_mult_div_alu saturado pelo FLOAT_MUL", !fdivEx);
 
-        bool faddEx = rsFadd.UpdateDependencies(cdb.register_status, fu, 2);
+        bool faddEx = rsFadd.UpdateDependencies(register_status, fu, 2);
         check("FLOAT_BASIC não é afetado pela saturação de float_mult_div_alu", faddEx);
         check("FLOAT_DIV: exLat esperado == 40 (checado isoladamente)", make_inst("div.d f0, f2, f4")->GetExLatency() == 40);
+    }
+
+    std::cout << "\n";
+    print_title("8. DISTRIBUIÇÃO DE BROADCAST");
+
+    section("8.1 Um evento resolve um ou múltiplos consumidores");
+    {
+        RegisterStatusTable register_status{MakeRegisterStatus()};
+        register_status.AllocateProducer(R(1), 10, "producer", 1);
+
+        RESERVATION_STATION station;
+        station.int_basic.push_back(RS("consumer0"));
+        station.int_basic.push_back(RS("consumer1"));
+        station.int_basic[0].AddIssue(
+            make_inst("add r3, r1, r2", 20),
+            register_status,
+            2,
+            true
+        );
+        station.int_basic[1].AddIssue(
+            make_inst("sub r4, r1, r2", 21),
+            register_status,
+            2,
+            true
+        );
+
+        station.ResolveBroadcast({10, R(1)});
+        check("primeiro consumidor resolve Q",
+            station.int_basic[0].GetExDependencies()[0] == -1);
+        check("segundo consumidor resolve o mesmo Q",
+            station.int_basic[1].GetExDependencies()[0] == -1);
+    }
+
+    section("8.2 Destino ausente ou produtor diferente não altera Q");
+    {
+        RegisterStatusTable register_status{MakeRegisterStatus()};
+        register_status.AllocateProducer(R(1), 10, "producer", 1);
+
+        RESERVATION_STATION station;
+        station.int_basic.push_back(RS("consumer"));
+        station.int_basic[0].AddIssue(
+            make_inst("add r3, r1, r2", 20),
+            register_status,
+            2,
+            true
+        );
+
+        station.ResolveBroadcast({10, R(8)});
+        check("destino sem consumidor preserva Q",
+            station.int_basic[0].GetExDependencies()[0] == 10);
+        station.ResolveBroadcast({11, R(1)});
+        check("produtor diferente preserva Q",
+            station.int_basic[0].GetExDependencies()[0] == 10);
+    }
+
+    section("8.3 Dois destinos do mesmo produtor são eventos independentes");
+    {
+        RegisterStatusTable register_status{MakeRegisterStatus()};
+        register_status.AllocateProducer(HI(), 10, "producer", 1);
+        register_status.AllocateProducer(LO(), 10, "producer", 1);
+
+        RESERVATION_STATION station;
+        station.int_basic.push_back(RS("hi_consumer"));
+        station.int_basic.push_back(RS("lo_consumer"));
+        station.int_basic[0].AddIssue(
+            make_inst("mfhi r3", 20),
+            register_status,
+            2,
+            true
+        );
+        station.int_basic[1].AddIssue(
+            make_inst("mflo r4", 21),
+            register_status,
+            2,
+            true
+        );
+
+        station.ResolveBroadcast({10, HI()});
+        check("broadcast de HI não resolve LO",
+            station.int_basic[0].GetExDependencies()[0] == -1 &&
+            station.int_basic[1].GetExDependencies()[0] == 10);
+        station.ResolveBroadcast({10, LO()});
+        check("broadcast de LO conclui o segundo destino",
+            station.int_basic[1].GetExDependencies()[0] == -1);
     }
 
     std::cout << "\n-----------------------------\n";

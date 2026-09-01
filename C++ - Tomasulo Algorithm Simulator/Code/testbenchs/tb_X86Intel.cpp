@@ -549,9 +549,9 @@ int main() {
 
     section("10.1 Slots esperados, identidade e isolamento");
     {
-        const CDB cdb{InstructionX86Intel::MakeCDB()};
-        const std::vector<Register> references{cdb.register_status.GetReferences()};
-        check("CDB x86 possui exatamente 90 slots", cdb.register_status.Size() == 90);
+        const REGISTER_LAYOUT layout{InstructionX86Intel::MakeRegisterLayout()};
+        const std::vector<Register>& references{layout.references};
+        check("layout x86 possui exatamente 90 slots", references.size() == 90);
         check("Cada slot possui identidade (type,id,mask) única", has_unique_registers(references));
 
         bool xmm_ok{true};
@@ -565,14 +565,14 @@ int main() {
         check("CF/PF/AF/ZF/SF/OF existem em slots independentes", flags_ok);
     }
 
-    section("10.2 print_banks cobre o CDB uma vez e sem overflow");
+    section("10.2 banks cobre o layout uma vez e sem overflow");
     {
-        const CDB cdb{InstructionX86Intel::MakeCDB()};
-        std::vector<bool> covered(cdb.register_status.Size(), false);
+        const REGISTER_LAYOUT layout{InstructionX86Intel::MakeRegisterLayout()};
+        std::vector<bool> covered(layout.references.size(), false);
         bool ranges_ok{true};
-        for (const auto& bank : cdb.print_banks) {
+        for (const REGISTER_BANK& bank : layout.banks) {
             if (bank.base < 0 || bank.count < 0 ||
-                static_cast<size_t>(bank.base + bank.count) > cdb.register_status.Size()) {
+                static_cast<size_t>(bank.base + bank.count) > layout.references.size()) {
                 ranges_ok = false;
                 continue;
             }
@@ -583,7 +583,7 @@ int main() {
         }
         for (const bool slot_covered : covered)
             if (!slot_covered) ranges_ok = false;
-        check("print_banks possui ranges válidos, sem sobreposição ou omissão", ranges_ok);
+        check("banks possui ranges válidos, sem sobreposição ou omissão", ranges_ok);
     }
 
     std::cout << "\n";

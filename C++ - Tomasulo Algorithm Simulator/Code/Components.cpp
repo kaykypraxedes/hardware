@@ -37,6 +37,14 @@ Register::Register(
 // === CLASSE =======================================================
 // ==================================================================
 
+// ─── CONSTRUTOR ───────────────────────────────────────────────────
+// Público:
+RegisterStatusTable::RegisterStatusTable(
+    const std::vector<Register>& references
+) {
+    for (const Register& reference : references) AddReference(reference);
+}
+
 // ─── GETTERS ─────────────────────────────────────────────────────────────
 // Público:
 REGISTER_STATUS_VIEW RegisterStatusTable::FindStatus(
@@ -218,6 +226,22 @@ REGISTER_STATUS_VIEW RegisterStatusTable::MakeView(
     return view;
 }
 
+
+// ==================================================================
+// === CDB_BROADCAST ================================================
+// ==================================================================
+
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
+// Público:
+bool CDB_BROADCAST::CompleteProducer(
+    RegisterStatusTable& register_status,
+    const int            cycle
+) const {
+    return register_status.DeallocateProducer(
+        destination,
+        producer_position,
+        cycle
+    );
+}
 
 } // namespace processor

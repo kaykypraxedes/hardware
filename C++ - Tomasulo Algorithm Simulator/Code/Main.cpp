@@ -87,22 +87,29 @@ std::string FormatIssueCycles(
     return output.str();
 }
 
-std::string FormatCycles(
-    const std::vector<int>& v
-){
-    if (v.empty()) return "--";
+// Formata pares completos e preserva o início de um intervalo aberto.
+static std::string FormatCycles(
+    const std::vector<int>& cycles
+) {
+    if (cycles.empty()) return "--";
 
-    std::ostringstream oss;
+    std::ostringstream output;
+    for (std::size_t i{}; i < cycles.size(); i += 2) {
+        if (i > 0) output << ';';
 
-    for (int i{}; i < (int)v.size(); i++) {
-        if (i) oss << '-';
+        output << std::setw(2)
+               << std::setfill('0')
+               << cycles[i];
 
-        oss << std::setw(2)
-            << std::setfill('0')
-            << v[i];
+        if (i + 1 < cycles.size()) {
+            output << '-'
+                   << std::setw(2)
+                   << std::setfill('0')
+                   << cycles[i + 1];
+        }
     }
 
-    return oss.str();
+    return output.str();
 }
 
 int SeparatorWidth(
@@ -300,12 +307,12 @@ void PrintTable(
 }
 
 // ─── TEMPLATES ────────────────────────────────────────────────────
-// Impressão unificada de "grupos de componentes" (RS, FU e CDB).
+// Impressão unificada de grupos de componentes e estados observacionais.
 // - Um grupo (ex.: "load") é composto por N unidades (load0, load1, ...).
 // - Cada unidade tem uma linha do tempo de pares (rótulo, início-fim).
 //
 // - get_times/get_labels são extractors (lambdas) que sabem como pegar, de cada unidade, o vetor de tempos e o vetor de rótulos.
-// - Isso permite reaproveitar a mesma função para RS, FU e Registradores da CDB, sem duplicar a lógica de impressão (quase idênticas).
+// - Isso permite reaproveitar a mesma função para RS, FU e Register Status sem duplicar a lógica de impressão.
 template<typename LabelT>
 struct TimelineEntry {
     LabelT label;
@@ -455,14 +462,19 @@ int main() {
     std::cout << "═══ COMMOM DATA BUS (CDB) ════════════════════════════════\n";
     std::cout << "══════════════════════════════════════════════════════════\n\n";
 
-    auto cdb = p.GetThread(0).GetCDB();
+    const processor::RegisterStatusTable& register_status{
+        p.GetThread(0).GetRegisterStatus()
+    };
+    const std::vector<processor::REGISTER_BANK>& register_banks{
+        p.GetThread(0).GetRegisterBanks()
+    };
 
-    // Imprime o CDB por faixas de impressão (print_banks) na ordem definida pela arquitetura:
+    // Imprime o Register Status por faixas na ordem definida pela arquitetura:
     // - O índice exibido é relativo ao banco (id − base), preservando o formato original.
     const std::vector<processor::REGISTER_STATUS_VIEW> statuses{
-        cdb.register_status.GetStatuses()
+        register_status.GetStatuses()
     };
-    for (const auto& bank : cdb.print_banks) {
+    for (const processor::REGISTER_BANK& bank : register_banks) {
         std::vector<processor::REGISTER_STATUS_VIEW> group(
             statuses.begin() + bank.base,
             statuses.begin() + bank.base + bank.count

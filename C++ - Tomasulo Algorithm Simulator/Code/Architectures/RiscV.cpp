@@ -88,17 +88,17 @@ const std::unordered_map<std::string, Register>& RegisterTable() {
     return t;
 }
 
-// Monta o CDB com os registradores físicos:
-CDB InstructionRiscV::MakeCDB() {
+// Monta o layout dos registradores físicos:
+REGISTER_LAYOUT InstructionRiscV::MakeRegisterLayout() {
     // - ids 0-31:  'L'.
     // - ids 32-63: 'F'.
-    CDB cdb;
+    REGISTER_LAYOUT layout;
     // Como não existem aliases de hardware, todos os registradores recebem a mascara default (0xFF - Integral).
-    FillCDB(cdb, 'L', 0,  32);  // Faixa de int.
-    FillCDB(cdb, 'F', 32, 32); // Faixa de float.
+    FillRegisterLayout(layout, 'L', 0,  32); // Faixa de int.
+    FillRegisterLayout(layout, 'F', 32, 32); // Faixa de float.
 
-    cdb.print_banks = {{'L', 0, 32}, {'F', 32, 32}};
-    return cdb;
+    layout.banks = {{'L', 0, 32}, {'F', 32, 32}};
+    return layout;
 }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────

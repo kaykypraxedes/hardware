@@ -292,18 +292,18 @@ static const std::unordered_map<std::string, OP_SHAPE> OPCODE_SHAPE {
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
 // Público:
-CDB InstructionSimplified::MakeCDB() {
-    // Monta o CDB com os registradores físicos:
+REGISTER_LAYOUT InstructionSimplified::MakeRegisterLayout() {
+    // Monta o layout com os registradores físicos:
     // - ids 0-31:  'R'.
     // - ids 32-63: 'F'.
     // - ids 64-65: 'M'.
-    CDB cdb;
+    REGISTER_LAYOUT layout;
     // Como não existem aliases de hardware, todos os registradores recebem a mascara default (0xFF - Integral).
-    FillCDB(cdb, 'R', 0,  32); // Faixa de int.
-    FillCDB(cdb, 'F', 32, 32); // Faixa de float.
-    FillCDB(cdb, 'M', 64, 2);  // HI/LO
-    cdb.print_banks = {{'R', 0, 32}, {'F', 32, 32}, {'M', 64, 2}};
-    return cdb;
+    FillRegisterLayout(layout, 'R', 0,  32); // Faixa de int.
+    FillRegisterLayout(layout, 'F', 32, 32); // Faixa de float.
+    FillRegisterLayout(layout, 'M', 64, 2);  // HI/LO
+    layout.banks = {{'R', 0, 32}, {'F', 32, 32}, {'M', 64, 2}};
+    return layout;
 }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────

@@ -311,6 +311,15 @@ struct RESERVATION_STATION {
     std::vector<RS> int_mult_div;
     std::vector<RS> float_basic;
     std::vector<RS> float_mult_div;
+
+    /**
+     * @brief Distribui um evento transitório para todas as RSs ocupadas.
+     *
+     * @param broadcast Identidade do produtor e destino transmitido.
+     */
+    void ResolveBroadcast(
+        const CDB_BROADCAST& broadcast
+    );
 };
 
 } // namespace processor

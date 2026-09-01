@@ -39,8 +39,7 @@ enum class ARCHITECTURE {
 
 /**
  * @brief Classe onde ocorre a decodificação das instruções e a
- * montagem do banco de registradores (na implementação, dentro do
- * CDB).
+ * montagem do layout do banco de registradores.
  */
 class InstructionFactory {
     public:
@@ -105,7 +104,7 @@ class InstructionFactory {
         }
 
         /**
-         * @brief Monta o CDB com os registradores físicos da
+         * @brief Monta o layout dos registradores físicos da
          * arquitetura.
          *
          * @details Cada subclasse define suas características
@@ -117,17 +116,17 @@ class InstructionFactory {
          *
          * @param const ARCHITECTURE arch - Arquitetura.
          *
-         * @return CDB - Banco de registradores da arquitetura.
+         * @return Layout imutável do banco de registradores.
          */
-        static CDB MakeCDB(
+        static REGISTER_LAYOUT MakeRegisterLayout(
             const ARCHITECTURE arch
         ){
             switch (arch) {
-                case ARCHITECTURE::SIMPLIFIED: return InstructionSimplified::MakeCDB();
-                case ARCHITECTURE::MIPS_32:    return InstructionMips64::MakeCDB();
-                case ARCHITECTURE::X86_INTEL:  return InstructionX86Intel::MakeCDB();
-                case ARCHITECTURE::ARM_64:     return InstructionArm64::MakeCDB();
-                case ARCHITECTURE::RISC_V:     return InstructionRiscV::MakeCDB();
+                case ARCHITECTURE::SIMPLIFIED: return InstructionSimplified::MakeRegisterLayout();
+                case ARCHITECTURE::MIPS_32:    return InstructionMips64::MakeRegisterLayout();
+                case ARCHITECTURE::X86_INTEL:  return InstructionX86Intel::MakeRegisterLayout();
+                case ARCHITECTURE::ARM_64:     return InstructionArm64::MakeRegisterLayout();
+                case ARCHITECTURE::RISC_V:     return InstructionRiscV::MakeRegisterLayout();
                 default:
                     std::cerr << "[ERRO] Arquitetura não suportada!\n";
                     std::abort();

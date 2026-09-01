@@ -109,6 +109,17 @@ struct REGISTER_STATUS_VIEW {
  */
 class RegisterStatusTable {
     public:
+        RegisterStatusTable() = default;
+
+        /**
+         * @brief Inicializa o estado persistente a partir de um layout.
+         *
+         * @param references Referências arquiteturais em ordem física.
+         */
+        explicit RegisterStatusTable(
+            const std::vector<Register>& references
+        );
+
         /**
          * @brief Adiciona uma referência exata ao layout.
          */
@@ -225,24 +236,45 @@ class RegisterStatusTable {
 // ─── STRUCTS ──────────────────────────────────────────────────────
 
 /**
- * @brief "struct" auxiliar para delimitar os tipos de registradores
- * dentro do vetor.
+ * @brief Faixa de apresentação de referências do banco de registradores.
  */
-struct CDB_BANK {
+struct REGISTER_BANK {
     char reg_class; // Classe de registrador (nomeclatura varia com a arquitetura).
     int  base;      // Primeiro id físico da faixa.
     int  count;     // Quantidade de registradores da faixa.
 };
 
 /**
- * @brief Contêiner temporário do Register Status e dos metadados de impressão.
- *
- * @details O evento real de broadcast permanece coordenado pela Thread até
- * a separação definitiva do CDB.
+ * @brief Descrição imutável das referências e faixas de uma arquitetura.
  */
-struct CDB {
-    RegisterStatusTable   register_status;
-    std::vector<CDB_BANK> print_banks;
+struct REGISTER_LAYOUT {
+    std::vector<Register>      references;
+    std::vector<REGISTER_BANK> banks;
+};
+
+/**
+ * @brief Evento transitório transmitido pelo Common Data Bus.
+ *
+ * @details A conclusão permanece no Register Status. O evento contém somente
+ * a identidade necessária para cada RS decidir se resolve algum Q.
+ */
+struct CDB_BROADCAST {
+    int      producer_position{-1};
+    Register destination;
+
+    /**
+     * @brief Conclui o produtor persistente associado ao evento.
+     *
+     * @param register_status Estado persistente dos produtores.
+     * @param cycle Ciclo da conclusão.
+     *
+     * @return true na primeira conclusão; false para produtor ausente ou já
+     * concluído.
+     */
+    bool CompleteProducer(
+        RegisterStatusTable& register_status,
+        const int            cycle
+    ) const;
 };
 
 /**

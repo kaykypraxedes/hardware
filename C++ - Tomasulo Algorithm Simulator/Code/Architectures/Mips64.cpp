@@ -246,14 +246,14 @@ static const std::unordered_map<std::string, OP_SHAPE> OPCODE_SHAPE {
 // ==================================================================
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
-CDB InstructionMips64::MakeCDB() {
-    CDB cdb;
-    FillCDB(cdb, 'R', 0,  32); // Int
-    FillCDB(cdb, 'F', 32, 32); // Float
-    FillCDB(cdb, 'M', 64, 2);  // HI/LO
-    FillCDB(cdb, 'C', 66, 1);  // Flags (fcc)
-    cdb.print_banks = {{'R', 0, 32}, {'F', 32, 32}, {'M', 64, 2}, {'C', 66, 1}};
-    return cdb;
+REGISTER_LAYOUT InstructionMips64::MakeRegisterLayout() {
+    REGISTER_LAYOUT layout;
+    FillRegisterLayout(layout, 'R', 0,  32); // Int
+    FillRegisterLayout(layout, 'F', 32, 32); // Float
+    FillRegisterLayout(layout, 'M', 64, 2);  // HI/LO
+    FillRegisterLayout(layout, 'C', 66, 1);  // Flags (fcc)
+    layout.banks = {{'R', 0, 32}, {'F', 32, 32}, {'M', 64, 2}, {'C', 66, 1}};
+    return layout;
 }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────

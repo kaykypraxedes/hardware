@@ -53,7 +53,7 @@ static const std::unordered_map<std::string, Register>& RegisterTable();
 #pragma GCC diagnostic pop
 
 /**
- * ATENÇÃO: O método "MakeCDB()" não pode ser declarado "static"
+ * ATENÇÃO: O método "MakeRegisterLayout()" não pode ser declarado "static"
  * nesse header para ser implementado em cada um dos programas
  * (o que parece uma ótima ideia para evitar reescrita de código
  * em cada header a princípio).
@@ -67,12 +67,12 @@ static const std::unordered_map<std::string, Register>& RegisterTable();
 // Não são "static" para não forçar uma reimplementação em cada .cpp (são iguais).
 
 /**
- * @brief Cria os registradores de uma classe dentro do banco.
+ * @brief Adiciona as referências de uma classe ao layout arquitetural.
  *
  * @details Tem de ser chamado para cada classe diferente da
  * arquitetura.
  *
- * @param CDB& cdb - Onde está o banco de registradores.
+ * @param REGISTER_LAYOUT& layout - Descrição do banco de registradores.
  * @param const char reg_class - A classe do registrador.
  * @param const int id_base - O id de início a ser considerado
  * @param const int count - A quantidade de registradores a ser
@@ -80,12 +80,12 @@ static const std::unordered_map<std::string, Register>& RegisterTable();
  * @param const int mask - A mascara que ocupa aquela classe de
  * registradores.
  */
-void FillCDB(
-    CDB&       cdb,
-    const char reg_class,
-    const int  id_base,
-    const int  count,
-    const int  mask = 255
+void FillRegisterLayout(
+    REGISTER_LAYOUT& layout,
+    const char       reg_class,
+    const int        id_base,
+    const int        count,
+    const int        mask = 255
 );
 
 /**

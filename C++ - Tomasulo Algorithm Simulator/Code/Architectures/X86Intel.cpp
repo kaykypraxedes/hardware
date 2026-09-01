@@ -194,22 +194,22 @@ static void PushAllFlags(std::vector<Register>& regs) {
 
 // ─── ELEMENTOS STATIC ─────────────────────────────────────────────
 // Público:
-CDB InstructionX86Intel::MakeCDB() {
+REGISTER_LAYOUT InstructionX86Intel::MakeRegisterLayout() {
     // Layout contíguo por variante:
     // - ids 0-15:  L/R/W/B (larguras de GPR).
     // - ids 32-47: F (xmm0-15).
     // - ids 80-85: G (cf, pf, af, zf, sf, of).
-    CDB cdb;
-    FillCDB(cdb, 'L', 0,  16, 0xFF);
-    FillCDB(cdb, 'R', 0,  16, 0x0F);
-    FillCDB(cdb, 'W', 0,  16, 0x03);
-    FillCDB(cdb, 'B', 0,  16, 0x01);
-    FillCDB(cdb, 'B', 0,  4,  0x02); // ah/bh/ch/dh
-    FillCDB(cdb, 'F', 32, 16, 0xFF);
-    FillCDB(cdb, 'G', 80, 6,  0xFF);
+    REGISTER_LAYOUT layout;
+    FillRegisterLayout(layout, 'L', 0,  16, 0xFF);
+    FillRegisterLayout(layout, 'R', 0,  16, 0x0F);
+    FillRegisterLayout(layout, 'W', 0,  16, 0x03);
+    FillRegisterLayout(layout, 'B', 0,  16, 0x01);
+    FillRegisterLayout(layout, 'B', 0,  4,  0x02); // ah/bh/ch/dh
+    FillRegisterLayout(layout, 'F', 32, 16, 0xFF);
+    FillRegisterLayout(layout, 'G', 80, 6,  0xFF);
 
     // Registra as faixas na mesma ordem de inserção para imprimir cada variante como um banco separado.
-    cdb.print_banks = {
+    layout.banks = {
         {'L', 0,  16},
         {'R', 16, 16},
         {'W', 32, 16},
@@ -218,7 +218,7 @@ CDB InstructionX86Intel::MakeCDB() {
         {'F', 68, 16},
         {'G', 84, 6}
     };
-    return cdb;
+    return layout;
 }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
@@ -909,7 +909,7 @@ void InstructionX86Intel::SetStageAttributes(
     const std::string op{ToLower(tokens[0])};
 
     // Traduz a semântica x86 para dependências do pipeline:
-    // - destinos reservam o CDB; fontes EX precisam estar prontas para executar;
+    // - destinos reservam o Register Status; fontes EX precisam estar prontas para executar;
     // - fontes MEM são valores consumidos somente no acesso à memória;
     // - PushWithMasked() inclui aliases sobrepostos do mesmo registrador físico.
     switch (instruction_type) {

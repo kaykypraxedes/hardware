@@ -189,8 +189,8 @@ class InstructionX86Intel : public Instruction { // Herança da classe Instructi
 
     public:
         // Método estático:
-        // Monta o CDB (vetor de registradores físicos) da arquitetura.
-        static CDB MakeCDB();
+        // Monta o layout de registradores físicos da arquitetura.
+        static REGISTER_LAYOUT MakeRegisterLayout();
 
         // Construtor:
         // - explicit para impedir o cast implícito.

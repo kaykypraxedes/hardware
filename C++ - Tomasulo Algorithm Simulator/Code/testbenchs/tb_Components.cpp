@@ -131,6 +131,23 @@ int main() {
         }));
     }
 
+    section("3.5 Broadcast é transitório e conclui uma única vez");
+    {
+        const Register reference('R', 9);
+        RegisterStatusTable table(std::vector<Register>{reference});
+        table.AllocateProducer(reference, 4, "int0", 2);
+
+        const CDB_BROADCAST broadcast{4, reference};
+        check("criar evento não altera estado persistente",
+            !table.IsProducerResolved(reference, 4) && table.IsBusy(reference));
+        check("primeiro broadcast conclui produtor",
+            broadcast.CompleteProducer(table, 5));
+        check("conclusão fica persistida no Register Status",
+            table.IsProducerResolved(reference, 4) && !table.IsBusy(reference));
+        check("broadcast repetido retorna false",
+            !broadcast.CompleteProducer(table, 6));
+    }
+
     print_title("4. TRACE SOMENTE LEITURA");
 
     section("4.1 Trace não decide estado funcional");

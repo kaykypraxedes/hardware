@@ -113,7 +113,7 @@ static std::vector<int> GetSources(
 }
 
 // xzr/wzr são o zero arquitetural: nunca são sobrescritos.
-// - Não criam dependências nem ocupam slot no CDB (mesma ideia dos imediatos).
+// - Não criam dependências nem ocupam slot no Register Status (mesma ideia dos imediatos).
 static bool IsZeroRegister(
     const std::string& token
 ){
@@ -234,7 +234,7 @@ const std::unordered_map<std::string, Register>& RegisterTable() {
 
         // Aliases arquiteturais (mesmo hardware dos slots acima):
         // - lr (link register) é o x30.
-        // - sp (stack pointer) é o x31 (slot extra do CDB).
+        // - sp (stack pointer) é o x31 (slot extra do Register Status).
         // - xzr/wzr (zero register) ficam de fora (nunca são escritos, então não geram dependência).
         t.emplace("lr", Register('L', 30, 0xFF));
         t.emplace("sp", Register('L', 31, 0xFF));
@@ -251,28 +251,28 @@ const std::unordered_map<std::string, Register>& RegisterTable() {
     return t;
 }
 
-// Monta o CDB com os registradores físicos:
+// Monta o layout dos registradores físicos:
 // - Layout por variante (um slot por (id, mask)), contíguo por variante:
 // - ids 0-32:  Faixas int (L/R), máscaras 0xFF/0x0F (31 inclui o sp).
 // - ids 32-64: Faixas int (S/F), máscaras 0xFF/0x0F.
 // - id 80:     'G' (cspr), 0xFF.
-CDB InstructionArm64::MakeCDB() {
-    CDB cdb;
+REGISTER_LAYOUT InstructionArm64::MakeRegisterLayout() {
+    REGISTER_LAYOUT layout;
     // Layout contíguo por variante:
-    FillCDB(cdb, 'L', 0,  32, 0xFF);
-    FillCDB(cdb, 'R', 0,  31, 0x0F);
-    FillCDB(cdb, 'S', 32, 32, 0xFF);
-    FillCDB(cdb, 'F', 32, 32, 0x0F);
-    FillCDB(cdb, 'G', 80, 1,  0xFF);
+    FillRegisterLayout(layout, 'L', 0,  32, 0xFF);
+    FillRegisterLayout(layout, 'R', 0,  31, 0x0F);
+    FillRegisterLayout(layout, 'S', 32, 32, 0xFF);
+    FillRegisterLayout(layout, 'F', 32, 32, 0x0F);
+    FillRegisterLayout(layout, 'G', 80, 1,  0xFF);
 
-    cdb.print_banks = {
+    layout.banks = {
         {'L', 0,   32},
         {'R', 32,  31},
         {'S', 63,  32},
         {'F', 95,  32},
         {'G', 127, 1}
     };
-    return cdb;
+    return layout;
 }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────

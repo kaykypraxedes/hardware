@@ -103,40 +103,6 @@ static bool ComparePositionOnRS(
     return a->GetCurrentInstruction().GetPosition() < b->GetCurrentInstruction().GetPosition();
 }
 
-static void ResolveDependencyInGroup(
-    std::vector<RS>& group,
-    const int        producer_position,
-    const Register&  dest
-){
-    // Passa em um grupo de RS resolvendo dependências do produtor lógico.
-    for (RS& dep : group)
-        if (dep.IsBusy()) dep.ResolveDependency(producer_position, dest);
-}
-
-static void BroadcastOnCDBAndRS(
-    CDB&                 cdb,
-    RESERVATION_STATION& rs,
-    const Register&      dest,
-    const int            position,
-    const int            cycle
-){
-    // Instrução sem registrador de destino válido.
-    if (dest.GetType() == 'Z') return;
-
-    // Desaloca diretamente a identidade lógica, sem depender da RS física atual.
-    if (!cdb.register_status.DeallocateProducer(dest, position, cycle)) {
-        std::cerr <<
-            "[ERRO] Falha na desalocação do produtor!\n"
-            "- Posição: " << position << '\n' <<
-            "- Ciclo final: " << cycle << '\n';
-        std::abort();
-    }
-
-    // Atualiza todos os Qs que aguardavam exatamente esse produtor.
-    for (std::vector<RS>* group : GetAllRSGroups(rs))
-        ResolveDependencyInGroup(*group, position, dest);
-}
-
 static void ReleaseRSByPosition(
     RESERVATION_STATION& rs,
     const int            position,
@@ -169,7 +135,14 @@ static void ReleaseRSByPosition(
 int Thread::GetCurrentInstructionPosition()      const { return current_instruction_position; }
 
 // Público:
-const CDB& Thread::GetCDB()                      const { return cdb; }
+const RegisterStatusTable& Thread::GetRegisterStatus() const {
+    return register_status;
+}
+
+// Público:
+const std::vector<REGISTER_BANK>& Thread::GetRegisterBanks() const {
+    return register_banks;
+}
 
 // Público:
 const RESERVATION_STATION& Thread::GetRS()       const { return rs; }
@@ -178,7 +151,7 @@ const RESERVATION_STATION& Thread::GetRS()       const { return rs; }
 const FUNCTIONAL_UNITS& Thread::GetFU()          const { return fu; }
 
 // Público:
-const std::vector<TABLE_ROW>& Thread::GetTable() const { return instruction_table; }
+const std::vector<TABLE_ROW>& Thread::GetTable() const { return instruction_trace; }
 
 // Público:
 const std::vector<IN_FLIGHT_ENTRY>& Thread::GetInFlightEntries() const {
@@ -188,6 +161,26 @@ const std::vector<IN_FLIGHT_ENTRY>& Thread::GetInFlightEntries() const {
 // Público:
 const std::deque<ROB_ENTRY>& Thread::GetROBEntries() const {
     return rob;
+}
+
+// ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
+// Público:
+void Thread::SetTraceEnabled(
+    const bool enabled
+) {
+    trace_enabled = enabled;
+}
+
+// Público:
+void Thread::ClearTrace() {
+    // Preserva a identidade observada e limpa somente os eventos.
+    for (TABLE_ROW& row : instruction_trace) {
+        row.issue_cycles.clear();
+        row.ex_cycles.clear();
+        row.mem_cycles.clear();
+        row.wr_cycle = -1;
+        row.commit_cycle = -1;
+    }
 }
 
 // ─── CONSTRUTOR ───────────────────────────────────────────────────
@@ -239,7 +232,7 @@ Thread::Thread(
         std::abort();
     }
 
-    // Passa as instruções para a tabela e confirma a identidade posicional.
+    // Separa o programa imutável das linhas usadas somente para observação.
     for (std::size_t position{}; position < instructions.size(); position++) {
         std::unique_ptr<Instruction>& instruction{instructions[position]};
         if (!instruction || instruction->GetPosition() != static_cast<int>(position)) {
@@ -249,13 +242,13 @@ Thread::Thread(
             std::abort();
         }
 
-        // Ignora propositalmente os outros valores de instruction_table para que eles recebam o default.
-        // - Gera warning (por passar menos elementos do que deve na struct) ignorado pela diretiva.
-        #pragma GCC diagnostic push
-        #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-        // Converte de unique_ptr para shared_ptr ao guardar na tabela para que RS e ROB compartilhem o MESMO objeto.
-        instruction_table.push_back({std::shared_ptr<Instruction>(std::move(instruction))});
-        #pragma GCC diagnostic pop
+        // Converte uma única vez e compartilha a descrição com pipeline e trace.
+        std::shared_ptr<Instruction> shared_instruction{std::move(instruction)};
+        this->instructions.push_back(shared_instruction);
+
+        TABLE_ROW row{};
+        row.instruction = shared_instruction;
+        instruction_trace.push_back(row);
     }
 
     // Inicializa os RSs e as FUs.
@@ -263,8 +256,8 @@ Thread::Thread(
 
     // Passa os overrides vetoriais às instruções antes do primeiro Issue.
     for (const auto& [position, ex_latencies, mem_latencies] : latency_overrides) {
-        if (static_cast<size_t>(position) < instruction_table.size()) {
-            instruction_table[position].instruction->SetLatencies(
+        if (static_cast<size_t>(position) < this->instructions.size()) {
+            this->instructions[position]->SetLatencies(
                 ex_latencies,
                 mem_latencies
             );
@@ -280,8 +273,10 @@ void Thread::InitializeComponents(
     const int               dispatch_width,
     const ARCHITECTURE      arch
 ){
-    // Declara os registradores do banco (CDB montado por arquitetura):
-    cdb = InstructionFactory::MakeCDB(arch);
+    // Declara o estado persistente e separa os metadados de apresentação.
+    const REGISTER_LAYOUT layout{InstructionFactory::MakeRegisterLayout(arch)};
+    register_status = RegisterStatusTable(layout.references);
+    register_banks = layout.banks;
 
     // Verifica se foram passados valores para RSs.
     std::vector<int> aux{num_rs.empty() ? std::vector<int>{5,5,5,4,3,2} : num_rs}; // Valores arbitrários de default.
@@ -320,6 +315,43 @@ void Thread::InitializeComponents(
     if(has_rob) fu.commit = dispatch_width; // Só inicializa commit se tem ROB.
 }
 
+// Privado:
+void Thread::RecordTraceEvent(
+    const int         position,
+    const TRACE_EVENT event,
+    const int         cycle
+) {
+    // Trace desabilitado não participa nem valida decisões funcionais.
+    if (!trace_enabled) return;
+
+    if (position < 0 || position >= static_cast<int>(instruction_trace.size())) {
+        std::cerr <<
+            "[ERRO] Posição inválida para registro no trace.\n"
+            "- Posição: " << position << '\n' <<
+            "- Linhas existentes: " << instruction_trace.size() << '\n';
+        std::abort();
+    }
+
+    TABLE_ROW& row{instruction_trace[position]};
+    switch (event) {
+        case TRACE_EVENT::ISSUE:
+            row.issue_cycles.push_back(cycle);
+            break;
+        case TRACE_EVENT::EX_BOUNDARY:
+            row.ex_cycles.push_back(cycle);
+            break;
+        case TRACE_EVENT::MEM_BOUNDARY:
+            row.mem_cycles.push_back(cycle);
+            break;
+        case TRACE_EVENT::WR:
+            row.wr_cycle = cycle;
+            break;
+        case TRACE_EVENT::COMMIT:
+            row.commit_cycle = cycle;
+            break;
+    }
+}
+
 // Público:
 bool Thread::IsSwitchCycle() {
     // Não existem ciclos de troca de thread ou então já acabaram.
@@ -349,7 +381,7 @@ ISSUE_RESULT Thread::Issue(
     }
 
     // Todas as instruções novas já foram adicionadas.
-    if (current_instruction_position >= static_cast<int>(instruction_table.size())) return {};
+    if (current_instruction_position >= static_cast<int>(instructions.size())) return {};
 
     return TryIssue(current_instruction_position, cycle, true);
 }
@@ -373,7 +405,7 @@ ISSUE_RESULT Thread::TryIssue(
                 "- Entradas existentes: " << in_flight_entries.size() << '\n';
             std::abort();
         }
-        instruction = instruction_table[position].instruction;
+        instruction = instructions[position];
     }
     else {
         entry = &GetInFlightEntry(position);
@@ -427,19 +459,17 @@ ISSUE_RESULT Thread::TryIssue(
         // Se conseguiu adicionar:
         if (r.AddIssue(
             instruction,
-            cdb.register_status,
+            register_status,
             cycle,
             new_instruction,
             current_stage
         )) {
 
-            // 1. Marca na tabela o IS da instrução.
-            instruction_table[position].issue_cycles.push_back(cycle);
-
             // Issue interno preserva frontend, branch e entrada do ROB.
             if (!new_instruction) {
                 entry->state = IN_FLIGHT_STATE::ALLOCATED;
                 entry->next_issue_cycle = -1;
+                RecordTraceEvent(position, TRACE_EVENT::ISSUE, cycle);
                 return {
                     ISSUE_OUTCOME::INTERNAL_STAGE,
                     position,
@@ -486,6 +516,7 @@ ISSUE_RESULT Thread::TryIssue(
 
             // 3. Passa para a próxima instrução.
             current_instruction_position++;
+            RecordTraceEvent(position, TRACE_EVENT::ISSUE, cycle);
 
             return {
                 ISSUE_OUTCOME::NEW_INSTRUCTION,
@@ -613,7 +644,7 @@ IN_FLIGHT_ENTRY& Thread::GetInFlightEntry(
 
 // Privado:
 bool Thread::HasFinishedExecution() const {
-    if (in_flight_entries.size() != instruction_table.size()) return false;
+    if (in_flight_entries.size() != instructions.size()) return false;
 
     return std::all_of(
         in_flight_entries.begin(),
@@ -630,7 +661,7 @@ bool Thread::ExMem(
     const int cycle
 ){
     // Com ROB: Verifica se todas as instruções já foram commitadas.
-    if (static_cast<size_t>(num_committed_instructions) == instruction_table.size()) return true;
+    if (static_cast<size_t>(num_committed_instructions) == instructions.size()) return true;
 
     // Sem ROB: Verifica se todas as instruções já passaram pelo WR.
     const bool execution_finished{HasFinishedExecution()};
@@ -686,9 +717,9 @@ void Thread::StartPhase(
     // Avança as instruções de fase:
     for (RS* r : candidates) {
         // Verifica se conseguiu mudar a instrução de fase:
-        if (r->UpdateDependencies(cdb.register_status, fu, cycle)) {
+        if (r->UpdateDependencies(register_status, fu, cycle)) {
 
-            // Marca na tabela:
+            // Obtém a entrada funcional associada à RS atual.
             int position{r->GetCurrentInstruction().GetPosition()};
             IN_FLIGHT_ENTRY& entry{GetInFlightEntry(position)};
 
@@ -701,7 +732,7 @@ void Thread::StartPhase(
                     std::abort();
                 }
                 entry.state = IN_FLIGHT_STATE::EXECUTING;
-                instruction_table[position].ex_cycles.push_back(cycle);
+                RecordTraceEvent(position, TRACE_EVENT::EX_BOUNDARY, cycle);
             }
 
             else if (r->GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM) {
@@ -712,7 +743,7 @@ void Thread::StartPhase(
                         "- Estado: " << static_cast<int>(entry.state) << '\n';
                     std::abort();
                 }
-                instruction_table[position].mem_cycles.push_back(cycle);
+                RecordTraceEvent(position, TRACE_EVENT::MEM_BOUNDARY, cycle);
             }
         }
     }
@@ -769,11 +800,6 @@ void Thread::PerformWriteResult(
             continue; // Não conta como um WR (não há resultado sendo escrito de fato).
         }
 
-        // Faz a marcação na tabela:
-        // - "stores" e "branches" não escrevem em nenhum resultado em registradores ("wr" nulo).
-        if (instr_type != INSTRUCTION_TYPE::STORE && instr_type != INSTRUCTION_TYPE::BRANCH)
-            instruction_table[position].wr_cycle = cycle;
-
         // Propaga a informação nos componentes.
         WriteResultOnComponents(position, cycle);
         wr_buffer.erase(wr_buffer.begin());
@@ -783,6 +809,10 @@ void Thread::PerformWriteResult(
         // Branch é marcado na própria resolução do EX.
         if (has_rob && instr_type != INSTRUCTION_TYPE::BRANCH)
             MarkROBReady(position, cycle + 1);
+
+        // Somente resultados arquiteturais produzem evento observacional de WR.
+        if (instr_type != INSTRUCTION_TYPE::STORE && instr_type != INSTRUCTION_TYPE::BRANCH)
+            RecordTraceEvent(position, TRACE_EVENT::WR, cycle);
 
         // Branch não ocupa porta de WR (não escreve em registrador nenhum).
         if (instr_type != INSTRUCTION_TYPE::BRANCH) writes++;
@@ -794,17 +824,35 @@ void Thread::WriteResultOnComponents(
     const int position,
     const int cycle
 ){
-    // Nesse mesmo loop:
-    // 1. Propaga o resultado no CDB e libera os registradores.
-    // 2. Resolve as dependências nos RSs que estavam esperando.
-    const std::vector<Register>& dests{instruction_table[position].instruction->GetDestRegisters()};
+    // Cada destino produz um evento independente no CDB.
+    const std::vector<Register>& dests{instructions[position]->GetDestRegisters()};
     // Instrução pode ter mais de um destino (ex: x86 reg + EFLAGS).
     // - O broadcast é feito para cada destino, um por um.
-    for (const Register& dest : dests)
-        BroadcastOnCDBAndRS(cdb, rs, dest, position, cycle);
+    for (const Register& dest : dests) {
+        if (dest.GetType() == 'Z') continue;
+        BroadcastResult({position, dest}, cycle);
+    }
 
     // Libera a célula da RS produtora.
     ReleaseRSByPosition(rs, position, cycle);
+}
+
+// Privado:
+void Thread::BroadcastResult(
+    const CDB_BROADCAST& broadcast,
+    const int            cycle
+) {
+    // A conclusão persistente deve ocorrer uma única vez antes da entrega.
+    if (!broadcast.CompleteProducer(register_status, cycle)) {
+        std::cerr <<
+            "[ERRO] Falha na desalocação do produtor!\n"
+            "- Posição: " << broadcast.producer_position << '\n' <<
+            "- Ciclo final: " << cycle << '\n';
+        std::abort();
+    }
+
+    // O banco de RSs conhece os grupos físicos e distribui o evento.
+    rs.ResolveBroadcast(broadcast);
 }
 
 // Privado:
@@ -848,24 +896,21 @@ void Thread::DetectPhaseTransitions(
 
             // Caso 1: EX finalizado: falta MEM.
             if (phase_before == INSTRUCTION_PHASE_TOMASULO::EX && phase_after == INSTRUCTION_PHASE_TOMASULO::MEM) {
-                // Marca na tabela.
-                instruction_table[position].ex_cycles.push_back(cycle);
                 // O ciclo MEM do STORE é representado apenas quando ele não possui ROB.
                 // - Pula direto pro WR.
                 if (store_with_rob) {
                     entry.state = IN_FLIGHT_STATE::WAITING_WR;
                     pending_wr_buffer.push_back(position);
                 }
+                RecordTraceEvent(position, TRACE_EVENT::EX_BOUNDARY, cycle);
             }
             // Caso 2: * finalizado: falta WR.
             // - Não precisa verificar o phase_before por que mudou de fase para o final.
             else if (phase_after == INSTRUCTION_PHASE_TOMASULO::WR) {
-                // Se tem MEM e não é o caso especial de STORE+ROB (que já marcou o próprio ciclo de EX acima).
-                if (has_mem && !store_with_rob)
-                    instruction_table[position].mem_cycles.push_back(cycle);
-                // Fim da execução das demais.
-                else if (!has_mem)
-                    instruction_table[position].ex_cycles.push_back(cycle);
+                const TRACE_EVENT completed_event{
+                    has_mem && !store_with_rob ? TRACE_EVENT::MEM_BOUNDARY :
+                        TRACE_EVENT::EX_BOUNDARY
+                };
 
                 // Se o Branch foi resolvido, a flag é desmarcada.
                 if (position == unresolved_branch_position &&
@@ -878,6 +923,7 @@ void Thread::DetectPhaseTransitions(
                     entry.current_stage++;
                     entry.state = IN_FLIGHT_STATE::WAITING_ISSUE;
                     entry.next_issue_cycle = cycle + 1;
+                    RecordTraceEvent(position, completed_event, cycle);
                     continue;
                 }
 
@@ -888,6 +934,7 @@ void Thread::DetectPhaseTransitions(
                 // Coloca a instrução na fila de WR.
                 entry.state = IN_FLIGHT_STATE::WAITING_WR;
                 pending_wr_buffer.push_back(position);
+                RecordTraceEvent(position, completed_event, cycle);
             }
         }
     }
@@ -921,11 +968,10 @@ void Thread::Commit(
         // A cabeça bloqueia todas as entradas posteriores até ficar pronta.
         if (!rob_entry.ready || cycle < rob_entry.ready_cycle) break;
 
-        // Marca na tabela:
-        instruction_table[position].commit_cycle = cycle;
         num_committed_instructions++;
         writes++;
         rob.pop_front();
+        RecordTraceEvent(position, TRACE_EVENT::COMMIT, cycle);
 
         // Se não tem previsor, as instruções após um Branch tem que ser em outro ciclo.
         if (type == INSTRUCTION_TYPE::BRANCH && !(has_predictor && has_rob)) break;

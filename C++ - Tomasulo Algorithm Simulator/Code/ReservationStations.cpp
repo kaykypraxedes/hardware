@@ -35,6 +35,20 @@ static std::vector<FU>& GetFUGroup(
     }
 }
 
+// Entrega um broadcast somente às células ocupadas de um grupo.
+static void ResolveBroadcastInGroup(
+    std::vector<RS>&     group,
+    const CDB_BROADCAST& broadcast
+) {
+    for (RS& current : group) {
+        if (!current.IsBusy()) continue;
+        current.ResolveDependency(
+            broadcast.producer_position,
+            broadcast.destination
+        );
+    }
+}
+
 // ==================================================================
 // === CLASSE =======================================================
 // ==================================================================
@@ -459,6 +473,23 @@ void RS::Release(
     allocation_countdown = -1;
     fu_position          = -1;
     phase = INSTRUCTION_PHASE_TOMASULO::UNUSED;
+}
+
+
+// ==================================================================
+// === RESERVATION_STATION ==========================================
+// ==================================================================
+
+// Público:
+void RESERVATION_STATION::ResolveBroadcast(
+    const CDB_BROADCAST& broadcast
+) {
+    ResolveBroadcastInGroup(load, broadcast);
+    ResolveBroadcastInGroup(store, broadcast);
+    ResolveBroadcastInGroup(int_basic, broadcast);
+    ResolveBroadcastInGroup(int_mult_div, broadcast);
+    ResolveBroadcastInGroup(float_basic, broadcast);
+    ResolveBroadcastInGroup(float_mult_div, broadcast);
 }
 
 } // namespace processor

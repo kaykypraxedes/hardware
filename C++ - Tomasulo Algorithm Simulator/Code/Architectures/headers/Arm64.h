@@ -10,8 +10,8 @@ namespace processor {
 class InstructionArm64 : public Instruction { // Herança da classe Instruction.
     public:
         // Método estático:
-        // Monta o CDB (vetor de registradores físicos) da arquitetura.
-        static CDB MakeCDB();
+        // Monta o layout de registradores físicos da arquitetura.
+        static REGISTER_LAYOUT MakeRegisterLayout();
 
         // Construtor:
         // - explicit para impedir o cast implícito.

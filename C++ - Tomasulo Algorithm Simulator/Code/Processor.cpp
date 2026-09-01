@@ -144,7 +144,7 @@ bool Processor::ExecuteOperations() {
         // - Não é antes do EX/MEM para não realizar operações liberadas no ciclo atual.
         t.Wr(current_cycle);
 
-        // 3. Marca o commit das instruções disponíveis na tabela, libera as RSs e os regs no CDB.
+        // 3. Marca o Commit das instruções prontas no ROB.
         // - Só atualiza se o WR já tiver liberado a pelo menos um cíclo (ordem dele com o WR não interfere).
         t.Commit(current_cycle);
 

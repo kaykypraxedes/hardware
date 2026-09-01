@@ -10,15 +10,15 @@
 namespace processor {
 
 // ─── HELPERS ──────────────────────────────────────────────────────
-void FillCDB(
-    CDB& cdb,
-    const char reg_class,
-    const int  id_base,
-    const int  count,
-    const int  mask
+void FillRegisterLayout(
+    REGISTER_LAYOUT& layout,
+    const char       reg_class,
+    const int        id_base,
+    const int        count,
+    const int        mask
 ){
     for (int i{}; i < count; i++)
-        cdb.register_status.AddReference(Register(reg_class, id_base + i, mask));
+        layout.references.push_back(Register(reg_class, id_base + i, mask));
 }
 
 bool IsRegister(

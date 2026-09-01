@@ -33,6 +33,20 @@ static std::unique_ptr<Instruction> MakeSimplifiedInstruction(
     return instruction;
 }
 
+// Confirma que nenhuma linha mantém ciclos observacionais registrados.
+static bool IsTraceEmpty(
+    const std::vector<TABLE_ROW>& trace
+) {
+    for (const TABLE_ROW& row : trace) {
+        if (!row.issue_cycles.empty() ||
+            !row.ex_cycles.empty() ||
+            !row.mem_cycles.empty() ||
+            row.wr_cycle != -1 ||
+            row.commit_cycle != -1) return false;
+    }
+    return true;
+}
+
 int main() {
 
     // ════════════════════════════════════════════════════════════════════
@@ -52,8 +66,10 @@ int main() {
         check("tabela[1].instruction->GetPosition() == 1",  t.GetTable()[1].instruction->GetPosition() == 1);
         check("tabela[0].issue_cycles vazio (não emitido)", t.GetTable()[0].issue_cycles.empty());
 
-        check("GetCDB().register_status.Size() == 66 (R0-31 + F32-63 + M6-65)",
-            t.GetCDB().register_status.Size() == 66);
+        check("GetRegisterStatus().Size() == 66 (R0-31 + F32-63 + M6-65)",
+            t.GetRegisterStatus().Size() == 66);
+        check("GetRegisterBanks() preserva as 3 faixas simplificadas",
+            t.GetRegisterBanks().size() == 3);
 
         check("GetRS().load.size() == 5",                  t.GetRS().load.size() == 5);
         check("GetRS().store.size() == 5",                 t.GetRS().store.size() == 5);
@@ -897,8 +913,8 @@ int main() {
         check("fim no ciclo 3 não permite Issue no mesmo ciclo",
             t.Issue(3).outcome == ISSUE_OUTCOME::BLOCKED);
         check("destino permanece reservado após LOAD intermediário",
-            t.GetCDB().register_status.FindLatestProducerBefore(Register('R', 6), 1) == 0 &&
-            !t.GetCDB().register_status.IsProducerResolved(Register('R', 6), 0) &&
+            t.GetRegisterStatus().FindLatestProducerBefore(Register('R', 6), 1) == 0 &&
+            !t.GetRegisterStatus().IsProducerResolved(Register('R', 6), 0) &&
             t.GetTable()[0].wr_cycle == -1);
 
         ISSUE_RESULT second_issue{t.Issue(4)};
@@ -917,8 +933,8 @@ int main() {
         check("fim no ciclo 5 não permite Issue no mesmo ciclo",
             t.Issue(5).outcome == ISSUE_OUTCOME::BLOCKED);
         check("destino permanece reservado após INT_MUL intermediário",
-            t.GetCDB().register_status.FindLatestProducerBefore(Register('R', 6), 1) == 0 &&
-            !t.GetCDB().register_status.IsProducerResolved(Register('R', 6), 0) &&
+            t.GetRegisterStatus().FindLatestProducerBefore(Register('R', 6), 1) == 0 &&
+            !t.GetRegisterStatus().IsProducerResolved(Register('R', 6), 0) &&
             t.GetTable()[0].wr_cycle == -1);
 
         ISSUE_RESULT third_issue{t.Issue(6)};
@@ -937,8 +953,8 @@ int main() {
             t.Issue(8).outcome == ISSUE_OUTCOME::BLOCKED &&
             t.GetInFlightEntries()[0].state == IN_FLIGHT_STATE::WAITING_WR);
         check("destino só é liberado pelo resultado final",
-            t.GetCDB().register_status.FindLatestProducerBefore(Register('R', 6), 1) == 0 &&
-            !t.GetCDB().register_status.IsProducerResolved(Register('R', 6), 0));
+            t.GetRegisterStatus().FindLatestProducerBefore(Register('R', 6), 1) == 0 &&
+            !t.GetRegisterStatus().IsProducerResolved(Register('R', 6), 0));
 
         t.ExMem(9); t.Wr(9);
         const TABLE_ROW& row{t.GetTable()[0]};
@@ -947,7 +963,7 @@ int main() {
             row.ex_cycles == std::vector<int>({2, 2, 5, 5, 7, 7}) &&
             row.mem_cycles == std::vector<int>({3, 3, 8, 8}));
         check("resultado final libera destino e encerra a instrução",
-            t.GetCDB().register_status.IsProducerResolved(Register('R', 6), 0) &&
+            t.GetRegisterStatus().IsProducerResolved(Register('R', 6), 0) &&
             t.GetInFlightEntries()[0].state == IN_FLIGHT_STATE::FINISHED &&
             t.ExMem(10));
         check("posição lógica permanece imutável", row.instruction->GetPosition() == 0);
@@ -1048,6 +1064,86 @@ int main() {
             t.GetInFlightEntries()[2].current_stage == 1 &&
             t.GetInFlightEntries()[2].state == IN_FLIGHT_STATE::ALLOCATED &&
             t.GetCurrentInstructionPosition() == 3);
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 9. INDEPENDÊNCIA DO TRACE
+    // ════════════════════════════════════════════════════════════════════
+
+    std::cout << "\n";
+    print_title("9. INDEPENDÊNCIA DO TRACE");
+
+    section("9.1 Limpar e desabilitar trace não altera decisões funcionais");
+    {
+        const std::vector<std::string> program{"add r1, r2, r3"};
+        Thread control(
+            program,
+            {},
+            DEFAULT_NUM_RS,
+            DEFAULT_NUM_FUS,
+            {},
+            DEFAULT_DISPATCH_WIDTH,
+            /*rob_capacity=*/4
+        );
+        Thread without_trace(
+            program,
+            {},
+            DEFAULT_NUM_RS,
+            DEFAULT_NUM_FUS,
+            {},
+            DEFAULT_DISPATCH_WIDTH,
+            /*rob_capacity=*/4
+        );
+
+        const ISSUE_RESULT control_issue{control.Issue(1)};
+        const ISSUE_RESULT without_trace_issue{without_trace.Issue(1)};
+        check("Issue produz o mesmo resultado antes da limpeza",
+            control_issue.outcome == without_trace_issue.outcome &&
+            control_issue.position == without_trace_issue.position &&
+            control_issue.instruction_type == without_trace_issue.instruction_type);
+
+        control.ExMem(2); control.Wr(2); control.Commit(2);
+        without_trace.ExMem(2); without_trace.Wr(2); without_trace.Commit(2);
+        check("trace possui eventos antes da limpeza",
+            !IsTraceEmpty(without_trace.GetTable()));
+
+        without_trace.ClearTrace();
+        without_trace.SetTraceEnabled(false);
+        check("limpeza preserva linha e identidade da instrução",
+            IsTraceEmpty(without_trace.GetTable()) &&
+            without_trace.GetTable().size() == 1 &&
+            without_trace.GetTable()[0].instruction->GetPosition() == 0);
+
+        bool same_completion{
+            control.ExMem(3) == without_trace.ExMem(3)
+        };
+        control.Wr(3); control.Commit(3);
+        without_trace.Wr(3); without_trace.Commit(3);
+        check("ROB recebe a mesma prontidão sem consultar o trace",
+            control.GetROBEntries().size() == 1 &&
+            without_trace.GetROBEntries().size() == 1 &&
+            control.GetROBEntries()[0].ready == without_trace.GetROBEntries()[0].ready &&
+            control.GetROBEntries()[0].ready_cycle == without_trace.GetROBEntries()[0].ready_cycle);
+
+        same_completion = same_completion &&
+            control.ExMem(4) == without_trace.ExMem(4);
+        control.Wr(4); control.Commit(4);
+        without_trace.Wr(4); without_trace.Commit(4);
+        same_completion = same_completion &&
+            control.ExMem(5) == without_trace.ExMem(5);
+
+        check("conclusão funcional permanece idêntica",
+            same_completion &&
+            control.GetInFlightEntries()[0].state == IN_FLIGHT_STATE::FINISHED &&
+            without_trace.GetInFlightEntries()[0].state == IN_FLIGHT_STATE::FINISHED &&
+            control.GetROBEntries().empty() &&
+            without_trace.GetROBEntries().empty() &&
+            control.GetRegisterStatus().IsProducerResolved(Register('R', 1), 0) &&
+            without_trace.GetRegisterStatus().IsProducerResolved(Register('R', 1), 0));
+        check("eventos posteriores continuam desabilitados",
+            IsTraceEmpty(without_trace.GetTable()) &&
+            control.GetTable()[0].wr_cycle == 3 &&
+            control.GetTable()[0].commit_cycle == 4);
     }
 
     std::cout << "\n-----------------------------\n";

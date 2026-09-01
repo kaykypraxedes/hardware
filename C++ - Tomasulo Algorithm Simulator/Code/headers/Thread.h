@@ -9,7 +9,7 @@
  * @details Dentro dessas responsabilidades estão:
  *
  * - Enviar as instruções para a RS.
- * - Gerenciar seus componentes de hardware (CDB, FUs, RS, etc.).
+ * - Gerenciar seus componentes de hardware (Register Status, FUs, RS, etc.).
  * - Realizar previsões de "branches".
  * ...
  */
@@ -102,16 +102,13 @@ struct IN_FLIGHT_ENTRY {
 };
 
 /**
- * @brief Estrutura que agrupa todas as informações necessárias para
- * imprimir com detalhes o comportamento ciclo a ciclo de cada
- * instrução enviada (bem como seu estado final).
+ * @brief Trace observacional usado para imprimir o comportamento de uma
+ * instrução.
  *
- * @details Por conveniência, a estrutura também foi aproveitada para
- * armazenar os dados de cada instrução internamente (reutilização da
- * estrutura pronta para evitar escrita duplicada de código).
+ * @details Os campos registram somente transições já consumadas pelo
+ * pipeline. Nenhuma decisão funcional pode consultar estes ciclos.
  */
 struct TABLE_ROW {
-    // - Thread é a "dona" do objeto via shared_ptr (a RS guarda uma cópia do ponteiro).
     std::shared_ptr<Instruction> instruction;
     std::vector<int>             issue_cycles;
     std::vector<int>             ex_cycles;
@@ -129,10 +126,8 @@ struct TABLE_ROW {
  * @details Unidade responsável por:
  *
  * - Decodificação as instruções (de string para Instruction);
- * - Gerenciamento do hardware (CDB, FU, RS, etc).
- * - Registrar todos os dados na tabela (pelo qual é realizado o
- * histórico e são utilizados os dados para saber qual etapa deve
- * ser realizada).
+ * - Gerenciamento do hardware (Register Status, FU, RS, etc).
+ * - Registrar eventos observacionais depois das transições funcionais.
  * ...
  */
 class Thread {
@@ -155,9 +150,9 @@ class Thread {
          *
          * @details A sobrecarga separa o pipeline da origem textual das
          * instruções. As posições precisam ser contíguas e coincidir com os
-         * índices da tabela.
+         * índices do programa.
          *
-         * @param instructions Instruções transferidas para a tabela.
+         * @param instructions Instruções transferidas para o programa.
          * @param latency_overrides Latências específicas por posição.
          * @param num_rs Quantidade de RSs por grupo.
          * @param num_fus Quantidade de FUs por grupo.
@@ -165,7 +160,7 @@ class Thread {
          * @param dispatch_width Largura de Issue e Commit.
          * @param rob_capacity Capacidade do ROB; zero desabilita o ROB.
          * @param has_predictor Indica presença de previsor de desvios.
-         * @param arch Arquitetura usada para construir o CDB.
+         * @param arch Arquitetura usada para construir o layout de registradores.
          */
         Thread(
             std::vector<std::unique_ptr<Instruction>> instructions,
@@ -182,14 +177,32 @@ class Thread {
         // Getters:
         int GetCurrentInstructionPosition() const;
         // "const &" para evitar cópia (para tipos básicos o ganho é marginal).
-        const CDB&                    GetCDB()   const;
-        const RESERVATION_STATION&    GetRS()    const;
-        const FUNCTIONAL_UNITS&       GetFU()    const;
+        const RegisterStatusTable&    GetRegisterStatus() const;
+        const std::vector<REGISTER_BANK>& GetRegisterBanks() const;
+        const RESERVATION_STATION&    GetRS() const;
+        const FUNCTIONAL_UNITS&       GetFU() const;
         const std::vector<TABLE_ROW>& GetTable() const;
         const std::vector<IN_FLIGHT_ENTRY>& GetInFlightEntries() const;
         const std::deque<ROB_ENTRY>& GetROBEntries() const;
 
         // Demais métodos:
+
+        /**
+         * @brief Habilita ou desabilita registros futuros no trace.
+         *
+         * @param enabled Novo estado do registro observacional.
+         */
+        void SetTraceEnabled(
+            const bool enabled
+        );
+
+        /**
+         * @brief Limpa todos os ciclos observacionais já registrados.
+         *
+         * @details As instruções, o estado funcional e a configuração de
+         * habilitação do trace permanecem inalterados.
+         */
+        void ClearTrace();
 
         /**
          * @brief Método para marcar a troca de ciclos que é efetuada
@@ -270,21 +283,35 @@ class Thread {
             const int cycle
         );
     private:
+        /**
+         * @brief Eventos observacionais produzidos pelo pipeline.
+         */
+        enum class TRACE_EVENT {
+            ISSUE,
+            EX_BOUNDARY,
+            MEM_BOUNDARY,
+            WR,
+            COMMIT
+        };
+
         // Atributos:
         // - Elementos da thread:
         bool                     has_rob{false};
         int                      rob_capacity{1};
         int                      current_instruction_position{};
         bool                     has_predictor{false};
-        CDB                      cdb;
+        RegisterStatusTable      register_status;
+        std::vector<REGISTER_BANK> register_banks;
         RESERVATION_STATION      rs;
         FUNCTIONAL_UNITS         fu;
         std::vector<int>         wr_buffer;
         std::vector<int>         pending_wr_buffer;
-        std::vector<TABLE_ROW>      instruction_table;
+        std::vector<std::shared_ptr<Instruction>> instructions;
+        std::vector<TABLE_ROW>      instruction_trace;
         std::vector<IN_FLIGHT_ENTRY> in_flight_entries;
         std::deque<ROB_ENTRY>        rob;
         // - Elementos auxiliares/histórico:
+        bool                     trace_enabled{true};
         int                      num_committed_instructions{};
         int                      unresolved_branch_position{-1};
         std::vector<int>         switch_cycles;        // Para processadores com granulação grossa.
@@ -292,12 +319,12 @@ class Thread {
         // Métodos:
 
         /**
-         * @brief Inicializa os componentes de hardware (CDB, FU, RS,
+         * @brief Inicializa os componentes de hardware (Register Status, FU, RS,
          * etc.)
          *
          * @details A alocação em parte é configurável (como o número
          * de unidades que cada grupo de FU e RS terá), mas alguns
-         * são inalteráveis (como o CDB com o banco de registradores,
+         * são inalteráveis (como o layout do banco de registradores,
          * para não gerar divergências com a arquitetura).
          *
          * @param const std::vector<int>& num_rs - Vetor com o número
@@ -315,6 +342,19 @@ class Thread {
             const std::vector<int>& num_fus,
             const int               dispatch_width,
             const ARCHITECTURE      arch
+        );
+
+        /**
+         * @brief Registra um evento depois da respectiva transição funcional.
+         *
+         * @param position Posição lógica da instrução.
+         * @param event Evento observacional consumado.
+         * @param cycle Ciclo do evento.
+         */
+        void RecordTraceEvent(
+            const int         position,
+            const TRACE_EVENT event,
+            const int         cycle
         );
 
         /**
@@ -428,9 +468,8 @@ class Thread {
         // - WR (Write Result)
 
         /**
-         * @brief Faz a marcação na tabela e propaga o resultado do
-         * registrador liberado nos componentes (dentro do CDB e nas
-         * unidades da RS).
+         * @brief Registra o WR e propaga o resultado pelo CDB para o
+         * Register Status e para as unidades da RS.
          *
          * @param const int cycle - Ciclo atual.
          */
@@ -439,10 +478,8 @@ class Thread {
         );
 
         /**
-         * @brief Propaga o resultado no CDB (libera os
-         * registradores), resolve as dependências nos RSs que
-         * estavam esperando ("Q"s pendentes) e libera a célula da RS
-         * produtora.
+         * @brief Cria os broadcasts de resultado, conclui os produtores no
+         * Register Status, resolve os Qs pendentes e libera a RS produtora.
          *
          * @param const int position - Posição da instrução na
          * tabela.
@@ -451,6 +488,17 @@ class Thread {
         void WriteResultOnComponents(
             const int position,
             const int cycle
+        );
+
+        /**
+         * @brief Conclui o produtor e distribui seu evento transitório às RSs.
+         *
+         * @param broadcast Evento de resultado produzido no WR.
+         * @param cycle Ciclo atual.
+         */
+        void BroadcastResult(
+            const CDB_BROADCAST& broadcast,
+            const int            cycle
         );
 
         /**
