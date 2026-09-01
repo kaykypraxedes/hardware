@@ -9,9 +9,23 @@
 
 using namespace processor;
 
-static const std::vector<int> DEFAULT_NUM_RS    = {5,5,5,4,3,2};
-static const std::vector<int> DEFAULT_NUM_FUS   = {1,1,1,1,1,2};
-static const int              DEFAULT_DISPATCH_WIDTH = 1;
+// Monta configurações específicas sem duplicar os defaults do produto.
+static PIPELINE_CONFIGURATION MakeThreadConfiguration(
+    const RESERVATION_STATION_CAPACITIES& reservation_station_capacities = {},
+    const FUNCTIONAL_UNIT_CAPACITIES&     functional_unit_capacities = {},
+    const int                             issue_width = 1,
+    const int                             rob_capacity = 0,
+    const int                             write_result_width = 2
+) {
+    PIPELINE_CONFIGURATION configuration;
+    configuration.reservation_station_capacities = reservation_station_capacities;
+    configuration.functional_unit_capacities = functional_unit_capacities;
+    configuration.issue_width = issue_width;
+    configuration.commit_width = issue_width;
+    configuration.rob_capacity = rob_capacity;
+    configuration.write_result_width = write_result_width;
+    return configuration;
+}
 
 // Cria uma instrução sintética já decodificada na posição solicitada.
 static std::unique_ptr<Instruction> MakeSyntheticInstruction(
@@ -58,7 +72,7 @@ int main() {
     section("1.1 Thread() — construtor sem ROB");
     {
         std::vector<std::string> prog = {"add r1, r2, r3", "sub r4, r1, r5"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
+        Thread t(prog, MakeThreadConfiguration());
 
         check("GetCurrentInstructionPosition() == 0",      t.GetCurrentInstructionPosition() == 0);
         check("GetTable().size() == 2",                    t.GetTable().size() == 2);
@@ -88,27 +102,24 @@ int main() {
             t.GetFU().GetMemoryAccessUnits().size() == 1);
         check("GetFU().GetIntBasicUnits().size() == 1",
             t.GetFU().GetIntBasicUnits().size() == 1);
-        check("GetFU().GetWriteResultWidth() == 2",
-            t.GetFU().GetWriteResultWidth() == 2);
-        check("GetFU().GetCommitWidth() == 0 sem ROB",
-            t.GetFU().GetCommitWidth() == 0);
+        check("banco de FU contém somente unidades físicas",
+            t.GetFU().GetIntMultDivUnits().size() == 1);
     }
 
     section("1.2 Thread() — construtor COM ROB");
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, /*dispatch_width=*/3, /*rob_capacity=*/8);
-
-        // A largura de Commit permite observar a configuração associada ao ROB.
-        check("GetFU().GetCommitWidth() == dispatch_width (3) quando há ROB",
-            t.GetFU().GetCommitWidth() == 3);
+        Thread t(prog, MakeThreadConfiguration({}, {}, 3, 8));
+        check("configuração com ROB admite a instrução",
+            t.Issue(1).outcome == ISSUE_OUTCOME::NEW_INSTRUCTION &&
+            t.GetROBEntries().size() == 1);
     }
 
     section("1.3 IsSwitchCycle() — granulação grossa");
     {
         std::vector<std::string> prog = {"add r1, r2, r3", "sub r4, r1, r5"};
         std::vector<int> switch_cycles = {1};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, switch_cycles);
+        Thread t(prog, MakeThreadConfiguration(), {}, switch_cycles);
 
         t.Issue(1);
         check("posição 1 é ciclo de troca", t.IsSwitchCycle());
@@ -119,15 +130,15 @@ int main() {
     {
         std::vector<std::string> prog = {"l.d f2, 0(r1)"};
 
-        Thread t1(prog);  // sem latency_overrides
+        Thread t1(prog, MakeThreadConfiguration());
         check("exLat base == 1",  t1.GetTable()[0].instruction->GetExLatency()  == 1);
         check("memLat base == 1", t1.GetTable()[0].instruction->GetMemLatency() == 1);
 
-        Thread t2(prog, {{0, {3}, {2}}});  // ex=3, mem=2
+        Thread t2(prog, MakeThreadConfiguration(), {{0, {3}, {2}}});
         check("exLat == 3",  t2.GetTable()[0].instruction->GetExLatency()  == 3);
         check("memLat == 2", t2.GetTable()[0].instruction->GetMemLatency() == 2);
 
-        Thread t3(prog, {{0, {5}, {0}}});  // ex=5, mem=0 → preserva a base
+        Thread t3(prog, MakeThreadConfiguration(), {{0, {5}, {0}}});
         check("exLat == 5", t3.GetTable()[0].instruction->GetExLatency()  == 5);
         check("memLat continua 1 (base)", t3.GetTable()[0].instruction->GetMemLatency() == 1);
     }
@@ -137,7 +148,11 @@ int main() {
         std::vector<std::unique_ptr<Instruction>> instructions;
         instructions.push_back(MakeSyntheticInstruction(0, "multi"));
 
-        Thread t(std::move(instructions), {{0, {1, 1, 1}, {1, 0, 1}}});
+        Thread t(
+            std::move(instructions),
+            MakeThreadConfiguration(),
+            {{0, {1, 1, 1}, {1, 0, 1}}}
+        );
         check("sobrecarga preserva plano multi-etapa",
             t.GetTable()[0].instruction->GetInstructionTypes() ==
                 std::vector<INSTRUCTION_TYPE>({
@@ -149,39 +164,9 @@ int main() {
         check("sobrecarga rejeita posição descontínua", Aborts([]() {
             std::vector<std::unique_ptr<Instruction>> invalid;
             invalid.push_back(MakeSyntheticInstruction(1, "multi"));
-            Thread thread(std::move(invalid));
+            Thread thread(std::move(invalid), MakeThreadConfiguration());
         }));
     }
-
-    /*
-    // Teste das flags de segurança do programa (abortam a execução):
-
-    section("[ABORT] Construtor: previsor sem ROB deve abortar");
-    {
-        std::vector<std::string> prog = {"add r1, r2, r3"};
-        // has_predictor=true, rob_capacity=0 → combinação inválida, espera abort().
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH,
-                 0    // rob_capacity,
-                 true // has_predictor);
-        std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
-    }
-
-    section("[ABORT] Construtor: quantidade inválida de valores de RS deve abortar");
-    {
-        std::vector<std::string> prog = {"add r1, r2, r3"};
-        std::vector<int> rs_errado = {1, 2, 3}; // precisa ter 6 elementos
-        Thread t(prog, {}, rs_errado, DEFAULT_NUM_FUS);
-        std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
-    }
-
-    section("[ABORT] Construtor: quantidade inválida de valores de FU deve abortar");
-    {
-        std::vector<std::string> prog = {"add r1, r2, r3"};
-        std::vector<int> fu_errado = {1, 1}; // precisa ter 6 elementos
-        Thread t(prog, {}, DEFAULT_NUM_RS, fu_errado);
-        std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
-    }
-    */
 
     // ════════════════════════════════════════════════════════════════════
     // 2. Issue() ISOLADO
@@ -193,7 +178,7 @@ int main() {
     section("2.1 Issue() — emissão simples sem dependência");
     {
         std::vector<std::string> prog = {"add r3, r1, r2", "sub r5, r3, r4"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
+        Thread t(prog, MakeThreadConfiguration());
 
         ISSUE_RESULT result1{t.Issue(1)};
         check("ciclo 1: retorna NEW_INSTRUCTION",
@@ -227,7 +212,7 @@ int main() {
             "l.d f0, 0(r0)", "l.d f1, 0(r1)", "l.d f2, 0(r2)",
             "l.d f3, 0(r3)", "l.d f4, 0(r4)", "l.d f5, 0(r5)"
         };
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
+        Thread t(prog, MakeThreadConfiguration());
         for (int c = 1; c <= 5; c++)       t.Issue(c);
         check("Posição == 5 após 5 LOADs", t.GetCurrentInstructionPosition() == 5);
         ISSUE_RESULT cheio{t.Issue(6)};
@@ -242,7 +227,7 @@ int main() {
     section("2.3 Issue() — ROB cheio bloqueia emissão (rob_capacity pequeno)");
     {
         std::vector<std::string> prog = {"add r1,r2,r3", "add r4,r5,r6", "add r7,r8,r9"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/2);
+        Thread t(prog, MakeThreadConfiguration({}, {}, 1, 2));
 
         check("1a issue nova", t.Issue(1).outcome == ISSUE_OUTCOME::NEW_INSTRUCTION);
         check("2a issue nova", t.Issue(2).outcome == ISSUE_OUTCOME::NEW_INSTRUCTION);
@@ -254,7 +239,7 @@ int main() {
     section("2.4 Issue() — BRANCH sem ROB: emissão liberada, bloqueio ocorre no EX");
     {
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
+        Thread t(prog, MakeThreadConfiguration());
 
         ISSUE_RESULT branch_result{t.Issue(1)}; // bnez emitido, unresolved_branch_position = 0
         check("Branch retorna evento novo explícito",
@@ -277,7 +262,7 @@ int main() {
     section("[ABORT] Issue(): instrução inválida (NONEXISTENT) deve abortar");
     {
         std::vector<std::string> prog = {"nop_invalido r1, r2, r3"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
+        Thread t(prog, MakeThreadConfiguration());
         t.Issue(1);
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
     }
@@ -293,7 +278,7 @@ int main() {
     section("3.1 add r3,r1,r2 — issue->EX->WR em 3 ciclos");
     {
         std::vector<std::string> prog = {"add r3, r1, r2"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
+        Thread t(prog, MakeThreadConfiguration());
 
         t.Issue(1);
         check("ciclo 1: issue registrado", t.GetTable()[0].issue_cycles.front() == 1);
@@ -315,7 +300,7 @@ int main() {
     section("3.2 mul r3,r1,r2 (exLat=4) — multiciclo");
     {
         std::vector<std::string> prog = {"mul r3, r1, r2"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
+        Thread t(prog, MakeThreadConfiguration());
 
         t.Issue(1);
         for (int c = 2; c <= 6; c++) {
@@ -334,7 +319,7 @@ int main() {
     section("3.3 l.d f2,0(r1) — issue->EX->MEM->WR");
     {
         std::vector<std::string> prog = {"l.d f2, 0(r1)"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
+        Thread t(prog, MakeThreadConfiguration());
 
         t.Issue(1);
         check("LOAD: issue == 1", t.GetTable()[0].issue_cycles.front() == 1);
@@ -363,7 +348,7 @@ int main() {
     section("3.4 s.d f2,0(r1) SEM ROB — completa igual a um LOAD, mas nunca marca wr_cycle");
     {
         std::vector<std::string> prog = {"s.d f2, 0(r1)"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS); // sem ROB
+        Thread t(prog, MakeThreadConfiguration()); // sem ROB
 
         t.Issue(1);
         t.ExMem(2); t.Wr(2); // IS -> EX
@@ -386,7 +371,11 @@ int main() {
     {
         std::vector<std::string> prog = {"s.d f2, 0(r1)"};
         // mem_latency = 3 (via latency_overrides) para deixar visível a simulação multi-ciclo no Commit().
-        Thread t(prog, {{0, {1}, {3}}}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/4);
+        Thread t(
+            prog,
+            MakeThreadConfiguration({}, {}, 1, 4),
+            {{0, {1}, {3}}}
+        );
 
         t.Issue(1);
         check("STORE cria uma entrada do ROB aguardando execução",
@@ -434,7 +423,7 @@ int main() {
     section("4.1 RAW: sub espera add terminar antes de executar");
     {
         std::vector<std::string> prog = {"add r3, r1, r2", "sub r5, r3, r4"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
+        Thread t(prog, MakeThreadConfiguration());
 
         t.Issue(1);
         t.Issue(2);
@@ -462,7 +451,7 @@ int main() {
     {
         // Regressão do bug corrigido: release por posição em vez de por registrador de destino.
         std::vector<std::string> prog = {"add r3, r1, r2", "sub r3, r4, r5"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
+        Thread t(prog, MakeThreadConfiguration());
 
         t.Issue(1);
         t.Issue(2);
@@ -485,7 +474,7 @@ int main() {
             "mul r3, r4, r5",
             "sub r6, r3, r7"
         };
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
+        Thread t(prog, MakeThreadConfiguration());
 
         t.Issue(1);
         t.Issue(2);
@@ -509,9 +498,9 @@ int main() {
 
     section("4.3 Hazard estrutural de FU: 2 muls disputando a única FU int_mult_div_alu");
     {
-        // DEFAULT_NUM_FUS = {1,1,1,1,1,2} → só 1 FU de int_mult_div_alu.
+        // Configuração padrão possui uma FU int_mult_div_alu.
         std::vector<std::string> prog = {"mul r1,r2,r3", "mul r4,r5,r6"}; // sem dependência entre si
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
+        Thread t(prog, MakeThreadConfiguration());
 
         t.Issue(1);
         t.Issue(2);
@@ -528,9 +517,9 @@ int main() {
     section("4.4 Hazard estrutural de porta WR (fu.wr=1): duas add prontas no mesmo ciclo, só 1 escreve por vez");
     {
         // int_basic_alu=2 (evita disputa de FU na EX) + wr=1 (força disputa só na porta de WR).
-        std::vector<int> fus_custom = {1,2,1,1,1,1};
+        const FUNCTIONAL_UNIT_CAPACITIES fus_custom{1, 2, 1, 1, 1};
         std::vector<std::string> prog = {"add r1,r2,r3", "add r4,r5,r6"}; // sem dependência entre si
-        Thread t(prog, {}, DEFAULT_NUM_RS, fus_custom);
+        Thread t(prog, MakeThreadConfiguration({}, fus_custom, 1, 0, 1));
 
         t.Issue(1);
         t.Issue(2);
@@ -561,7 +550,7 @@ int main() {
     section("5.1 Branch SEM ROB (lat EX=1): instrução seguinte só começa o EX após o branch");
     {
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS); // 1 FU int_basic_alu
+        Thread t(prog, MakeThreadConfiguration()); // 1 FU int_basic_alu
 
         cycle(t, 1); // bnez emitido (unresolved_branch_position = 0)
         check("ciclo 1: bnez emitido", t.GetTable()[0].issue_cycles.front() == 1);
@@ -581,9 +570,9 @@ int main() {
         // bnez e add disputam a mesma FU int_basic_alu; com o pool padrão (1 FU)
         // o add ficaria preso por hazard estrutural, não por branch stall — usa-se
         // 2 FUs para isolar o comportamento do branch (mesma técnica da seção 4.4).
-        std::vector<int> fus_custom = {1, 2, 1, 1, 1, 1};
+        const FUNCTIONAL_UNIT_CAPACITIES fus_custom{1, 2, 1, 1, 1};
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, fus_custom, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/4);
+        Thread t(prog, MakeThreadConfiguration({}, fus_custom, 1, 4));
 
         // Despacho de largura 2 no ciclo 1 (como Processor::ExecuteIssue faria).
         t.Issue(1); t.Issue(1);
@@ -595,7 +584,7 @@ int main() {
     section("5.3 Branch final marca ready_cycle no ciclo de resolução");
     {
         std::vector<std::string> prog = {"bnez r1, foo"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/4);
+        Thread t(prog, MakeThreadConfiguration({}, {}, 1, 4));
 
         t.Issue(1);
         t.ExMem(2); t.Wr(2);
@@ -613,8 +602,13 @@ int main() {
     section("5.4 Commit() de BRANCH sem previsor: serializa 1 por ciclo mesmo com ROB");
     {
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/4,
-                 /*has_predictor=*/false);
+        Thread t(
+            prog,
+            MakeThreadConfiguration({}, {}, 1, 4),
+            {},
+            {},
+            false
+        );
 
         for (int c = 1; c <= 8; c++) cycle(t, c);
 
@@ -630,7 +624,7 @@ int main() {
         // bnez com exLat=4 (via latency_overrides). Com 1 FU o add também seria atrasado
         // por hazard estrutural — a flag e a FU agem na mesma direção.
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
-        Thread t(prog, {{0, {4}, {0}}}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
+        Thread t(prog, MakeThreadConfiguration(), {{0, {4}, {0}}});
 
         t.Issue(1); t.Issue(1); // despacho largura 2 no ciclo 1
         cycle(t, 2);            // bnez entra em EX (2-5); add filtrado pela flag
@@ -652,9 +646,13 @@ int main() {
     {
         // Com 2 FUs int_basic_alu não há hazard estrutural mascarando o teste:
         // o add só pode entrar em EX quando a flag for limpa (fim do EX do branch).
-        std::vector<int> fus_custom = {1, 2, 1, 1, 1, 1};
+        const FUNCTIONAL_UNIT_CAPACITIES fus_custom{1, 2, 1, 1, 1};
         std::vector<std::string> prog = {"bnez r1, foo", "add r2, r3, r4"};
-        Thread t(prog, {{0, {4}, {0}}}, DEFAULT_NUM_RS, fus_custom);
+        Thread t(
+            prog,
+            MakeThreadConfiguration({}, fus_custom),
+            {{0, {4}, {0}}}
+        );
 
         t.Issue(1); t.Issue(1); // despacho largura 2 no ciclo 1
         cycle(t, 2);             // bnez entra em EX (2-5); add filtrado pela flag
@@ -680,7 +678,7 @@ int main() {
     section("6.1 ready_cycle e cabeça do ROB controlam Commit em ordem");
     {
         std::vector<std::string> prog = {"mul r1,r2,r3", "add r4,r5,r6"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, /*dispatch_width=*/2, /*rob_capacity=*/4);
+        Thread t(prog, MakeThreadConfiguration({}, {}, 2, 4));
 
         t.Issue(1); t.Issue(1);
         for (int c = 2; c <= 3; c++) {
@@ -710,26 +708,39 @@ int main() {
             t.GetROBEntries().empty());
     }
 
-    section("6.2 fu.commit limita commits por ciclo");
+    section("6.2 commit_width limita commits por ciclo");
     {
         std::vector<std::string> prog = {"add r1,r2,r3", "sub r4,r5,r6", "or r7,r8,r9"};
-        // dispatch_width = 1 → fu.commit = 1 (só 1 commit por ciclo).
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, /*dispatch_width=*/1, /*rob_capacity=*/8);
+        PIPELINE_CONFIGURATION widths{MakeThreadConfiguration(
+            {},
+            FUNCTIONAL_UNIT_CAPACITIES{1, 3, 1, 1, 1},
+            3,
+            8,
+            3
+        )};
+        widths.commit_width = 1;
+        Thread t(prog, widths);
 
-        t.Issue(1); t.Issue(2); t.Issue(3);
+        t.Issue(1); t.Issue(1); t.Issue(1);
         for (int c = 2; c <= 6; c++) { t.ExMem(c); t.Wr(c); }
 
         t.Commit(10);
         int committed_by_cycle10 = (t.GetTable()[0].commit_cycle == 10) +
                                  (t.GetTable()[1].commit_cycle == 10) +
                                  (t.GetTable()[2].commit_cycle == 10);
-        check("fu.commit=1: no máximo 1 instrução commita por ciclo", committed_by_cycle10 <= 1);
+        check("Issue, WR e Commit preservam larguras independentes",
+            t.GetTable()[0].issue_cycles.front() == 1 &&
+            t.GetTable()[1].issue_cycles.front() == 1 &&
+            t.GetTable()[2].issue_cycles.front() == 1 &&
+            t.GetTable()[0].wr_cycle == t.GetTable()[1].wr_cycle &&
+            t.GetTable()[1].wr_cycle == t.GetTable()[2].wr_cycle &&
+            committed_by_cycle10 == 1);
     }
 
     section("6.3 ROB esvaziando libera espaço para novos Issue()");
     {
         std::vector<std::string> prog = {"add r1,r2,r3", "add r4,r5,r6", "add r7,r8,r9"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/2);
+        Thread t(prog, MakeThreadConfiguration({}, {}, 1, 2));
 
         t.Issue(1); t.Issue(2);
         check("ROB cheio (cap=2): 3a issue falha",
@@ -747,12 +758,9 @@ int main() {
         std::vector<std::string> prog = {"mul r1,r2,r3", "s.d f2, 0(r3)"};
         Thread t(
             prog,
+            MakeThreadConfiguration({}, {}, 2, 4),
             {{1, {1}, {3}}},
-            DEFAULT_NUM_RS,
-            DEFAULT_NUM_FUS,
-            {},
-            /*dispatch_width=*/2,
-            /*rob_capacity=*/4
+            {}
         );
 
         t.Issue(1); t.Issue(1);
@@ -794,12 +802,9 @@ int main() {
         std::vector<std::string> prog = {"s.d f2, 0(r3)"};
         Thread t(
             prog,
+            MakeThreadConfiguration({}, {}, 1, 4),
             {{0, {4}, {2}}},
-            DEFAULT_NUM_RS,
-            DEFAULT_NUM_FUS,
-            {},
-            DEFAULT_DISPATCH_WIDTH,
-            /*rob_capacity=*/4
+            {}
         );
 
         t.Issue(1);
@@ -834,7 +839,7 @@ int main() {
     section("7.1 ExMem() retorna true após todas as instruções finalizadas (sem ROB)");
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS);
+        Thread t(prog, MakeThreadConfiguration());
 
         check("antes: false com instrução pendente", !t.ExMem(1));
 
@@ -850,7 +855,7 @@ int main() {
     section("7.2 Programa completo COM ROB: issue -> exec -> commit até esvaziar");
     {
         std::vector<std::string> prog = {"add r1,r2,r3", "sub r4,r1,r5", "mul r6,r4,r1"};
-        Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, DEFAULT_DISPATCH_WIDTH, /*rob_capacity=*/8);
+        Thread t(prog, MakeThreadConfiguration({}, {}, 1, 8));
 
         int cycle = 1;
         while (t.GetCurrentInstructionPosition() < static_cast<int>(t.GetTable().size()))
@@ -885,9 +890,8 @@ int main() {
         instructions.push_back(MakeSyntheticInstruction(0, "multi"));
         Thread t(
             std::move(instructions),
-            {{0, {1, 1, 1}, {1, 0, 1}}},
-            DEFAULT_NUM_RS,
-            DEFAULT_NUM_FUS
+            MakeThreadConfiguration(),
+            {{0, {1, 1, 1}, {1, 0, 1}}}
         );
 
         const std::vector<INSTRUCTION_TYPE> original_types{
@@ -992,12 +996,9 @@ int main() {
         instructions.push_back(MakeSimplifiedInstruction(1, "add r7, r1, r2"));
         Thread t(
             std::move(instructions),
+            MakeThreadConfiguration({}, {}, 1, 1),
             {{0, {1, 1, 1}, {1, 0, 1}}},
-            DEFAULT_NUM_RS,
-            DEFAULT_NUM_FUS,
-            {},
-            DEFAULT_DISPATCH_WIDTH,
-            /*rob_capacity=*/1
+            {}
         );
 
         check("primeira instrução ocupa a única entrada do ROB",
@@ -1032,18 +1033,15 @@ int main() {
         instructions.push_back(MakeSyntheticInstruction(0, "multi"));
         instructions.push_back(MakeSimplifiedInstruction(1, "mul r7, r1, r2"));
         instructions.push_back(MakeSyntheticInstruction(2, "load_store"));
-        const std::vector<int> constrained_rs{2, 1, 1, 1, 1, 1};
+        const RESERVATION_STATION_CAPACITIES constrained_rs{2, 1, 1, 1, 1, 1};
         Thread t(
             std::move(instructions),
+            MakeThreadConfiguration(constrained_rs, {}, 3),
             {
                 {0, {1, 1, 1}, {1, 0, 1}},
                 {1, {6}, {0}},
                 {2, {1, 1}, {1, 1}}
-            },
-            constrained_rs,
-            DEFAULT_NUM_FUS,
-            {},
-            /*dispatch_width=*/3
+            }
         );
 
         const ISSUE_RESULT first_new{t.Issue(1)};
@@ -1090,21 +1088,11 @@ int main() {
         const std::vector<std::string> program{"add r1, r2, r3"};
         Thread control(
             program,
-            {},
-            DEFAULT_NUM_RS,
-            DEFAULT_NUM_FUS,
-            {},
-            DEFAULT_DISPATCH_WIDTH,
-            /*rob_capacity=*/4
+            MakeThreadConfiguration({}, {}, 1, 4)
         );
         Thread without_trace(
             program,
-            {},
-            DEFAULT_NUM_RS,
-            DEFAULT_NUM_FUS,
-            {},
-            DEFAULT_DISPATCH_WIDTH,
-            /*rob_capacity=*/4
+            MakeThreadConfiguration({}, {}, 1, 4)
         );
 
         const ISSUE_RESULT control_issue{control.Issue(1)};

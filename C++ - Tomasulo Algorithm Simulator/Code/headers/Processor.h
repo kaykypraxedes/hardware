@@ -40,19 +40,14 @@ enum class MULTITHREADING_MODEL {
  */
 class Processor {
     public:
-        // Elemento static:
-        static int base_rob_capacity;
-
         // Construtor:
         Processor(
-            const int,
             const int,
             const bool,
             const PROCESSOR_TYPE,
             const MULTITHREADING_MODEL,
             const std::vector<std::string>&,
-            const std::vector<int>& = {},
-            const std::vector<int>& = {},
+            const PIPELINE_CONFIGURATION&,
             const std::vector<int>& = {},
             const std::vector<LATENCY_OVERRIDE>& = {},
             const ARCHITECTURE = ARCHITECTURE::SIMPLIFIED
@@ -88,7 +83,7 @@ class Processor {
         bool ExecuteCycle();
     private:
         // Atributos:
-        int                  dispatch_width{1};
+        PIPELINE_CONFIGURATION configuration;
         int                  current_cycle{1};
         int                  thread_pointer{};
         int                  fus_per_type{1};

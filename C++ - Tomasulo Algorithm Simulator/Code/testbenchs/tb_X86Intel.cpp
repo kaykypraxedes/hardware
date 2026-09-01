@@ -747,7 +747,7 @@ int main() {
         check("segundo Parse substitui texto, tipo, latências e dependências",
             address.GetInstructionString() == "jmp       NovoAlvo" &&
             address.GetInstructionType() == INSTRUCTION_TYPE::BRANCH &&
-            address.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::BRANCH)] &&
+            address.GetExLatency() == PIPELINE_CONFIGURATION{}.execution_latencies.branch &&
             address.GetMemLatency() == 0 && address.GetDestRegisters().empty() &&
             address.GetExSourceRegisters().empty() && address.GetMemSourceRegisters().empty());
     }
@@ -894,8 +894,8 @@ int main() {
         const bool independent_objects{
             first_object.GetInstructionString() == "mov       rax, [rbx]" &&
             first_object.GetInstructionType() == INSTRUCTION_TYPE::LOAD &&
-            first_object.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::LOAD)] &&
-            first_object.GetMemLatency() == Instruction::base_mem_latencies[0] &&
+            first_object.GetExLatency() == PIPELINE_CONFIGURATION{}.execution_latencies.load &&
+            first_object.GetMemLatency() == PIPELINE_CONFIGURATION{}.memory_latencies.load &&
             HasExactRegisterFamilies(first_object.GetDestRegisters(), {REG_A}) &&
             HasExactRegisterFamilies(first_object.GetExSourceRegisters(), {REG_B}) &&
             first_object.GetMemSourceRegisters().empty() &&
@@ -917,7 +917,7 @@ int main() {
             reusable.GetPosition() == 17 &&
             reusable.GetInstructionString() == "add       rcx, rdx" &&
             reusable.GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC &&
-            reusable.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::INT_BASIC)] &&
+            reusable.GetExLatency() == PIPELINE_CONFIGURATION{}.execution_latencies.int_basic &&
             reusable.GetMemLatency() == 0 &&
             HasExactRegisterFamilies(reusable.GetDestRegisters(), {REG_C}, {}, all_flags) &&
             HasExactRegisterFamilies(reusable.GetExSourceRegisters(), {REG_C, REG_D}) &&
@@ -963,8 +963,8 @@ int main() {
             const bool load_ok{
                 load.GetInstructionString() == "mov       rcx, " + test_case.normalized &&
                 load.GetInstructionType() == INSTRUCTION_TYPE::LOAD &&
-                load.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::LOAD)] &&
-                load.GetMemLatency() == Instruction::base_mem_latencies[0] &&
+                load.GetExLatency() == PIPELINE_CONFIGURATION{}.execution_latencies.load &&
+                load.GetMemLatency() == PIPELINE_CONFIGURATION{}.memory_latencies.load &&
                 HasExactRegisterFamilies(load.GetDestRegisters(), {REG_C}) &&
                 HasExactRegisterFamilies(load.GetExSourceRegisters(), test_case.source_ids) &&
                 load.GetMemSourceRegisters().empty()
@@ -975,8 +975,8 @@ int main() {
             const bool store_ok{
                 store.GetInstructionString() == "mov       " + test_case.normalized + ", rcx" &&
                 store.GetInstructionType() == INSTRUCTION_TYPE::STORE &&
-                store.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::STORE)] &&
-                store.GetMemLatency() == Instruction::base_mem_latencies[1] &&
+                store.GetExLatency() == PIPELINE_CONFIGURATION{}.execution_latencies.store &&
+                store.GetMemLatency() == PIPELINE_CONFIGURATION{}.memory_latencies.store &&
                 store.GetDestRegisters().empty() &&
                 HasExactRegisterFamilies(store.GetExSourceRegisters(), test_case.source_ids) &&
                 HasExactRegisterFamilies(store.GetMemSourceRegisters(), {REG_C})
@@ -987,7 +987,7 @@ int main() {
             const bool lea_ok{
                 lea.GetInstructionString() == "lea       rcx, " + test_case.normalized &&
                 lea.GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC &&
-                lea.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::INT_BASIC)] &&
+                lea.GetExLatency() == PIPELINE_CONFIGURATION{}.execution_latencies.int_basic &&
                 lea.GetMemLatency() == 0 &&
                 HasExactRegisterFamilies(lea.GetDestRegisters(), {REG_C}) &&
                 HasExactRegisterFamilies(lea.GetExSourceRegisters(), test_case.source_ids) &&
@@ -1001,7 +1001,7 @@ int main() {
             const bool read_modify_ok{
                 read_modify.GetInstructionString() == "add       rcx, " + test_case.normalized &&
                 read_modify.GetInstructionType() == INSTRUCTION_TYPE::INT_BASIC &&
-                read_modify.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::INT_BASIC)] &&
+                read_modify.GetExLatency() == PIPELINE_CONFIGURATION{}.execution_latencies.int_basic &&
                 read_modify.GetMemLatency() == 0 &&
                 HasExactRegisterFamilies(read_modify.GetDestRegisters(), {REG_C}, {}, all_flags) &&
                 HasExactRegisterFamilies(read_modify.GetExSourceRegisters(), read_modify_sources) &&
@@ -1043,7 +1043,7 @@ int main() {
         InstructionX86Intel call(0);
         call.Parse("call [rax+rbx*4+10]");
         const bool a23{call.GetInstructionType() == INSTRUCTION_TYPE::BRANCH &&
-                       call.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::BRANCH)] &&
+                       call.GetExLatency() == PIPELINE_CONFIGURATION{}.execution_latencies.branch &&
                        call.GetMemLatency() == 0 &&
                        HasExactRegisterFamilies(call.GetDestRegisters(), {REG_SP}) &&
                        HasExactRegisterFamilies(call.GetExSourceRegisters(), {REG_SP, REG_A, REG_B}) &&
@@ -1052,7 +1052,7 @@ int main() {
         InstructionX86Intel jump(0);
         jump.Parse("jmp [rax+rbx*4+10]");
         const bool a24{jump.GetInstructionType() == INSTRUCTION_TYPE::BRANCH &&
-                       jump.GetExLatency() == Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::BRANCH)] &&
+                       jump.GetExLatency() == PIPELINE_CONFIGURATION{}.execution_latencies.branch &&
                        jump.GetMemLatency() == 0 && jump.GetDestRegisters().empty() &&
                        HasExactRegisterFamilies(jump.GetExSourceRegisters(), {REG_A, REG_B}) &&
                        jump.GetMemSourceRegisters().empty()};

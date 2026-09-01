@@ -57,13 +57,15 @@ class InstructionFactory {
          * de instruções (ainda em string).
          * @param const ARCHITECTURE arch - Arquitetura que deve ser
          * considerada.
+         * @param configuration Configuração que materializa as latências.
          *
          * @return std::vector<std::unique_ptr<Instruction>> - Vetor
          * com o ponteiro para as instruções (já decodificadas).
          */
         static std::vector<std::unique_ptr<Instruction>> ParseTrace(
             const std::vector<std::string>& trace_lines,
-            const ARCHITECTURE arch
+            const ARCHITECTURE             arch,
+            const PIPELINE_CONFIGURATION&  configuration = PIPELINE_CONFIGURATION{}
         ){
             std::vector<std::unique_ptr<Instruction>> instructions;
             int current_position{};
@@ -92,7 +94,7 @@ class InstructionFactory {
                         std::abort();
                 }
                 // Traduz a instrução.
-                inst->Parse(line);
+                inst->Parse(line, configuration);
                 // Adiciona a instrução no vetor e passa para a próxima.
                 // Como se trata de um unique_ptr, ele não pode ser simplesmente copiado:
                 // - O std::move() garante que seu original tenha sido apagado, restando apenas 1.

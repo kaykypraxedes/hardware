@@ -246,66 +246,50 @@ bool CDB_BROADCAST::CompleteProducer(
 
 
 // ==================================================================
-// === FUNCTIONAL_UNITS =============================================
+// === FuncionalUnits ===============================================
 // ==================================================================
 
 // ─── CONSTRUTORES ─────────────────────────────────────────────────
 // Público:
-FUNCTIONAL_UNITS::FUNCTIONAL_UNITS(
-    const std::vector<int>& configuration,
-    const int               commit_width
-) :
-    commit(commit_width)
-{
-    if (configuration.size() != 6) {
-        std::cerr <<
-            "[ERRO] Quantidade inválida de FUs: " << configuration.size() << '\n';
-        std::abort();
-    }
-
-    // Preserva a ordem histórica da configuração dos cinco grupos físicos.
-    for (int i{}; i < configuration[0]; i++) memory_access.push_back(FU{});
-    for (int i{}; i < configuration[1]; i++) int_basic_alu.push_back(FU{});
-    for (int i{}; i < configuration[2]; i++) int_mult_div_alu.push_back(FU{});
-    for (int i{}; i < configuration[3]; i++) float_basic_alu.push_back(FU{});
-    for (int i{}; i < configuration[4]; i++) float_mult_div_alu.push_back(FU{});
-    wr = configuration[5];
+FuncionalUnits::FuncionalUnits(
+    const FUNCTIONAL_UNIT_CAPACITIES& capacities
+) {
+    // Cada campo nomeado materializa somente seu grupo físico.
+    memory_access.resize(capacities.memory_access);
+    int_basic_alu.resize(capacities.int_basic);
+    int_mult_div_alu.resize(capacities.int_mult_div);
+    float_basic_alu.resize(capacities.float_basic);
+    float_mult_div_alu.resize(capacities.float_mult_div);
 }
 
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:
-int FUNCTIONAL_UNITS::GetWriteResultWidth() const { return wr; }
-
-// Público:
-int FUNCTIONAL_UNITS::GetCommitWidth() const { return commit; }
-
-// Público:
-const std::vector<FU>& FUNCTIONAL_UNITS::GetMemoryAccessUnits() const {
+const std::vector<FU>& FuncionalUnits::GetMemoryAccessUnits() const {
     return memory_access;
 }
 
 // Público:
-const std::vector<FU>& FUNCTIONAL_UNITS::GetIntBasicUnits() const {
+const std::vector<FU>& FuncionalUnits::GetIntBasicUnits() const {
     return int_basic_alu;
 }
 
 // Público:
-const std::vector<FU>& FUNCTIONAL_UNITS::GetIntMultDivUnits() const {
+const std::vector<FU>& FuncionalUnits::GetIntMultDivUnits() const {
     return int_mult_div_alu;
 }
 
 // Público:
-const std::vector<FU>& FUNCTIONAL_UNITS::GetFloatBasicUnits() const {
+const std::vector<FU>& FuncionalUnits::GetFloatBasicUnits() const {
     return float_basic_alu;
 }
 
 // Público:
-const std::vector<FU>& FUNCTIONAL_UNITS::GetFloatMultDivUnits() const {
+const std::vector<FU>& FuncionalUnits::GetFloatMultDivUnits() const {
     return float_mult_div_alu;
 }
 
 // Privado:
-std::vector<FU>& FUNCTIONAL_UNITS::GetGroup(
+std::vector<FU>& FuncionalUnits::GetGroup(
     const FUNCTIONAL_UNIT_GROUP group
 ) {
     switch (group) {
@@ -322,7 +306,7 @@ std::vector<FU>& FUNCTIONAL_UNITS::GetGroup(
 
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Público:
-int FUNCTIONAL_UNITS::Allocate(
+int FuncionalUnits::Allocate(
     const FUNCTIONAL_UNIT_GROUP group,
     const std::string&          rs_id,
     const int                   cycle
@@ -347,7 +331,7 @@ int FUNCTIONAL_UNITS::Allocate(
 }
 
 // Público:
-void FUNCTIONAL_UNITS::Release(
+void FuncionalUnits::Release(
     const FUNCTIONAL_UNIT_GROUP group,
     const int                   position,
     const std::string&          rs_id,
@@ -376,7 +360,7 @@ void FUNCTIONAL_UNITS::Release(
 }
 
 // Privado:
-bool FUNCTIONAL_UNITS::HasAllocation(
+bool FuncionalUnits::HasAllocation(
     const std::string& rs_id
 ) const {
     const std::vector<const std::vector<FU>*> groups{
@@ -390,6 +374,52 @@ bool FUNCTIONAL_UNITS::HasAllocation(
         for (const FU& unit : *group)
             if (unit.busy && unit.current_rs == rs_id) return true;
     return false;
+}
+
+// ─── HELPERS ──────────────────────────────────────────────────────
+
+// Valida quantidade e não-negatividade do formato posicional externo.
+static void ValidateExternalCapacities(
+    const std::vector<int>& values,
+    const std::size_t       expected_size,
+    const std::string&      component
+) {
+    if (values.size() != expected_size) {
+        std::cerr <<
+            "[ERRO] Quantidade inválida de " << component << ": " << values.size() << '\n';
+        std::abort();
+    }
+    for (const int value : values) {
+        if (value < 0) {
+            std::cerr << "[ERRO] Capacidade de " << component << " não pode ser negativa.\n";
+            std::abort();
+        }
+    }
+}
+
+RESERVATION_STATION_CAPACITIES MakeReservationStationCapacities(
+    const std::vector<int>& values
+) {
+    ValidateExternalCapacities(values, 6, "RSs");
+    return {values[0], values[1], values[2], values[3], values[4], values[5]};
+}
+
+FUNCTIONAL_UNIT_CAPACITIES MakeFunctionalUnitCapacities(
+    const std::vector<int>& values
+) {
+    ValidateExternalCapacities(values, 6, "FUs");
+    return {values[0], values[1], values[2], values[3], values[4]};
+}
+
+int GetExternalWriteResultWidth(
+    const std::vector<int>& values
+) {
+    ValidateExternalCapacities(values, 6, "FUs");
+    if (values[5] == 0) {
+        std::cerr << "[ERRO] Largura de WR deve ser positiva.\n";
+        std::abort();
+    }
+    return values[5];
 }
 
 } // namespace processor

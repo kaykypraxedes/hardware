@@ -295,6 +295,18 @@ struct FU {
 };
 
 /**
+ * @brief Grupos físicos controlados pelo banco de estações de reserva.
+ */
+enum class RESERVATION_STATION_GROUP {
+    LOAD,
+    STORE,
+    INT_BASIC,
+    INT_MULT_DIV,
+    FLOAT_BASIC,
+    FLOAT_MULT_DIV
+};
+
+/**
  * @brief Grupos físicos controlados pelo banco de unidades funcionais.
  */
 enum class FUNCTIONAL_UNIT_GROUP {
@@ -306,37 +318,48 @@ enum class FUNCTIONAL_UNIT_GROUP {
 };
 
 /**
+ * @brief Capacidades nomeadas dos grupos de estações de reserva.
+ */
+struct RESERVATION_STATION_CAPACITIES {
+    int load{5};
+    int store{5};
+    int int_basic{5};
+    int int_mult_div{4};
+    int float_basic{3};
+    int float_mult_div{2};
+};
+
+/**
+ * @brief Capacidades nomeadas dos grupos de unidades funcionais.
+ */
+struct FUNCTIONAL_UNIT_CAPACITIES {
+    int memory_access{1};
+    int int_basic{1};
+    int int_mult_div{1};
+    int float_basic{1};
+    int float_mult_div{1};
+};
+
+/**
  * @brief Conjunto de todas as unidades funcionais.
  *
  * @details As de mesmo tipo são agrupados em vetores de tamanho
  * configurável.
  *
- * Os componentes "wr" (Write Result) e "commit" são apenas um valor
- * de int referente à quantidades de instruções que pode ser
- * processada durante cada fase (o valor commit é referente à
- * largura de despacho se possuir ROB - obrigatório).
- *
  */
-struct FUNCTIONAL_UNITS {
+class FuncionalUnits {
     public:
-        FUNCTIONAL_UNITS() = default;
+        FuncionalUnits() = default;
 
         /**
-         * @brief Inicializa os grupos físicos e as larguras do pipeline.
+         * @brief Inicializa os grupos físicos com capacidades nomeadas.
          *
-         * @details As cinco primeiras posições configuram os grupos de FU e
-         * a sexta preserva a largura de WR usada pela configuração atual.
-         *
-         * @param configuration Capacidades dos grupos e largura de WR.
-         * @param commit_width Largura de Commit; zero quando não há ROB.
+         * @param capacities Capacidades dos grupos de FU.
          */
-        FUNCTIONAL_UNITS(
-            const std::vector<int>& configuration,
-            const int               commit_width
+        explicit FuncionalUnits(
+            const FUNCTIONAL_UNIT_CAPACITIES& capacities
         );
 
-        int GetWriteResultWidth() const;
-        int GetCommitWidth() const;
         const std::vector<FU>& GetMemoryAccessUnits() const;
         const std::vector<FU>& GetIntBasicUnits() const;
         const std::vector<FU>& GetIntMultDivUnits() const;
@@ -369,8 +392,6 @@ struct FUNCTIONAL_UNITS {
         std::vector<FU> int_mult_div_alu;
         std::vector<FU> float_basic_alu;
         std::vector<FU> float_mult_div_alu;
-        int             wr{1};
-        int             commit{0};
 
         std::vector<FU>& GetGroup(
             const FUNCTIONAL_UNIT_GROUP group
@@ -382,6 +403,30 @@ struct FUNCTIONAL_UNITS {
 };
 
 // ─── HELPER ───────────────────────────────────────────────────────
+
+/**
+ * @brief Converte as seis capacidades externas de RS para campos nomeados.
+ */
+RESERVATION_STATION_CAPACITIES MakeReservationStationCapacities(
+    const std::vector<int>& values
+);
+
+/**
+ * @brief Converte as cinco primeiras capacidades externas de FU.
+ *
+ * @details O formato externo possui uma sexta posição reservada à largura de
+ * WR. Ela é validada, mas não pertence ao banco de FUs.
+ */
+FUNCTIONAL_UNIT_CAPACITIES MakeFunctionalUnitCapacities(
+    const std::vector<int>& values
+);
+
+/**
+ * @brief Retorna a largura de WR da sexta posição do formato externo.
+ */
+int GetExternalWriteResultWidth(
+    const std::vector<int>& values
+);
 
 } // namespace processor
 

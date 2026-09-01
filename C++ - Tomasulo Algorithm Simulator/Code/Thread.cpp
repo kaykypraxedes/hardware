@@ -31,7 +31,7 @@ const std::vector<REGISTER_BANK>& Thread::GetRegisterBanks() const {
 const RESERVATION_STATION& Thread::GetRS()       const { return rs; }
 
 // Público:
-const FUNCTIONAL_UNITS& Thread::GetFU()          const { return fu; }
+const FuncionalUnits& Thread::GetFU()            const { return fu; }
 
 // Público:
 const std::vector<TABLE_ROW>& Thread::GetTable() const { return instruction_trace; }
@@ -70,23 +70,17 @@ void Thread::ClearTrace() {
 // Público:
 Thread::Thread(
     const std::vector<std::string>&      assembly,
+    const PIPELINE_CONFIGURATION&        configuration,
     const std::vector<LATENCY_OVERRIDE>& latency_overrides,
-    const std::vector<int>&              num_rs,
-    const std::vector<int>&              num_fus,
     const std::vector<int>&              switch_cycles,
-    const int                            dispatch_width,
-    const int                            rob_capacity,
     const bool                           has_predictor,
     const ARCHITECTURE                   arch
 ) :
     Thread(
-        InstructionFactory::ParseTrace(assembly, arch),
+        InstructionFactory::ParseTrace(assembly, arch, configuration),
+        configuration,
         latency_overrides,
-        num_rs,
-        num_fus,
         switch_cycles,
-        dispatch_width,
-        rob_capacity,
         has_predictor,
         arch
     )
@@ -95,20 +89,19 @@ Thread::Thread(
 // Público:
 Thread::Thread(
     std::vector<std::unique_ptr<Instruction>> instructions,
+    const PIPELINE_CONFIGURATION&             configuration,
     const std::vector<LATENCY_OVERRIDE>&      latency_overrides,
-    const std::vector<int>&                   num_rs,
-    const std::vector<int>&                   num_fus,
     const std::vector<int>&                   switch_cycles,
-    const int                                 dispatch_width,
-    const int                                 rob_capacity,
     const bool                                has_predictor,
     const ARCHITECTURE                        arch
 ) :
-    has_rob        (rob_capacity > 0),
-    rob_capacity   (rob_capacity > 0 ? rob_capacity : 1),
+    configuration  (configuration),
+    has_rob        (configuration.rob_capacity > 0),
     has_predictor  (has_predictor),
     switch_cycles  (switch_cycles)
 {
+    ValidatePipelineConfiguration(this->configuration);
+
     // Verifica inconsistência de parâmetros.
     if (has_predictor && !has_rob) {
         std::cerr << "[ERRO] ROB obrigatório para previsor de desvios!\n";
@@ -135,7 +128,7 @@ Thread::Thread(
     }
 
     // Inicializa os RSs e as FUs.
-    InitializeComponents(num_rs, num_fus, dispatch_width, arch);
+    InitializeComponents(arch);
 
     // Passa os overrides vetoriais às instruções antes do primeiro Issue.
     for (const auto& [position, ex_latencies, mem_latencies] : latency_overrides) {
@@ -151,23 +144,16 @@ Thread::Thread(
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Privado:
 void Thread::InitializeComponents(
-    const std::vector<int>& num_rs,
-    const std::vector<int>& num_fus,
-    const int               dispatch_width,
-    const ARCHITECTURE      arch
+    const ARCHITECTURE arch
 ){
     // Declara o estado persistente e separa os metadados de apresentação.
     const REGISTER_LAYOUT layout{InstructionFactory::MakeRegisterLayout(arch)};
     register_status = RegisterStatusTable(layout.references);
     register_banks = layout.banks;
 
-    // Delega a criação e a validação dos grupos ao banco de RSs.
-    std::vector<int> aux{num_rs.empty() ? std::vector<int>{5,5,5,4,3,2} : num_rs}; // Valores arbitrários de default.
-    rs = RESERVATION_STATION(aux);
-
-    // Delega grupos, WR e Commit ao banco de FUs.
-    aux = num_fus.empty() ? std::vector<int>{1,1,1,1,1,2} : num_fus; // Valores arbitrários de default.
-    fu = FUNCTIONAL_UNITS(aux, has_rob ? dispatch_width : 0);
+    // Materializa grupos físicos a partir dos campos nomeados da configuração.
+    rs = RESERVATION_STATION(configuration.reservation_station_capacities);
+    fu = FuncionalUnits(configuration.functional_unit_capacities);
 }
 
 // Privado:
@@ -304,7 +290,7 @@ ISSUE_RESULT Thread::TryIssue(
                 "- Posição: " << position << '\n';
             std::abort();
         }
-        if (new_instruction && rob.size() >= static_cast<size_t>(rob_capacity)) return {};
+        if (new_instruction && rob.size() >= static_cast<size_t>(configuration.rob_capacity)) return {};
     }
 
     // O banco identifica o grupo e tenta a primeira célula livre.
@@ -611,7 +597,7 @@ void Thread::PerformWriteResult(
     const int cycle
 ){
     int writes{};
-    while (!wr_buffer.empty() && writes < fu.GetWriteResultWidth()) {
+    while (!wr_buffer.empty() && writes < configuration.write_result_width) {
 
         int position{wr_buffer.front()};
         IN_FLIGHT_ENTRY& entry{GetInFlightEntry(position)};
@@ -783,7 +769,7 @@ void Thread::Commit(
 
     int writes{};
     // Até acabar as instruções ou até o limite de despacho.
-    while (!rob.empty() && writes < fu.GetCommitWidth()){
+    while (!rob.empty() && writes < configuration.commit_width){
         ROB_ENTRY& rob_entry{rob.front()};
         const int position{rob_entry.position};
         IN_FLIGHT_ENTRY& in_flight_entry{GetInFlightEntry(position)};

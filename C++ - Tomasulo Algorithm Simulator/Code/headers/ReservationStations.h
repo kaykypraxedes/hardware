@@ -95,7 +95,7 @@ class RS {
          * faz as devidas marcações (qual a nova fase e o ciclo).
          *
          * @param register_status Estado funcional consultado para reconhecer conclusões.
-         * @param FUNCTIONAL_UNITS& fu - Todas as unidades
+         * @param FuncionalUnits& fu - Todas as unidades
          * funcionais.
          * @param const int cycle - Ciclo atual.
          *
@@ -105,7 +105,7 @@ class RS {
          */
         bool UpdateDependencies(
             const RegisterStatusTable& register_status,
-            FUNCTIONAL_UNITS&          fu,
+            FuncionalUnits&            fu,
             const int                  cycle
         );
 
@@ -116,7 +116,7 @@ class RS {
          * @details Esse método também libera as FUs que estavam
          * sendo utilizadas pelo RS e avança a fase do pipeline.
          *
-         * @param FUNCTIONAL_UNITS& fu - Todas as unidades
+         * @param FuncionalUnits& fu - Todas as unidades
          * funcionais.
          * @param const int cycle - Ciclo atual.
          *
@@ -124,8 +124,8 @@ class RS {
          * @return true - RS ainda não terminou ou está em espera.
          */
         bool UpdateCountdown(
-            FUNCTIONAL_UNITS& fu,
-            const int         cycle
+            FuncionalUnits& fu,
+            const int       cycle
         );
 
         /**
@@ -233,7 +233,7 @@ class RS {
          * ou EX -> MEM) e se ele está ápto para avançar (nenhuma
          * dependência Q).
          *
-         * @param FUNCTIONAL_UNITS& fu - Todas as unidades
+         * @param FuncionalUnits& fu - Todas as unidades
          * funcionais.
          * @param const int cycle - Ciclo atual.
          *
@@ -241,15 +241,15 @@ class RS {
          * @return false - Não conseguiu.
          */
         bool AdvancePhaseAllocation(
-            FUNCTIONAL_UNITS& fu,
-            const int         cycle
+            FuncionalUnits& fu,
+            const int       cycle
         );
 
         /**
          * @brief Determina o tipo de FU necessário para a instrução
          * e tenta fazer a alocação nela.
          *
-         * @param FUNCTIONAL_UNITS& fu - Todas as unidades
+         * @param FuncionalUnits& fu - Todas as unidades
          * funcionais.
          * @param const INSTRUCTION_PHASE_TOMASULO target_phase -
          * Fase alvo para avançar (próxima para a instrução).
@@ -260,7 +260,7 @@ class RS {
          * @return false - Não conseguiu.
          */
         bool TryAllocateFU(
-            FUNCTIONAL_UNITS&                fu,
+            FuncionalUnits&                  fu,
             const INSTRUCTION_PHASE_TOMASULO target_phase,
             const int                        cycle,
             const int                        latency
@@ -272,14 +272,14 @@ class RS {
          * @brief Procura a FU que estava alocada para a instrução da
          * RS, a desaloca e realiza as marcações de tempo.
          *
-         * @param FUNCTIONAL_UNITS& fu - Todas as unidades
+         * @param FuncionalUnits& fu - Todas as unidades
          * funcionais.
          * @param const INSTRUCTION_PHASE_TOMASULO finished_phase -
          * Fase da instrução (para descobrir em qual grupo procurar).
          * @param const int cycle - Ciclo atual (fim da alocação).
          */
         void ReleaseFU(
-            FUNCTIONAL_UNITS&                fu,
+            FuncionalUnits&                  fu,
             const INSTRUCTION_PHASE_TOMASULO finished_phase,
             const int                        cycle
         );
@@ -299,7 +299,7 @@ struct RESERVATION_STATION {
          * @brief Inicializa os seis grupos físicos na ordem configurável atual.
          */
         explicit RESERVATION_STATION(
-            const std::vector<int>& capacities
+            const RESERVATION_STATION_CAPACITIES& capacities
         );
 
         const std::vector<RS>& GetLoadStations() const;
@@ -355,8 +355,8 @@ struct RESERVATION_STATION {
         std::vector<RS> float_basic;
         std::vector<RS> float_mult_div;
 
-        std::vector<RS>& GetGroupForType(
-            const INSTRUCTION_TYPE type
+        std::vector<RS>& GetGroup(
+            const RESERVATION_STATION_GROUP group
         );
 
         std::vector<std::vector<RS>*> GetGroups();

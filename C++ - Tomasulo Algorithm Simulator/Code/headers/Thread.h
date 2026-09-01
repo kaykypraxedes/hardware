@@ -134,13 +134,10 @@ class Thread {
     public:
         // Construtor:
         Thread(
-            const std::vector<std::string>&      assembly, // Único dado que não pode ser inferido.
+            const std::vector<std::string>&      assembly,
+            const PIPELINE_CONFIGURATION&        configuration,
             const std::vector<LATENCY_OVERRIDE>& latency_overrides = {},
-            const std::vector<int>&              num_rs = {},
-            const std::vector<int>&              num_fus = {},
             const std::vector<int>&              switch_cycles = {},
-            const int                            dispatch_width = 1,
-            const int                            rob_capacity = 0,
             const bool                           has_predictor = false,
             const ARCHITECTURE                   arch = ARCHITECTURE::SIMPLIFIED
         );
@@ -153,23 +150,17 @@ class Thread {
          * índices do programa.
          *
          * @param instructions Instruções transferidas para o programa.
+         * @param configuration Configuração completa da instância do pipeline.
          * @param latency_overrides Latências específicas por posição.
-         * @param num_rs Quantidade de RSs por grupo.
-         * @param num_fus Quantidade de FUs por grupo.
          * @param switch_cycles Posições de troca para granulação grossa.
-         * @param dispatch_width Largura de Issue e Commit.
-         * @param rob_capacity Capacidade do ROB; zero desabilita o ROB.
          * @param has_predictor Indica presença de previsor de desvios.
          * @param arch Arquitetura usada para construir o layout de registradores.
          */
         Thread(
             std::vector<std::unique_ptr<Instruction>> instructions,
+            const PIPELINE_CONFIGURATION&             configuration,
             const std::vector<LATENCY_OVERRIDE>&      latency_overrides = {},
-            const std::vector<int>&                   num_rs = {},
-            const std::vector<int>&                   num_fus = {},
             const std::vector<int>&                   switch_cycles = {},
-            const int                                 dispatch_width = 1,
-            const int                                 rob_capacity = 0,
             const bool                                has_predictor = false,
             const ARCHITECTURE                        arch = ARCHITECTURE::SIMPLIFIED
         );
@@ -180,7 +171,7 @@ class Thread {
         const RegisterStatusTable&    GetRegisterStatus() const;
         const std::vector<REGISTER_BANK>& GetRegisterBanks() const;
         const RESERVATION_STATION&    GetRS() const;
-        const FUNCTIONAL_UNITS&       GetFU() const;
+        const FuncionalUnits&         GetFU() const;
         const std::vector<TABLE_ROW>& GetTable() const;
         const std::vector<IN_FLIGHT_ENTRY>& GetInFlightEntries() const;
         const std::deque<ROB_ENTRY>& GetROBEntries() const;
@@ -296,14 +287,14 @@ class Thread {
 
         // Atributos:
         // - Elementos da thread:
+        PIPELINE_CONFIGURATION   configuration;
         bool                     has_rob{false};
-        int                      rob_capacity{1};
         int                      current_instruction_position{};
         bool                     has_predictor{false};
         RegisterStatusTable      register_status;
         std::vector<REGISTER_BANK> register_banks;
         RESERVATION_STATION      rs;
-        FUNCTIONAL_UNITS         fu;
+        FuncionalUnits           fu;
         std::vector<int>         wr_buffer;
         std::vector<int>         pending_wr_buffer;
         std::vector<std::shared_ptr<Instruction>> instructions;
@@ -322,26 +313,13 @@ class Thread {
          * @brief Inicializa os componentes de hardware (Register Status, FU, RS,
          * etc.)
          *
-         * @details A alocação em parte é configurável (como o número
-         * de unidades que cada grupo de FU e RS terá), mas alguns
-         * são inalteráveis (como o layout do banco de registradores,
-         * para não gerar divergências com a arquitetura).
+         * @details Capacidades e larguras já foram validadas na configuração.
          *
-         * @param const std::vector<int>& num_rs - Vetor com o número
-         * de unidades em cada grupo de RS.
-         * @param const std::vector<int>& num_fus - Vetor com o número
-         * de unidades em cada grupo de FU.
-         * @param const int dispatch_width - Largura de despacho.
-         * Indica quantas instruções podem ser iniciadas (issue) e
-         * commitadas de uma vez.
          * @param const ARCHITECTURE arch - Qual a arquitetura (para
          * montar o banco de registradores).
          */
         void InitializeComponents(
-            const std::vector<int>& num_rs,
-            const std::vector<int>& num_fus,
-            const int               dispatch_width,
-            const ARCHITECTURE      arch
+            const ARCHITECTURE arch
         );
 
         /**

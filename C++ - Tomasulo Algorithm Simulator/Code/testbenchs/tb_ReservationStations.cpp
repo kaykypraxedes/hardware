@@ -46,10 +46,10 @@ static int LatestPending(
     return -1;
 }
 
-static FUNCTIONAL_UNITS makeFU(
+static FuncionalUnits makeFU(
     const int n = 2
 ) {
-    return FUNCTIONAL_UNITS({n, n, n, n, n, 2}, 0);
+    return FuncionalUnits(FUNCTIONAL_UNIT_CAPACITIES{n, n, n, n, n});
 }
 
 // Verifica se TODAS as posições de um vetor de dependências (ex_Q/mem_Q) já
@@ -196,7 +196,7 @@ int main() {
     {
         RS rs("int2");
         RegisterStatusTable register_status{MakeRegisterStatus()};
-        FUNCTIONAL_UNITS fu = makeFU();
+        FuncionalUnits fu = makeFU();
         auto instr = make_inst("add r3, r1, r2");
         rs.AddIssue(instr, register_status, 1, true);
 
@@ -214,7 +214,7 @@ int main() {
     {
         RS rs("fmul1");
         RegisterStatusTable register_status{MakeRegisterStatus()};
-        FUNCTIONAL_UNITS fu = makeFU();
+        FuncionalUnits fu = makeFU();
         const int producer_position{7};
         register_status.AllocateProducer(F(2), producer_position, "load0", 1);
 
@@ -235,7 +235,7 @@ int main() {
     {
         RS rs("store1");
         RegisterStatusTable register_status{MakeRegisterStatus()};
-        FUNCTIONAL_UNITS fu = makeFU();
+        FuncionalUnits fu = makeFU();
         const int producer_position{8};
         register_status.AllocateProducer(F(8), producer_position, "fmul2", 1); // dado (f8) pendente; endereço (r1) livre
 
@@ -265,7 +265,7 @@ int main() {
     {
         RS rs("store2");
         RegisterStatusTable register_status{MakeRegisterStatus()};
-        FUNCTIONAL_UNITS fu = makeFU();
+        FuncionalUnits fu = makeFU();
         const int producer_position{9};
         register_status.AllocateProducer(R(9), producer_position, "int5", 1); // endereço pendente
 
@@ -310,7 +310,7 @@ int main() {
     {
         RS rs("fmul_waw");
         RegisterStatusTable register_status{MakeRegisterStatus()};
-        FUNCTIONAL_UNITS fu = makeFU();
+        FuncionalUnits fu = makeFU();
         const Register source{F(2)};
         register_status.AllocateProducer(source, 30, "load0", 1);
         register_status.AllocateProducer(source, 31, "load1", 2);
@@ -394,7 +394,7 @@ int main() {
         RS rs_mult("intmul2");
         RS rs_mflo("int10");
         RegisterStatusTable register_status{MakeRegisterStatus()};
-        FUNCTIONAL_UNITS fu = makeFU();
+        FuncionalUnits fu = makeFU();
 
         auto i_mult = make_inst("mult r1, r2", 16);
         rs_mult.AddIssue(i_mult, register_status, 1, true); // hi/lo ficam pendentes de 'intmul2'
@@ -414,7 +414,7 @@ int main() {
     {
         RS rs("int11");
         RegisterStatusTable register_status{MakeRegisterStatus()};
-        FUNCTIONAL_UNITS fu = makeFU();
+        FuncionalUnits fu = makeFU();
         auto instr = make_inst("lui r1, #5");
         rs.AddIssue(instr, register_status, 1, true);
 
@@ -434,7 +434,7 @@ int main() {
     {
         RS rs("int3");
         RegisterStatusTable register_status{MakeRegisterStatus()};
-        FUNCTIONAL_UNITS fu = makeFU();
+        FuncionalUnits fu = makeFU();
         auto instr = make_inst("add r3, r1, r2");
         rs.AddIssue(instr, register_status, 1, true);
         rs.UpdateDependencies(register_status, fu, 2);
@@ -449,7 +449,7 @@ int main() {
     {
         RS rs("load0");
         RegisterStatusTable register_status{MakeRegisterStatus()};
-        FUNCTIONAL_UNITS fu = makeFU();
+        FuncionalUnits fu = makeFU();
         auto instr = make_inst("l.d f2, 0(r1)");
         rs.AddIssue(instr, register_status, 1, true);
         rs.UpdateDependencies(register_status, fu, 2);
@@ -472,7 +472,7 @@ int main() {
     {
         RS rs("store0");
         RegisterStatusTable register_status{MakeRegisterStatus()};
-        FUNCTIONAL_UNITS fu = makeFU();
+        FuncionalUnits fu = makeFU();
         const int producer_position{18};
         register_status.AllocateProducer(F(6), producer_position, "float_basico0", 1);
 
@@ -505,7 +505,7 @@ int main() {
     {
         RS rs("int4");
         RegisterStatusTable register_status{MakeRegisterStatus()};
-        FUNCTIONAL_UNITS fu = makeFU();
+        FuncionalUnits fu = makeFU();
         auto instr = make_inst("add r3, r1, r2");
         rs.AddIssue(instr, register_status, 1, true);
         rs.UpdateDependencies(register_status, fu, 2);
@@ -528,7 +528,7 @@ int main() {
     {
         RS rs("load1");
         RegisterStatusTable register_status{MakeRegisterStatus()};
-        FUNCTIONAL_UNITS fu = makeFU();
+        FuncionalUnits fu = makeFU();
         auto instr = make_inst("l.d f4, 0(r2)", 0);
 
         rs.AddIssue(instr, register_status, 1, true);
@@ -561,7 +561,7 @@ int main() {
     {
         RS rs("int7");
         RegisterStatusTable register_status{MakeRegisterStatus()};
-        FUNCTIONAL_UNITS fu = makeFU();
+        FuncionalUnits fu = makeFU();
 
         auto i1 = make_inst("add r7, r1, r2", 20);
         rs.AddIssue(i1, register_status, 1, true);
@@ -643,7 +643,7 @@ int main() {
 
     section("7.1 FU esgotada -> AddIssue ok mas UpdateDependencies retorna false");
     {
-        FUNCTIONAL_UNITS fu({1, 1, 1, 1, 1, 1}, 0);
+        FuncionalUnits fu(FUNCTIONAL_UNIT_CAPACITIES{1, 1, 1, 1, 1});
 
         RegisterStatusTable register_status{MakeRegisterStatus()};
         RS rs0("int0"), rs1("int1");
@@ -661,7 +661,7 @@ int main() {
 
     section("7.2 Grupos de FU são independentes — EX (int_basic_alu) vs MEM (memory_access)");
     {
-        FUNCTIONAL_UNITS fu = makeFU(1); // 1 FU por grupo, mais fácil de saturar
+        FuncionalUnits fu = makeFU(1); // 1 FU por grupo, mais fácil de saturar
         RegisterStatusTable register_status{MakeRegisterStatus()};
 
         RS rsA("load2"), rsB("load3");
@@ -686,7 +686,7 @@ int main() {
 
     section("7.3 Roteamento de FU — INT_MUL/INT_DIV usam int_mult_div_alu; int_basic_alu não é afetado");
     {
-        FUNCTIONAL_UNITS fu = makeFU(1); // 1 FU por grupo, fácil de saturar
+        FuncionalUnits fu = makeFU(1); // 1 FU por grupo, fácil de saturar
         RegisterStatusTable register_status{MakeRegisterStatus()};
 
         RS rsMul("intmul0"), rsDiv("intdiv0"), rsAdd("intbasic0");
@@ -711,7 +711,7 @@ int main() {
 
     section("7.4 Roteamento de FU — FLOAT_BASIC usa float_basic_alu (independente de float_mult_div_alu)");
     {
-        FUNCTIONAL_UNITS fu = makeFU(1);
+        FuncionalUnits fu = makeFU(1);
         RegisterStatusTable register_status{MakeRegisterStatus()};
 
         RS rsFadd("fbasic0"), rsFadd2("fbasic1"), rsFmul("fmul5");
@@ -736,7 +736,7 @@ int main() {
 
     section("7.5 Roteamento de FU — FLOAT_MUL/FLOAT_DIV compartilham float_mult_div_alu");
     {
-        FUNCTIONAL_UNITS fu = makeFU(1);
+        FuncionalUnits fu = makeFU(1);
         RegisterStatusTable register_status{MakeRegisterStatus()};
 
         RS rsFmul("fmul6"), rsFdiv("fdiv0"), rsFadd("fbasic2");
@@ -940,6 +940,38 @@ int main() {
         check("ordem independe da posição física",
             candidates[0]->GetCurrentInstruction().GetPosition() == 3 &&
             candidates[1]->GetCurrentInstruction().GetPosition() == 7);
+    }
+
+    section("9.5 Helpers nomeados roteiam todos os grupos físicos");
+    {
+        check("seis grupos de RS possuem roteamento explícito",
+            GetReservationStationGroup(INSTRUCTION_TYPE::LOAD) == RESERVATION_STATION_GROUP::LOAD &&
+            GetReservationStationGroup(INSTRUCTION_TYPE::STORE) == RESERVATION_STATION_GROUP::STORE &&
+            GetReservationStationGroup(INSTRUCTION_TYPE::INT_BASIC) == RESERVATION_STATION_GROUP::INT_BASIC &&
+            GetReservationStationGroup(INSTRUCTION_TYPE::INT_MUL) == RESERVATION_STATION_GROUP::INT_MULT_DIV &&
+            GetReservationStationGroup(INSTRUCTION_TYPE::FLOAT_BASIC) == RESERVATION_STATION_GROUP::FLOAT_BASIC &&
+            GetReservationStationGroup(INSTRUCTION_TYPE::FLOAT_DIV) == RESERVATION_STATION_GROUP::FLOAT_MULT_DIV);
+        check("cinco grupos de FU possuem roteamento explícito",
+            GetFunctionalUnitGroup(
+                INSTRUCTION_TYPE::LOAD,
+                INSTRUCTION_PHASE_TOMASULO::MEM
+            ) == FUNCTIONAL_UNIT_GROUP::MEMORY_ACCESS &&
+            GetFunctionalUnitGroup(
+                INSTRUCTION_TYPE::INT_BASIC,
+                INSTRUCTION_PHASE_TOMASULO::EX
+            ) == FUNCTIONAL_UNIT_GROUP::INT_BASIC &&
+            GetFunctionalUnitGroup(
+                INSTRUCTION_TYPE::INT_DIV,
+                INSTRUCTION_PHASE_TOMASULO::EX
+            ) == FUNCTIONAL_UNIT_GROUP::INT_MULT_DIV &&
+            GetFunctionalUnitGroup(
+                INSTRUCTION_TYPE::FLOAT_BASIC,
+                INSTRUCTION_PHASE_TOMASULO::EX
+            ) == FUNCTIONAL_UNIT_GROUP::FLOAT_BASIC &&
+            GetFunctionalUnitGroup(
+                INSTRUCTION_TYPE::FLOAT_MUL,
+                INSTRUCTION_PHASE_TOMASULO::EX
+            ) == FUNCTIONAL_UNIT_GROUP::FLOAT_MULT_DIV);
     }
 
     std::cout << "\n-----------------------------\n";

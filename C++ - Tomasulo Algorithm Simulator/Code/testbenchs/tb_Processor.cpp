@@ -7,6 +7,22 @@
 
 using namespace processor;
 
+// Monta configurações específicas sem duplicar os defaults do produto.
+static PIPELINE_CONFIGURATION MakeProcessorConfiguration(
+    const int                             issue_width,
+    const RESERVATION_STATION_CAPACITIES& reservation_station_capacities = {},
+    const FUNCTIONAL_UNIT_CAPACITIES&     functional_unit_capacities = {},
+    const int                             write_result_width = 2
+) {
+    PIPELINE_CONFIGURATION configuration;
+    configuration.reservation_station_capacities = reservation_station_capacities;
+    configuration.functional_unit_capacities = functional_unit_capacities;
+    configuration.issue_width = issue_width;
+    configuration.commit_width = issue_width;
+    configuration.write_result_width = write_result_width;
+    return configuration;
+}
+
 static int runUntilEnd(Processor& p, int limit = 200) {
     int c = 0;
     while (c++ < limit)
@@ -25,10 +41,10 @@ int main() {
     section("1.1 Construtor — 1 thread, TOMASULO_CLASSIC");
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
-        Processor p(1, 1, false,
+        Processor p(1, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,
                        MULTITHREADING_MODEL::NONE,
-                       prog);
+                       prog, MakeProcessorConfiguration(1));
 
         check("GetThreadTable(0).size() == 1", p.GetThreadTable(0).size() == 1);
         check("instrução na posição 0 é add (INT_BASIC)",
@@ -38,10 +54,10 @@ int main() {
     section("1.2 Programa vazio — caso de borda trivial");
     {
         std::vector<std::string> prog = {};
-        Processor p(1, 1, false,
+        Processor p(1, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,
                        MULTITHREADING_MODEL::NONE,
-                       prog);
+                       prog, MakeProcessorConfiguration(1));
 
         int end_cycle = runUntilEnd(p);
         check("Programa vazio: encerra imediatamente no ciclo inicial", end_cycle == 1);
@@ -54,10 +70,10 @@ int main() {
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
         // model == NONE com num_threads > 1 → combinação inválida, espera abort().
-        Processor p(2, 1, false,
+        Processor p(2, false,
                     PROCESSOR_TYPE::TOMASULO_CLASSIC,
                     MULTITHREADING_MODEL::NONE,
-                    prog);
+                    prog, MakeProcessorConfiguration(1));
         std::cout << "[FALHOU] Deveria ter abortado antes de chegar aqui!\n";
     }
     */
@@ -72,10 +88,10 @@ int main() {
     section("2.1 add — issue->EX->WR em 3 ciclos (ExecuteCycle() retorna true)");
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
-        Processor p(1, 1, false,
+        Processor p(1, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,
                        MULTITHREADING_MODEL::NONE,
-                       prog);
+                       prog, MakeProcessorConfiguration(1));
 
         int end_cycle = runUntilEnd(p);
         check("add: terminou (não atingiu limite)", end_cycle != -1);
@@ -90,10 +106,10 @@ int main() {
     section("2.2 LOAD completo — issue->EX->MEM->WR");
     {
         std::vector<std::string> prog = {"l.d f2, 0(r1)"};
-        Processor p(1, 1, false,
+        Processor p(1, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,
                        MULTITHREADING_MODEL::NONE,
-                       prog);
+                       prog, MakeProcessorConfiguration(1));
 
         int end_cycle = runUntilEnd(p);
         check("LOAD: terminou", end_cycle != -1);
@@ -110,10 +126,10 @@ int main() {
     section("2.3 mul multiciclo via Processor (exLat=4)");
     {
         std::vector<std::string> prog = {"mul r3, r1, r2"};
-        Processor p(1, 1, false,
+        Processor p(1, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,
                        MULTITHREADING_MODEL::NONE,
-                       prog);
+                       prog, MakeProcessorConfiguration(1));
 
         runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
@@ -132,10 +148,10 @@ int main() {
         // Vamos forçar o add (que normalmente leva 1 ciclo) a levar 5 ciclos de EX
         std::vector<LATENCY_OVERRIDE> lat = {{0, {5}, {0}}};
 
-        Processor p(1, 1, false,
+        Processor p(1, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,
                        MULTITHREADING_MODEL::NONE,
-                       prog, {}, {}, {}, lat);
+                       prog, MakeProcessorConfiguration(1), {}, lat);
 
         runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
@@ -157,12 +173,11 @@ int main() {
     section("3.1 Superscalar (largura=2): 2 instruções independentes no ciclo 1");
     {
         std::vector<std::string> prog = {"add r1, r2, r3", "add r4, r5, r6"};
-        std::vector<int> num_rs  = {5,5,5,4,3,2};
-        std::vector<int> num_fus = {1,2,1,1,1,2};
-        Processor p(1, 2, false,
+        const FUNCTIONAL_UNIT_CAPACITIES functional_units{1, 2, 1, 1, 1};
+        Processor p(1, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,
                        MULTITHREADING_MODEL::NONE,
-                       prog, num_rs, num_fus);
+                       prog, MakeProcessorConfiguration(2, {}, functional_units));
 
         runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
@@ -176,10 +191,10 @@ int main() {
     section("3.2 2 threads, FINE_GRAINED, largura=1: thread mantém prioridade até esgotar");
     {
         std::vector<std::string> prog = {"add r1, r2, r3", "add r4, r5, r6"};
-        Processor p(2, 1, false,
+        Processor p(2, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,
                        MULTITHREADING_MODEL::FINE_GRAINED,
-                       prog);
+                       prog, MakeProcessorConfiguration(1));
 
         runUntilEnd(p);
         auto t0 = p.GetThreadTable(0);
@@ -194,10 +209,10 @@ int main() {
     section("3.3 2 threads, SMT, largura=2: 1 issue por thread por ciclo");
     {
         std::vector<std::string> prog = {"add r1, r2, r3"};
-        Processor p(2, 2, false,
+        Processor p(2, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,
                        MULTITHREADING_MODEL::SMT,
-                       prog);
+                       prog, MakeProcessorConfiguration(2));
 
         runUntilEnd(p);
         auto t0 = p.GetThreadTable(0);
@@ -213,10 +228,10 @@ int main() {
         // O vetor define após qual posição de instrução deve ocorrer a troca (ex: índice 0)
         std::vector<int> switch_instructions = {0};
 
-        Processor p(2, 1, false,
+        Processor p(2, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,
                        MULTITHREADING_MODEL::COARSE_GRAINED,
-                       prog, {}, {}, switch_instructions);
+                       prog, MakeProcessorConfiguration(1), switch_instructions);
 
         runUntilEnd(p);
         auto t0 = p.GetThreadTable(0);
@@ -236,10 +251,10 @@ int main() {
     section("4.1 RAW via Processor: add -> sub dependente");
     {
         std::vector<std::string> prog = {"add r3, r1, r2", "sub r5, r3, r4"};
-        Processor p(1, 1, false,
+        Processor p(1, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,
                        MULTITHREADING_MODEL::NONE,
-                       prog);
+                       prog, MakeProcessorConfiguration(1));
 
         int end_cycle = runUntilEnd(p);
         check("RAW: terminou", end_cycle != -1);
@@ -255,14 +270,13 @@ int main() {
 
     section("4.2 Disputa estrutural de FU: 2 instruções independentes competindo por 1 única FU");
     {
-        // Duas instruções add (int_basic_alu) com num_fus default = 1 para int_basic
+        // Duas instruções add competem pela única FU int_basic padrão.
         std::vector<std::string> prog = {"add r1, r2, r3", "add r4, r5, r6"};
-        std::vector<int> num_fus = {1, 1, 1, 1, 1, 2}; // 1 FU para int_basic (índice 2)
 
-        Processor p(1, 2, false,
+        Processor p(1, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,
                        MULTITHREADING_MODEL::NONE,
-                       prog, {}, num_fus);
+                       prog, MakeProcessorConfiguration(2));
 
         runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
@@ -271,17 +285,16 @@ int main() {
         check("Disputa FU: add[1] serializa e inicia EX após a liberação da FU", tab[1].ex_cycles[0] > tab[0].ex_cycles[0]);
     }
 
-    section("4.3 Conflito Estrutural no CDB/WR: fu.wr restringe escritas simultâneas");
+    section("4.3 Conflito Estrutural no CDB/WR: write_result_width restringe escritas simultâneas");
     {
         // 2 instruções add independentes que terminariam EX no mesmo ciclo
         std::vector<std::string> prog = {"add r1, r2, r3", "add r4, r5, r6"};
-        // num_fus: {mem=1, int_basic=2, int_mul=1, float=1, float_mul=1, wr=1}
-        std::vector<int> num_fus = {1, 2, 1, 1, 1, 1}; // Note wr = 1 (índice 5)
+        const FUNCTIONAL_UNIT_CAPACITIES functional_units{1, 2, 1, 1, 1};
 
-        Processor p(1, 2, false,
+        Processor p(1, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,
                        MULTITHREADING_MODEL::NONE,
-                       prog, {}, num_fus);
+                       prog, MakeProcessorConfiguration(2, {}, functional_units, 1));
 
         runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
@@ -296,13 +309,12 @@ int main() {
     {
         // Dispatch=2, mas vamos estrangular as RS de int_basic para apenas 1 slot.
         std::vector<std::string> prog = {"add r1, r2, r3", "add r4, r5, r6"};
-        // num_rs: {load=5, store=5, int_basic=1, int_mul=5, float=5, float_mul=5}
-        std::vector<int> num_rs = {5, 5, 1, 5, 5, 5};
+        const RESERVATION_STATION_CAPACITIES reservation_stations{5, 5, 1, 5, 5, 5};
 
-        Processor p(1, 2, false,
+        Processor p(1, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,
                        MULTITHREADING_MODEL::NONE,
-                       prog, num_rs);
+                       prog, MakeProcessorConfiguration(2, reservation_stations));
 
         runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
@@ -321,10 +333,10 @@ int main() {
     section("5.1 BRANCH sem ROB e sem previsor: largura 2 para após o bnez");
     {
         std::vector<std::string> prog = {"bnez r1, fim", "add r2, r3, r4"};
-        Processor p(1, 2, false,
+        Processor p(1, false,
                        PROCESSOR_TYPE::TOMASULO_CLASSIC,
                        MULTITHREADING_MODEL::NONE,
-                       prog);
+                       prog, MakeProcessorConfiguration(2));
 
         runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
@@ -346,10 +358,10 @@ int main() {
     section("6.1 Tomasulo Especulativo (com ROB): Thread::Commit() e Branches/Stores ordenados");
     {
         std::vector<std::string> prog = {"add r1, r2, r3", "s.d f2, 0(r1)"};
-        Processor p(1, 1, false,
+        Processor p(1, false,
                        PROCESSOR_TYPE::TOMASULO_ESPECULATIVE,
                        MULTITHREADING_MODEL::NONE,
-                       prog);
+                       prog, MakeProcessorConfiguration(1));
 
         int end_cycle = runUntilEnd(p);
         check("Tomasulo Especulativo com Store: terminou", end_cycle != -1);
@@ -363,10 +375,10 @@ int main() {
     section("6.2 Instrução do tipo STORE (store_with_rob): caminho sem WR normal");
     {
         std::vector<std::string> prog = {"add r1, r2, r3", "s.d f2, 0(r1)"};
-        Processor p(1, 1, false,
+        Processor p(1, false,
                        PROCESSOR_TYPE::TOMASULO_ESPECULATIVE,
                        MULTITHREADING_MODEL::NONE,
-                       prog);
+                       prog, MakeProcessorConfiguration(1));
 
         runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
@@ -378,10 +390,10 @@ int main() {
     section("6.3 Branch com ROB sem previsor: largura 2 para após o bnez");
     {
         std::vector<std::string> prog = {"bnez r1, fim", "add r2, r3, r4"};
-        Processor p(1, 2, false,
+        Processor p(1, false,
                        PROCESSOR_TYPE::TOMASULO_ESPECULATIVE,
                        MULTITHREADING_MODEL::NONE,
-                       prog);
+                       prog, MakeProcessorConfiguration(2));
 
         runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
@@ -395,16 +407,56 @@ int main() {
     {
         // bnez e add podem entrar no ciclo 1 porque dispatch=2 e tem previsor+ROB
         std::vector<std::string> prog = {"bnez r1, fim", "add r2, r3, r4"};
-        Processor p(1, 2, true, // has_predictor = true
+        Processor p(1, true, // has_predictor = true
                        PROCESSOR_TYPE::TOMASULO_ESPECULATIVE,
                        MULTITHREADING_MODEL::NONE,
-                       prog);
+                       prog, MakeProcessorConfiguration(2));
 
         runUntilEnd(p);
         auto tab = p.GetThreadTable(0);
 
         check("Predictor: bnez issue == 1", tab[0].issue_cycles.front() == 1);
         check("Predictor: add issue não foi estolado (emitido ciclo 1)", tab[1].issue_cycles.front() == 1);
+    }
+
+    section("6.5 Processadores intercalados preservam configurações independentes");
+    {
+        const std::vector<std::string> prog{"add r1, r2, r3"};
+        PIPELINE_CONFIGURATION fast{MakeProcessorConfiguration(1)};
+        PIPELINE_CONFIGURATION slow{MakeProcessorConfiguration(1)};
+        fast.execution_latencies.int_basic = 1;
+        slow.execution_latencies.int_basic = 4;
+
+        Processor fast_processor(
+            1,
+            false,
+            PROCESSOR_TYPE::TOMASULO_CLASSIC,
+            MULTITHREADING_MODEL::NONE,
+            prog,
+            fast
+        );
+        Processor slow_processor(
+            1,
+            false,
+            PROCESSOR_TYPE::TOMASULO_CLASSIC,
+            MULTITHREADING_MODEL::NONE,
+            prog,
+            slow
+        );
+
+        bool fast_done{false};
+        bool slow_done{false};
+        for (int cycle{}; cycle < 20 && (!fast_done || !slow_done); cycle++) {
+            if (!fast_done) fast_done = fast_processor.ExecuteCycle();
+            if (!slow_done) slow_done = slow_processor.ExecuteCycle();
+        }
+
+        const TABLE_ROW& fast_row{fast_processor.GetThreadTable(0)[0]};
+        const TABLE_ROW& slow_row{slow_processor.GetThreadTable(0)[0]};
+        check("latências permanecem isoladas durante execução intercalada",
+            fast_done && slow_done &&
+            fast_row.ex_cycles == std::vector<int>({2, 2}) &&
+            slow_row.ex_cycles == std::vector<int>({2, 5}));
     }
 
     std::cout << "\n-----------------------------\n";

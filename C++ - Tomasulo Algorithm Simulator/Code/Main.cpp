@@ -19,7 +19,7 @@ static const int W_MEM      = 16;
 static const int W_WR       = 12;
 static const int W_COMMIT   = 12;
 
-// Ordem dos componentes usada tanto nos vetores de config (num_rs/num_fus) quanto nos grupos de RS/FU impressos no final.
+// Ordem histórica usada somente na adaptação e impressão do formato textual.
 static const std::vector<std::string> COMPONENT_LABELS
 {
     "load",
@@ -51,17 +51,20 @@ static const std::vector<std::string> EX_LABELS
 };
 
 // ─── STRUCT ───────────────────────────────────────────────────────
+static PIPELINE_CONFIGURATION MakeDefaultPipelineConfiguration() {
+    PIPELINE_CONFIGURATION configuration;
+    configuration.issue_width = 2;
+    configuration.commit_width = 2;
+    return configuration;
+}
+
 struct CONFIG {
     ARCHITECTURE         arch          = ARCHITECTURE::SIMPLIFIED;
     PROCESSOR_TYPE       type          = PROCESSOR_TYPE::TOMASULO_CLASSIC;
     int                  num_threads   = 1;
     MULTITHREADING_MODEL model         = MULTITHREADING_MODEL::NONE;
     bool                 predictor     = false;
-    int                  dispatch      = 2;
-    std::vector<int>     num_rs        = {5, 5, 5, 4, 3, 2};
-    std::vector<int>     num_fus       = {1, 1, 1, 1, 1, 2};
-    std::vector<int>     ex_latencies  = Instruction::base_ex_latencies;
-    std::vector<int>     mem_latencies = Instruction::base_mem_latencies;
+    PIPELINE_CONFIGURATION pipeline    = MakeDefaultPipelineConfiguration();
     int                  cycle_limit   = 10000;
     std::vector<std::string> prog;
 };
@@ -173,7 +176,10 @@ CONFIG ReadConfig() {
                 (aux == 2 ? MULTITHREADING_MODEL::COARSE_GRAINED :
                 (aux == 1 ? MULTITHREADING_MODEL::FINE_GRAINED   : MULTITHREADING_MODEL::NONE)));
         }
-        else if (key == "despacho")     { iss >> cfg.dispatch;       }
+        else if (key == "despacho") {
+            iss >> cfg.pipeline.issue_width;
+            cfg.pipeline.commit_width = cfg.pipeline.issue_width;
+        }
         else if (key == "ciclo_limite") { iss >> cfg.cycle_limit;    }
         else if (key == "arquitetura")  {
             int aux;
@@ -183,10 +189,26 @@ CONFIG ReadConfig() {
                 (aux == 2 ? ARCHITECTURE::ARM_64   :
                 (aux == 3 ? ARCHITECTURE::RISC_V   : ARCHITECTURE::MIPS_32))));
         }
-        else if (key == "num_rs")       { cfg.num_rs       = ReadIntVector(iss, 6, 1); }
-        else if (key == "num_ufs")      { cfg.num_fus      = ReadIntVector(iss, 6, 1); }
-        else if (key == "latencias_ex") { cfg.ex_latencies = ReadIntVector(iss, 10, 1); }
-        else if (key == "latencias_mem"){ cfg.mem_latencies = ReadIntVector(iss, 2, 1); }
+        else if (key == "num_rs") {
+            cfg.pipeline.reservation_station_capacities =
+                MakeReservationStationCapacities(ReadIntVector(iss, 6, 1));
+        }
+        else if (key == "num_ufs") {
+            const std::vector<int> values{ReadIntVector(iss, 6, 1)};
+            cfg.pipeline.functional_unit_capacities = MakeFunctionalUnitCapacities(values);
+            cfg.pipeline.write_result_width = GetExternalWriteResultWidth(values);
+        }
+        else if (key == "latencias_ex") {
+            const std::vector<int> values{ReadIntVector(iss, 10, 1)};
+            cfg.pipeline.execution_latencies = {
+                values[0], values[1], values[2], values[3], values[4],
+                values[5], values[6], values[7], values[8], values[9]
+            };
+        }
+        else if (key == "latencias_mem") {
+            const std::vector<int> values{ReadIntVector(iss, 2, 1)};
+            cfg.pipeline.memory_latencies = {values[0], values[1]};
+        }
         else if (key == "programa")     {
             while (std::getline(std::cin, line)) {
                 if (line == "END_PROG") break;
@@ -197,6 +219,7 @@ CONFIG ReadConfig() {
         else if (key == "CODIGO_FONTE") { break; }
     }
 
+    ValidatePipelineConfiguration(cfg.pipeline);
     return cfg;
 }
 
@@ -217,6 +240,28 @@ void PrintLabeledVector(
 void PrintConfig(
     CONFIG cfg
 ){
+    const RESERVATION_STATION_CAPACITIES& rs{
+        cfg.pipeline.reservation_station_capacities
+    };
+    const FUNCTIONAL_UNIT_CAPACITIES& fu{
+        cfg.pipeline.functional_unit_capacities
+    };
+    const EXECUTION_LATENCIES& ex{cfg.pipeline.execution_latencies};
+    const MEMORY_LATENCIES& mem{cfg.pipeline.memory_latencies};
+    const std::vector<int> num_rs{
+        rs.load, rs.store, rs.int_basic, rs.int_mult_div,
+        rs.float_basic, rs.float_mult_div
+    };
+    const std::vector<int> num_fus{
+        fu.memory_access, fu.int_basic, fu.int_mult_div,
+        fu.float_basic, fu.float_mult_div, cfg.pipeline.write_result_width
+    };
+    const std::vector<int> ex_latencies{
+        ex.invalid, ex.load, ex.store, ex.branch, ex.int_basic,
+        ex.int_mult, ex.int_div, ex.float_basic, ex.float_mult, ex.float_div
+    };
+    const std::vector<int> mem_latencies{mem.load, mem.store};
+
     std::cout << "══════════════════════════════════════════════════════════\n" <<
                  "═══ CONFIGURAÇÕES ════════════════════════════════════════\n" <<
                  "══════════════════════════════════════════════════════════\n\n" <<
@@ -232,21 +277,21 @@ void PrintConfig(
             (cfg.model == MULTITHREADING_MODEL::COARSE_GRAINED ? "COARSE_GRAINED" :
             (cfg.model == MULTITHREADING_MODEL::SMT ? "SMT" : "NONE"))) << '\n' <<
         "- Previsor: " << (cfg.predictor == 0 ? "false" : "true") << '\n' <<
-        "- Despacho: " << cfg.dispatch << '\n';
+        "- Despacho: " << cfg.pipeline.issue_width << '\n';
 
     std::cout << "- Número de RSs: ";
-    PrintLabeledVector(cfg.num_rs, COMPONENT_LABELS);
+    PrintLabeledVector(num_rs, COMPONENT_LABELS);
 
     std::cout << "\n- Número de UFs: ";
-    PrintLabeledVector(cfg.num_fus, COMPONENT_LABELS);
+    PrintLabeledVector(num_fus, COMPONENT_LABELS);
 
     std::cout << "\n- Ciclo limite: " << cfg.cycle_limit;
 
     std::cout << "\n- Latências de EX: ";
-    PrintLabeledVector(cfg.ex_latencies, EX_LABELS);
+    PrintLabeledVector(ex_latencies, EX_LABELS);
 
     std::cout << "\n- Latências de MEM: ";
-    PrintLabeledVector(cfg.mem_latencies, MEM_LABELS);
+    PrintLabeledVector(mem_latencies, MEM_LABELS);
 
     std::cout << '\n';
 }
@@ -391,18 +436,13 @@ int main() {
 
     processor::PrintConfig(cfg);
 
-    processor::Instruction::base_ex_latencies  = cfg.ex_latencies;
-    processor::Instruction::base_mem_latencies = cfg.mem_latencies;
-
     processor::Processor p(
         cfg.num_threads,
-        cfg.dispatch,
         cfg.predictor,
         cfg.type,
         cfg.model,
         cfg.prog,
-        cfg.num_rs,
-        cfg.num_fus,
+        cfg.pipeline,
         {},
         {},
         cfg.arch

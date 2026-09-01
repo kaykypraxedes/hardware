@@ -36,8 +36,9 @@ int main() {
     print_title("1. LATÊNCIAS VETORIAIS");
 
     section("1.1 Derivação das latências-base por etapa");
+    const PIPELINE_CONFIGURATION default_configuration;
     SyntheticInstruction instruction(30);
-    instruction.Parse("multi");
+    instruction.Parse("multi", default_configuration);
 
     const std::vector<INSTRUCTION_TYPE> expected_types{
         INSTRUCTION_TYPE::LOAD,
@@ -45,14 +46,14 @@ int main() {
         INSTRUCTION_TYPE::STORE
     };
     const std::vector<int> expected_ex{
-        Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::LOAD)],
-        Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::INT_MUL)],
-        Instruction::base_ex_latencies[static_cast<int>(INSTRUCTION_TYPE::STORE)]
+        default_configuration.execution_latencies.load,
+        default_configuration.execution_latencies.int_mult,
+        default_configuration.execution_latencies.store
     };
     const std::vector<int> expected_mem{
-        Instruction::base_mem_latencies[0],
+        default_configuration.memory_latencies.load,
         0,
-        Instruction::base_mem_latencies[1]
+        default_configuration.memory_latencies.store
     };
 
     check("tipos preservam a ordem LOAD -> INT_MUL -> STORE",
@@ -72,6 +73,7 @@ int main() {
         instruction.GetExLatency() == 3 && instruction.GetMemLatency() == 2);
 
     section("1.3 Zero em MEM restaura os valores-base");
+    instruction.Parse("multi", default_configuration);
     instruction.SetLatencies({6, 8, 9}, {0, 0, 0});
     check("zeros de MEM restauram LOAD/STORE e preservam zero intermediário",
         instruction.GetMemLatencies() == expected_mem);
@@ -107,7 +109,7 @@ int main() {
         instruction.GetInstructionType(3);
     }));
 
-    instruction.Parse("multi");
+    instruction.Parse("multi", default_configuration);
     check("Parse repetido restaura a mesma descrição completa",
         instruction.GetInstructionTypes() == expected_types &&
         instruction.GetAllExSourceRegisters().size() == 3);
@@ -133,10 +135,31 @@ int main() {
         instruction.SetLatencies({1, 2, 3}, {1, 1, 1});
     }));
     check("MEM-base inválida em LOAD aborta durante Parse", Aborts([]() {
-        Instruction::base_mem_latencies[0] = 0;
+        PIPELINE_CONFIGURATION invalid_configuration;
+        invalid_configuration.memory_latencies.load = 0;
         SyntheticInstruction invalid;
-        invalid.Parse("multi");
+        invalid.Parse("multi", invalid_configuration);
     }));
+
+    section("3.1 Configurações intercaladas não interferem");
+    {
+        PIPELINE_CONFIGURATION fast;
+        PIPELINE_CONFIGURATION slow;
+        fast.execution_latencies.int_mult = 2;
+        slow.execution_latencies.int_mult = 17;
+
+        SyntheticInstruction first(0);
+        SyntheticInstruction second(1);
+        SyntheticInstruction third(2);
+        first.Parse("multi", fast);
+        second.Parse("multi", slow);
+        third.Parse("multi", fast);
+
+        check("cada plano preserva sua configuração de instância",
+            first.GetExLatency(1) == 2 &&
+            second.GetExLatency(1) == 17 &&
+            third.GetExLatency(1) == 2);
+    }
 
     print_title("4. COMPATIBILIDADE DAS ARQUITETURAS");
 

@@ -14,26 +14,24 @@ static void InitializeThreads(
     const std::vector<std::string>&      assembly,
     std::vector<Thread>&                 threads,
     const int                            num_threads,
-    const int                            dispatch_width,
     const bool                           has_predictor,
-    const std::vector<int>&              num_rs,
-    const std::vector<int>&              num_fus,
+    const PIPELINE_CONFIGURATION&        configuration,
     const std::vector<int>&              switch_cycles,
     const std::vector<LATENCY_OVERRIDE>& latency_overrides,
     const ARCHITECTURE                   arch,
     const PROCESSOR_TYPE                 type
 ){
-    int rob_capacity{(type == PROCESSOR_TYPE::TOMASULO_ESPECULATIVE) ? Processor::base_rob_capacity : 0};
+    PIPELINE_CONFIGURATION thread_configuration{configuration};
+    if (type != PROCESSOR_TYPE::TOMASULO_ESPECULATIVE)
+        thread_configuration.rob_capacity = 0;
+
     for (int i{}; i < num_threads; i++){
         threads.push_back(
             Thread(
                 assembly,
+                thread_configuration,
                 latency_overrides,
-                num_rs,
-                num_fus,
                 switch_cycles,
-                dispatch_width,
-                rob_capacity,
                 has_predictor,
                 arch
             )
@@ -51,9 +49,6 @@ static void AdvanceRoundRobinPointer(
 // ==================================================================
 // === CLASSE =======================================================
 // ==================================================================
-
-// ─── ELEMENTO STATIC ──────────────────────────────────────────────
-int Processor::base_rob_capacity{32};
 
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:
@@ -73,22 +68,22 @@ const std::vector<TABLE_ROW>& Processor::GetThreadTable(
 // Público:
 Processor::Processor(
     const int                            num_threads,
-    const int                            dispatch_width,
     const bool                           has_predictor,
     const PROCESSOR_TYPE                 type,
     const MULTITHREADING_MODEL           mt_model,
     const std::vector<std::string>&      Assembly,
-    const std::vector<int>&              num_rs,
-    const std::vector<int>&              num_fus,
+    const PIPELINE_CONFIGURATION&        configuration,
     const std::vector<int>&              switch_instructions,
     const std::vector<LATENCY_OVERRIDE>& latency_overrides,
     const ARCHITECTURE                   arch
 ) :
-    dispatch_width(dispatch_width),
+    configuration (configuration),
     has_predictor (has_predictor),
     type          (type),
     mt_model      (mt_model)
 {
+    ValidatePipelineConfiguration(this->configuration);
+
     // Verifica inconsistência de parâmetros.
     if (mt_model == MULTITHREADING_MODEL::NONE && num_threads > 1) {
         std::cerr << "[ERRO] Para mais de uma thread é obrigatório um modelo de multithreading!\n" <<
@@ -107,10 +102,8 @@ Processor::Processor(
         Assembly,
         threads,
         num_threads,
-        dispatch_width,
         has_predictor,
-        num_rs,
-        num_fus,
+        this->configuration,
         switch_instructions,
         latency_overrides,
         arch,
@@ -162,7 +155,7 @@ void Processor::AddInstructions() {
     // O loop ocorre até faz até:
     // 1. Achar uma thread disponível para o Issue (de acordo com as regras do modelo).
     // 2. Completar o ciclo de threads (nenhuma disponível).
-    while (dispatched < dispatch_width) {
+    while (dispatched < configuration.issue_width) {
 
         // Verificou em todas as threads e nenhuma estava disponível.
         if (thread_turns >= total_threads) break;

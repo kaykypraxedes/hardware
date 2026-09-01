@@ -162,6 +162,71 @@ enum class INSTRUCTION_PHASE_TOMASULO {
     COMMIT
 };
 
+// ─── STRUCTS ──────────────────────────────────────────────────────
+
+/**
+ * @brief Latências nomeadas da etapa EX para cada tipo de instrução.
+ */
+struct EXECUTION_LATENCIES {
+    int invalid{0};
+    int load{1};
+    int store{1};
+    int branch{1};
+    int int_basic{1};
+    int int_mult{4};
+    int int_div{10};
+    int float_basic{9};
+    int float_mult{14};
+    int float_div{40};
+};
+
+/**
+ * @brief Latências nomeadas dos acessos de LOAD e STORE.
+ */
+struct MEMORY_LATENCIES {
+    int load{1};
+    int store{1};
+};
+
+/**
+ * @brief Configuração completa e independente de uma instância do pipeline.
+ */
+struct PIPELINE_CONFIGURATION {
+    RESERVATION_STATION_CAPACITIES reservation_station_capacities;
+    FUNCTIONAL_UNIT_CAPACITIES     functional_unit_capacities;
+    EXECUTION_LATENCIES            execution_latencies;
+    MEMORY_LATENCIES               memory_latencies;
+    int                            issue_width{1};
+    int                            write_result_width{2};
+    int                            commit_width{1};
+    int                            rob_capacity{32};
+};
+
+// ─── HELPERS ──────────────────────────────────────────────────────
+
+int GetExecutionLatency(
+    const EXECUTION_LATENCIES& latencies,
+    const INSTRUCTION_TYPE     type
+);
+
+int GetMemoryLatency(
+    const MEMORY_LATENCIES& latencies,
+    const INSTRUCTION_TYPE  type
+);
+
+RESERVATION_STATION_GROUP GetReservationStationGroup(
+    const INSTRUCTION_TYPE type
+);
+
+FUNCTIONAL_UNIT_GROUP GetFunctionalUnitGroup(
+    const INSTRUCTION_TYPE           type,
+    const INSTRUCTION_PHASE_TOMASULO phase
+);
+
+void ValidatePipelineConfiguration(
+    const PIPELINE_CONFIGURATION& configuration
+);
+
 /**
  * @brief Override de latências associado à posição de uma instrução.
  *
@@ -187,28 +252,6 @@ using LATENCY_OVERRIDE =
  */
 class Instruction {
     public:
-        // Elementos static:
-
-        /**
-         * @brief As latências da etapa EX são armazenadas em vetores
-         * cuja ordenação corresponde à do "enum" "INSTRUCTION_TYPE".
-         *
-         * @details É "static" para ser compartilhada entre todos os
-         * objetos instanciados da classe, mas não são "const" para
-         * serem configuráveis (definir um novo valor padrão).
-         *
-         * Casos únicos de latência ainda podem ser adicionados em
-         * objetos individuais.
-         */
-        static std::vector<int> base_ex_latencies;
-
-        /**
-         * @brief Latências da etapa MEM ([0] = load; [1] = store).
-         *
-         * @details Mesmas características de "base_ex_latencies".
-         */
-        static std::vector<int> base_mem_latencies;
-
         // Construtor:
         Instruction(
             const int position = -1
@@ -370,7 +413,8 @@ class Instruction {
          * @param const std::string& str - Instrução.
          */
         void Parse(
-            const std::string& str
+            const std::string&            str,
+            const PIPELINE_CONFIGURATION& configuration = PIPELINE_CONFIGURATION{}
         );
 
         /**
@@ -441,12 +485,10 @@ class Instruction {
         std::vector<std::vector<Register>>   ex_source_registers;
         std::vector<std::vector<Register>>   mem_source_registers;
         /**
-         * @brief Retorna a latência-base de MEM correspondente ao tipo.
-         *
-         * @return Latência de LOAD/STORE ou zero para os demais tipos.
+         * @brief Materializa no plano as latências da configuração recebida.
          */
-        static int GetBaseMemLatency(
-            const INSTRUCTION_TYPE instruction_type
+        void MaterializeLatencies(
+            const PIPELINE_CONFIGURATION& configuration
         );
 
         /**

@@ -39,30 +39,121 @@ bool ContainsOpcode(
     return std::find(vec.begin(), vec.end(), op) != vec.end();
 }
 
+int GetExecutionLatency(
+    const EXECUTION_LATENCIES& latencies,
+    const INSTRUCTION_TYPE     type
+) {
+    switch (type) {
+        case INSTRUCTION_TYPE::INVALID: return latencies.invalid;
+        case INSTRUCTION_TYPE::LOAD: return latencies.load;
+        case INSTRUCTION_TYPE::STORE: return latencies.store;
+        case INSTRUCTION_TYPE::BRANCH: return latencies.branch;
+        case INSTRUCTION_TYPE::INT_BASIC: return latencies.int_basic;
+        case INSTRUCTION_TYPE::INT_MUL: return latencies.int_mult;
+        case INSTRUCTION_TYPE::INT_DIV: return latencies.int_div;
+        case INSTRUCTION_TYPE::FLOAT_BASIC: return latencies.float_basic;
+        case INSTRUCTION_TYPE::FLOAT_MUL: return latencies.float_mult;
+        case INSTRUCTION_TYPE::FLOAT_DIV: return latencies.float_div;
+    }
+    std::cerr << "[ERRO] Tipo de instrução inválido para latência EX.\n";
+    std::abort();
+}
+
+int GetMemoryLatency(
+    const MEMORY_LATENCIES& latencies,
+    const INSTRUCTION_TYPE  type
+) {
+    switch (type) {
+        case INSTRUCTION_TYPE::LOAD: return latencies.load;
+        case INSTRUCTION_TYPE::STORE: return latencies.store;
+        default: return 0;
+    }
+}
+
+RESERVATION_STATION_GROUP GetReservationStationGroup(
+    const INSTRUCTION_TYPE type
+) {
+    switch (type) {
+        case INSTRUCTION_TYPE::LOAD: return RESERVATION_STATION_GROUP::LOAD;
+        case INSTRUCTION_TYPE::STORE: return RESERVATION_STATION_GROUP::STORE;
+        case INSTRUCTION_TYPE::INT_MUL:
+        case INSTRUCTION_TYPE::INT_DIV:
+            return RESERVATION_STATION_GROUP::INT_MULT_DIV;
+        case INSTRUCTION_TYPE::FLOAT_BASIC:
+            return RESERVATION_STATION_GROUP::FLOAT_BASIC;
+        case INSTRUCTION_TYPE::FLOAT_MUL:
+        case INSTRUCTION_TYPE::FLOAT_DIV:
+            return RESERVATION_STATION_GROUP::FLOAT_MULT_DIV;
+        case INSTRUCTION_TYPE::BRANCH:
+        case INSTRUCTION_TYPE::INT_BASIC:
+            return RESERVATION_STATION_GROUP::INT_BASIC;
+        case INSTRUCTION_TYPE::INVALID:
+            break;
+    }
+    std::cerr << "[ERRO] Tipo de instrução inválido para grupo de RS.\n";
+    std::abort();
+}
+
+FUNCTIONAL_UNIT_GROUP GetFunctionalUnitGroup(
+    const INSTRUCTION_TYPE           type,
+    const INSTRUCTION_PHASE_TOMASULO phase
+) {
+    if (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE)
+        return phase == INSTRUCTION_PHASE_TOMASULO::EX
+            ? FUNCTIONAL_UNIT_GROUP::INT_BASIC
+            : FUNCTIONAL_UNIT_GROUP::MEMORY_ACCESS;
+
+    switch (type) {
+        case INSTRUCTION_TYPE::INT_MUL:
+        case INSTRUCTION_TYPE::INT_DIV:
+            return FUNCTIONAL_UNIT_GROUP::INT_MULT_DIV;
+        case INSTRUCTION_TYPE::FLOAT_BASIC:
+            return FUNCTIONAL_UNIT_GROUP::FLOAT_BASIC;
+        case INSTRUCTION_TYPE::FLOAT_MUL:
+        case INSTRUCTION_TYPE::FLOAT_DIV:
+            return FUNCTIONAL_UNIT_GROUP::FLOAT_MULT_DIV;
+        case INSTRUCTION_TYPE::BRANCH:
+        case INSTRUCTION_TYPE::INT_BASIC:
+            return FUNCTIONAL_UNIT_GROUP::INT_BASIC;
+        default:
+            break;
+    }
+    std::cerr << "[ERRO] Tipo de instrução inválido para grupo de FU.\n";
+    std::abort();
+}
+
+void ValidatePipelineConfiguration(
+    const PIPELINE_CONFIGURATION& configuration
+) {
+    const RESERVATION_STATION_CAPACITIES& rs{configuration.reservation_station_capacities};
+    const FUNCTIONAL_UNIT_CAPACITIES& fu{configuration.functional_unit_capacities};
+    const EXECUTION_LATENCIES& ex{configuration.execution_latencies};
+    const MEMORY_LATENCIES& mem{configuration.memory_latencies};
+
+    if (rs.load < 0 || rs.store < 0 || rs.int_basic < 0 ||
+        rs.int_mult_div < 0 || rs.float_basic < 0 || rs.float_mult_div < 0 ||
+        fu.memory_access < 0 || fu.int_basic < 0 || fu.int_mult_div < 0 ||
+        fu.float_basic < 0 || fu.float_mult_div < 0) {
+        std::cerr << "[ERRO] Capacidades de RS e FU não podem ser negativas.\n";
+        std::abort();
+    }
+    if (ex.invalid != 0 || ex.load <= 0 || ex.store <= 0 || ex.branch <= 0 ||
+        ex.int_basic <= 0 || ex.int_mult <= 0 || ex.int_div <= 0 ||
+        ex.float_basic <= 0 || ex.float_mult <= 0 || ex.float_div <= 0 ||
+        mem.load <= 0 || mem.store <= 0) {
+        std::cerr << "[ERRO] Latências da configuração são inválidas.\n";
+        std::abort();
+    }
+    if (configuration.issue_width <= 0 || configuration.write_result_width <= 0 ||
+        configuration.commit_width <= 0 || configuration.rob_capacity < 0) {
+        std::cerr << "[ERRO] Larguras e capacidade do ROB são inválidas.\n";
+        std::abort();
+    }
+}
+
 // ==================================================================
 // === CLASSE =======================================================
 // ==================================================================
-
-// ─── ELEMENTOS STATIC ─────────────────────────────────────────────
-std::vector<int> Instruction::base_ex_latencies
-{
-    0,  // INVALID
-    1,  // LOAD
-    1,  // STORE
-    1,  // BRANCH
-    1,  // INT_BASIC
-    4,  // INT_MUL
-    10, // INT_DIV
-    9,  // FLOAT_BASIC
-    14, // FLOAT_MUL
-    40  // FLOAT_DIV
-};
-
-std::vector<int> Instruction::base_mem_latencies
-{
-    1,  // LOAD
-    1   // STORE
-};
 
 // ─── GETTERS ──────────────────────────────────────────────────────
 // Público:
@@ -191,7 +282,8 @@ Instruction::Instruction(
 // ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
 // Público:
 void Instruction::Parse(
-    const std::string& str
+    const std::string&            str,
+    const PIPELINE_CONFIGURATION& configuration
 ){
     // Limpa qualquer dado de instrução que poderia existir.
     // - Reutilização de instruções em contextos como reescrita de registradores.
@@ -224,6 +316,7 @@ void Instruction::Parse(
         std::cerr << "[ERRO] Instrução não suportada por essa arquitetura: " << tokens[0] << '\n';
         std::abort();
     }
+    MaterializeLatencies(configuration);
     ValidateStageVectors();
     ValidateLatencies(ex_latencies, mem_latencies);
     NormalizeInstruction(tokens);
@@ -243,15 +336,13 @@ void Instruction::SetLatencies(
         std::abort();
     }
 
-    // Zero em MEM restaura o valor-base correspondente à etapa.
+    // Zero em MEM preserva a latência já materializada pela configuração.
     std::vector<int> effective_mem_latencies;
     effective_mem_latencies.reserve(instruction_types.size());
     for (std::size_t i{}; i < instruction_types.size(); i++) {
         const int override_latency{new_mem_latencies[i]};
         effective_mem_latencies.push_back(
-            override_latency == 0 ?
-                GetBaseMemLatency(instruction_types[i]) :
-                override_latency
+            override_latency == 0 ? mem_latencies[i] : override_latency
         );
     }
 
@@ -273,23 +364,27 @@ void Instruction::AddStage(
     }
 
     instruction_types.push_back(instruction_type);
-    ex_latencies.push_back(base_ex_latencies[static_cast<int>(instruction_type)]);
-    mem_latencies.push_back(GetBaseMemLatency(instruction_type));
+    ex_latencies.push_back(0);
+    mem_latencies.push_back(0);
     ex_source_registers.push_back(ex_sources);
     mem_source_registers.push_back(mem_sources);
 }
 
 // Privado:
-int Instruction::GetBaseMemLatency(
-    const INSTRUCTION_TYPE instruction_type
+void Instruction::MaterializeLatencies(
+    const PIPELINE_CONFIGURATION& configuration
 ) {
-    if (instruction_type == INSTRUCTION_TYPE::LOAD) {
-        return base_mem_latencies[0];
+    ValidatePipelineConfiguration(configuration);
+    for (std::size_t stage{}; stage < instruction_types.size(); stage++) {
+        ex_latencies[stage] = GetExecutionLatency(
+            configuration.execution_latencies,
+            instruction_types[stage]
+        );
+        mem_latencies[stage] = GetMemoryLatency(
+            configuration.memory_latencies,
+            instruction_types[stage]
+        );
     }
-    if (instruction_type == INSTRUCTION_TYPE::STORE) {
-        return base_mem_latencies[1];
-    }
-    return 0;
 }
 
 // Privado:

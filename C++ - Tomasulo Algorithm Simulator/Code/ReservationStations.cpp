@@ -9,31 +9,6 @@
 
 namespace processor {
 
-// ─── HELPERS ──────────────────────────────────────────────────────
-static FUNCTIONAL_UNIT_GROUP GetFunctionalUnitGroup(
-    const INSTRUCTION_TYPE           type,
-    const INSTRUCTION_PHASE_TOMASULO phase
-) {
-    // Traduz a necessidade da RS para a identidade física aceita pelo banco.
-    if (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE)
-        return (phase == INSTRUCTION_PHASE_TOMASULO::EX)
-            ? FUNCTIONAL_UNIT_GROUP::INT_BASIC
-            : FUNCTIONAL_UNIT_GROUP::MEMORY_ACCESS;
-
-    switch (type) {
-        case INSTRUCTION_TYPE::INT_MUL:
-        case INSTRUCTION_TYPE::INT_DIV:
-            return FUNCTIONAL_UNIT_GROUP::INT_MULT_DIV;
-        case INSTRUCTION_TYPE::FLOAT_BASIC:
-            return FUNCTIONAL_UNIT_GROUP::FLOAT_BASIC;
-        case INSTRUCTION_TYPE::FLOAT_MUL:
-        case INSTRUCTION_TYPE::FLOAT_DIV:
-            return FUNCTIONAL_UNIT_GROUP::FLOAT_MULT_DIV;
-        default:
-            return FUNCTIONAL_UNIT_GROUP::INT_BASIC;
-    }
-}
-
 // Entrega um broadcast somente às células ocupadas de um grupo.
 static void ResolveBroadcastInGroup(
     std::vector<RS>&     group,
@@ -224,7 +199,7 @@ void RS::RefreshDependencyGroup(
 // Público:
 bool RS::UpdateDependencies(
     const RegisterStatusTable& register_status,
-    FUNCTIONAL_UNITS&          fu,
+    FuncionalUnits&            fu,
     const int                  cycle
 ){
     // Se o RS estiver vazio ou com sua execução travada por dependencias.
@@ -253,8 +228,8 @@ bool RS::UpdateDependencies(
 
 // Privado:
 bool RS::AdvancePhaseAllocation(
-    FUNCTIONAL_UNITS& fu,
-    const int         cycle
+    FuncionalUnits& fu,
+    const int       cycle
 ){
     INSTRUCTION_TYPE type{current_instruction->GetInstructionType(current_stage)};
     bool is_load_store{(type == INSTRUCTION_TYPE::LOAD) || (type == INSTRUCTION_TYPE::STORE)};
@@ -293,7 +268,7 @@ bool RS::AdvancePhaseAllocation(
 
 // Privado:
 bool RS::TryAllocateFU(
-    FUNCTIONAL_UNITS&                fu,
+    FuncionalUnits&                  fu,
     const INSTRUCTION_PHASE_TOMASULO target_phase,
     const int                        cycle,
     const int                        latency
@@ -327,8 +302,8 @@ bool RS::TryAllocateFU(
 
 // Público:
 bool RS::UpdateCountdown(
-    FUNCTIONAL_UNITS& fu,
-    const int         cycle
+    FuncionalUnits& fu,
+    const int       cycle
 ){
     // RS vazio ou dependências impedindo a execução.
     if (!busy || allocation_countdown == -1) return false;
@@ -360,7 +335,7 @@ bool RS::UpdateCountdown(
 
 // Privado:
 void RS::ReleaseFU(
-    FUNCTIONAL_UNITS&                fu,
+    FuncionalUnits&                  fu,
     const INSTRUCTION_PHASE_TOMASULO finished_phase,
     const int                        cycle
 ){
@@ -452,26 +427,20 @@ void RS::Release(
 // ─── CONSTRUTORES ─────────────────────────────────────────────────
 // Público:
 RESERVATION_STATION::RESERVATION_STATION(
-    const std::vector<int>& capacities
+    const RESERVATION_STATION_CAPACITIES& capacities
 ) {
-    if (capacities.size() != 6) {
-        std::cerr <<
-            "[ERRO] Quantidade inválida de RSs: " << capacities.size() << '\n';
-        std::abort();
-    }
-
-    const std::vector<std::string> names{
-        "load",
-        "store",
-        "int_basic",
-        "int_mult_div",
-        "float_basic",
-        "float_mult_div"
-    };
-    const std::vector<std::vector<RS>*> groups{GetGroups()};
-    for (std::size_t group{}; group < groups.size(); group++)
-        for (int position{}; position < capacities[group]; position++)
-            groups[group]->push_back(RS(names[group] + std::to_string(position)));
+    for (int position{}; position < capacities.load; position++)
+        load.push_back(RS("load" + std::to_string(position)));
+    for (int position{}; position < capacities.store; position++)
+        store.push_back(RS("store" + std::to_string(position)));
+    for (int position{}; position < capacities.int_basic; position++)
+        int_basic.push_back(RS("int_basic" + std::to_string(position)));
+    for (int position{}; position < capacities.int_mult_div; position++)
+        int_mult_div.push_back(RS("int_mult_div" + std::to_string(position)));
+    for (int position{}; position < capacities.float_basic; position++)
+        float_basic.push_back(RS("float_basic" + std::to_string(position)));
+    for (int position{}; position < capacities.float_mult_div; position++)
+        float_mult_div.push_back(RS("float_mult_div" + std::to_string(position)));
 }
 
 // ─── GETTERS ──────────────────────────────────────────────────────
@@ -506,19 +475,19 @@ const std::vector<RS>& RESERVATION_STATION::GetFloatMultDivStations() const {
 }
 
 // Privado:
-std::vector<RS>& RESERVATION_STATION::GetGroupForType(
-    const INSTRUCTION_TYPE type
+std::vector<RS>& RESERVATION_STATION::GetGroup(
+    const RESERVATION_STATION_GROUP group
 ) {
-    switch (type) {
-        case INSTRUCTION_TYPE::LOAD: return load;
-        case INSTRUCTION_TYPE::STORE: return store;
-        case INSTRUCTION_TYPE::FLOAT_BASIC: return float_basic;
-        case INSTRUCTION_TYPE::INT_MUL:
-        case INSTRUCTION_TYPE::INT_DIV: return int_mult_div;
-        case INSTRUCTION_TYPE::FLOAT_MUL:
-        case INSTRUCTION_TYPE::FLOAT_DIV: return float_mult_div;
-        default: return int_basic;
+    switch (group) {
+        case RESERVATION_STATION_GROUP::LOAD: return load;
+        case RESERVATION_STATION_GROUP::STORE: return store;
+        case RESERVATION_STATION_GROUP::INT_BASIC: return int_basic;
+        case RESERVATION_STATION_GROUP::INT_MULT_DIV: return int_mult_div;
+        case RESERVATION_STATION_GROUP::FLOAT_BASIC: return float_basic;
+        case RESERVATION_STATION_GROUP::FLOAT_MULT_DIV: return float_mult_div;
     }
+    std::cerr << "[ERRO] Grupo de RS inválido.\n";
+    std::abort();
 }
 
 // Privado:
@@ -569,7 +538,7 @@ bool RESERVATION_STATION::AddIssue(
     }
 
     std::vector<RS>& group{
-        GetGroupForType(instruction->GetInstructionType(stage))
+        GetGroup(GetReservationStationGroup(instruction->GetInstructionType(stage)))
     };
     for (RS& station : group)
         if (station.AddIssue(

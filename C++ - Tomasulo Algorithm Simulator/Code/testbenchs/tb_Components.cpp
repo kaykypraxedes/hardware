@@ -168,22 +168,23 @@ int main() {
 
     print_title("5. BANCO DE UNIDADES FUNCIONAIS");
 
-    section("5.1 Configuração e visualizações preservam grupos e larguras");
+    section("5.1 Configuração e visualizações preservam grupos");
     {
-        const FUNCTIONAL_UNITS units({2, 1, 3, 4, 5, 6}, 2);
+        const FuncionalUnits units(FUNCTIONAL_UNIT_CAPACITIES{2, 1, 3, 4, 5});
         check("capacidades são aplicadas aos cinco grupos",
             units.GetMemoryAccessUnits().size() == 2 &&
             units.GetIntBasicUnits().size() == 1 &&
             units.GetIntMultDivUnits().size() == 3 &&
             units.GetFloatBasicUnits().size() == 4 &&
             units.GetFloatMultDivUnits().size() == 5);
-        check("larguras de WR e Commit ficam encapsuladas",
-            units.GetWriteResultWidth() == 6 && units.GetCommitWidth() == 2);
+        check("conversão externa separa capacidades e largura de WR",
+            MakeFunctionalUnitCapacities({2, 1, 3, 4, 5, 6}).memory_access == 2 &&
+            GetExternalWriteResultWidth({2, 1, 3, 4, 5, 6}) == 6);
     }
 
     section("5.2 Alocação usa primeira unidade livre e sinaliza saturação");
     {
-        FUNCTIONAL_UNITS units({2, 1, 1, 1, 1, 1}, 0);
+        FuncionalUnits units(FUNCTIONAL_UNIT_CAPACITIES{2, 1, 1, 1, 1});
         const int first{
             units.Allocate(FUNCTIONAL_UNIT_GROUP::MEMORY_ACCESS, "load0", 2)
         };
@@ -205,7 +206,7 @@ int main() {
 
     section("5.3 Liberação fecha trace e permite reutilização");
     {
-        FUNCTIONAL_UNITS units({1, 1, 1, 1, 1, 1}, 0);
+        FuncionalUnits units(FUNCTIONAL_UNIT_CAPACITIES{1, 1, 1, 1, 1});
         units.Allocate(FUNCTIONAL_UNIT_GROUP::INT_BASIC, "int0", 2);
         units.Release(FUNCTIONAL_UNIT_GROUP::INT_BASIC, 0, "int0", 4);
         const int reused{
@@ -224,18 +225,28 @@ int main() {
     section("5.4 Associação duplicada ou inválida aborta");
     {
         check("uma RS não pode possuir duas FUs", Aborts([]() {
-            FUNCTIONAL_UNITS units({1, 1, 1, 1, 1, 1}, 0);
+            FuncionalUnits units(FUNCTIONAL_UNIT_CAPACITIES{1, 1, 1, 1, 1});
             units.Allocate(FUNCTIONAL_UNIT_GROUP::INT_BASIC, "int0", 1);
             units.Allocate(FUNCTIONAL_UNIT_GROUP::MEMORY_ACCESS, "int0", 2);
         }));
         check("proprietário incorreto não libera FU", Aborts([]() {
-            FUNCTIONAL_UNITS units({1, 1, 1, 1, 1, 1}, 0);
+            FuncionalUnits units(FUNCTIONAL_UNIT_CAPACITIES{1, 1, 1, 1, 1});
             units.Allocate(FUNCTIONAL_UNIT_GROUP::INT_BASIC, "int0", 1);
             units.Release(FUNCTIONAL_UNIT_GROUP::INT_BASIC, 0, "int1", 2);
         }));
         check("posição inválida não libera FU", Aborts([]() {
-            FUNCTIONAL_UNITS units({1, 1, 1, 1, 1, 1}, 0);
+            FuncionalUnits units(FUNCTIONAL_UNIT_CAPACITIES{1, 1, 1, 1, 1});
             units.Release(FUNCTIONAL_UNIT_GROUP::INT_BASIC, 3, "int0", 2);
+        }));
+    }
+
+    section("5.5 Vetores externos inválidos abortam no limite");
+    {
+        check("quantidade inválida de RS aborta", Aborts([]() {
+            MakeReservationStationCapacities({1, 1, 1});
+        }));
+        check("capacidade inválida de FU aborta", Aborts([]() {
+            MakeFunctionalUnitCapacities({1, 1, -1, 1, 1, 1});
         }));
     }
 
