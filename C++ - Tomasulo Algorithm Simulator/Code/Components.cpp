@@ -244,4 +244,152 @@ bool CDB_BROADCAST::CompleteProducer(
     );
 }
 
+
+// ==================================================================
+// === FUNCTIONAL_UNITS =============================================
+// ==================================================================
+
+// ─── CONSTRUTORES ─────────────────────────────────────────────────
+// Público:
+FUNCTIONAL_UNITS::FUNCTIONAL_UNITS(
+    const std::vector<int>& configuration,
+    const int               commit_width
+) :
+    commit(commit_width)
+{
+    if (configuration.size() != 6) {
+        std::cerr <<
+            "[ERRO] Quantidade inválida de FUs: " << configuration.size() << '\n';
+        std::abort();
+    }
+
+    // Preserva a ordem histórica da configuração dos cinco grupos físicos.
+    for (int i{}; i < configuration[0]; i++) memory_access.push_back(FU{});
+    for (int i{}; i < configuration[1]; i++) int_basic_alu.push_back(FU{});
+    for (int i{}; i < configuration[2]; i++) int_mult_div_alu.push_back(FU{});
+    for (int i{}; i < configuration[3]; i++) float_basic_alu.push_back(FU{});
+    for (int i{}; i < configuration[4]; i++) float_mult_div_alu.push_back(FU{});
+    wr = configuration[5];
+}
+
+// ─── GETTERS ──────────────────────────────────────────────────────
+// Público:
+int FUNCTIONAL_UNITS::GetWriteResultWidth() const { return wr; }
+
+// Público:
+int FUNCTIONAL_UNITS::GetCommitWidth() const { return commit; }
+
+// Público:
+const std::vector<FU>& FUNCTIONAL_UNITS::GetMemoryAccessUnits() const {
+    return memory_access;
+}
+
+// Público:
+const std::vector<FU>& FUNCTIONAL_UNITS::GetIntBasicUnits() const {
+    return int_basic_alu;
+}
+
+// Público:
+const std::vector<FU>& FUNCTIONAL_UNITS::GetIntMultDivUnits() const {
+    return int_mult_div_alu;
+}
+
+// Público:
+const std::vector<FU>& FUNCTIONAL_UNITS::GetFloatBasicUnits() const {
+    return float_basic_alu;
+}
+
+// Público:
+const std::vector<FU>& FUNCTIONAL_UNITS::GetFloatMultDivUnits() const {
+    return float_mult_div_alu;
+}
+
+// Privado:
+std::vector<FU>& FUNCTIONAL_UNITS::GetGroup(
+    const FUNCTIONAL_UNIT_GROUP group
+) {
+    switch (group) {
+        case FUNCTIONAL_UNIT_GROUP::MEMORY_ACCESS: return memory_access;
+        case FUNCTIONAL_UNIT_GROUP::INT_BASIC: return int_basic_alu;
+        case FUNCTIONAL_UNIT_GROUP::INT_MULT_DIV: return int_mult_div_alu;
+        case FUNCTIONAL_UNIT_GROUP::FLOAT_BASIC: return float_basic_alu;
+        case FUNCTIONAL_UNIT_GROUP::FLOAT_MULT_DIV: return float_mult_div_alu;
+    }
+
+    std::cerr << "[ERRO] Grupo de FU inválido.\n";
+    std::abort();
+}
+
+// ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
+// Público:
+int FUNCTIONAL_UNITS::Allocate(
+    const FUNCTIONAL_UNIT_GROUP group,
+    const std::string&          rs_id,
+    const int                   cycle
+) {
+    if (HasAllocation(rs_id)) {
+        std::cerr << "[ERRO] RS já possui uma FU alocada: " << rs_id << '\n';
+        std::abort();
+    }
+
+    std::vector<FU>& units{GetGroup(group)};
+    for (std::size_t position{}; position < units.size(); position++) {
+        FU& unit{units[position]};
+        if (unit.busy) continue;
+
+        unit.busy = true;
+        unit.current_rs = rs_id;
+        unit.allocated_rs.push_back(rs_id);
+        unit.allocation_times.push_back(cycle);
+        return static_cast<int>(position);
+    }
+    return -1;
+}
+
+// Público:
+void FUNCTIONAL_UNITS::Release(
+    const FUNCTIONAL_UNIT_GROUP group,
+    const int                   position,
+    const std::string&          rs_id,
+    const int                   cycle
+) {
+    std::vector<FU>& units{GetGroup(group)};
+    if (position < 0 || position >= static_cast<int>(units.size())) {
+        std::cerr <<
+            "[ERRO] Posição inválida de FU: " << position << '\n' <<
+            "- RS: " << rs_id << '\n';
+        std::abort();
+    }
+
+    FU& unit{units[position]};
+    if (!unit.busy || unit.current_rs != rs_id) {
+        std::cerr <<
+            "[ERRO] Associação RS/FU inválida na liberação.\n" <<
+            "- RS esperada: " << unit.current_rs << '\n' <<
+            "- RS informada: " << rs_id << '\n';
+        std::abort();
+    }
+
+    unit.busy = false;
+    unit.current_rs.clear();
+    unit.allocation_times.push_back(cycle);
+}
+
+// Privado:
+bool FUNCTIONAL_UNITS::HasAllocation(
+    const std::string& rs_id
+) const {
+    const std::vector<const std::vector<FU>*> groups{
+        &memory_access,
+        &int_basic_alu,
+        &int_mult_div_alu,
+        &float_basic_alu,
+        &float_mult_div_alu
+    };
+    for (const std::vector<FU>* group : groups)
+        for (const FU& unit : *group)
+            if (unit.busy && unit.current_rs == rs_id) return true;
+    return false;
+}
+
 } // namespace processor

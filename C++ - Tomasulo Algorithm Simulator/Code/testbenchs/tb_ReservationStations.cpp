@@ -46,15 +46,10 @@ static int LatestPending(
     return -1;
 }
 
-static FUNCTIONAL_UNITS makeFU(int n = 2) {
-    FUNCTIONAL_UNITS fu;
-    for (int i = 0; i < n; i++) fu.memory_access.push_back(FU{});
-    for (int i = 0; i < n; i++) fu.int_basic_alu.push_back(FU{});
-    for (int i = 0; i < n; i++) fu.int_mult_div_alu.push_back(FU{});
-    for (int i = 0; i < n; i++) fu.float_basic_alu.push_back(FU{});
-    for (int i = 0; i < n; i++) fu.float_mult_div_alu.push_back(FU{});
-    fu.wr = 2;
-    return fu;
+static FUNCTIONAL_UNITS makeFU(
+    const int n = 2
+) {
+    return FUNCTIONAL_UNITS({n, n, n, n, n, 2}, 0);
 }
 
 // Verifica se TODAS as posições de um vetor de dependências (ex_Q/mem_Q) já
@@ -648,13 +643,7 @@ int main() {
 
     section("7.1 FU esgotada -> AddIssue ok mas UpdateDependencies retorna false");
     {
-        FUNCTIONAL_UNITS fu;
-        fu.int_basic_alu.push_back(FU{});
-        fu.memory_access.push_back(FU{});
-        fu.int_mult_div_alu.push_back(FU{});
-        fu.float_basic_alu.push_back(FU{});
-        fu.float_mult_div_alu.push_back(FU{});
-        fu.wr = 1;
+        FUNCTIONAL_UNITS fu({1, 1, 1, 1, 1, 1}, 0);
 
         RegisterStatusTable register_status{MakeRegisterStatus()};
         RS rs0("int0"), rs1("int1");
@@ -778,16 +767,14 @@ int main() {
         RegisterStatusTable register_status{MakeRegisterStatus()};
         register_status.AllocateProducer(R(1), 10, "producer", 1);
 
-        RESERVATION_STATION station;
-        station.int_basic.push_back(RS("consumer0"));
-        station.int_basic.push_back(RS("consumer1"));
-        station.int_basic[0].AddIssue(
+        RESERVATION_STATION station({0, 0, 2, 0, 0, 0});
+        station.AddIssue(
             make_inst("add r3, r1, r2", 20),
             register_status,
             2,
             true
         );
-        station.int_basic[1].AddIssue(
+        station.AddIssue(
             make_inst("sub r4, r1, r2", 21),
             register_status,
             2,
@@ -795,10 +782,11 @@ int main() {
         );
 
         station.ResolveBroadcast({10, R(1)});
+        const std::vector<RS>& consumers{station.GetIntBasicStations()};
         check("primeiro consumidor resolve Q",
-            station.int_basic[0].GetExDependencies()[0] == -1);
+            consumers[0].GetExDependencies()[0] == -1);
         check("segundo consumidor resolve o mesmo Q",
-            station.int_basic[1].GetExDependencies()[0] == -1);
+            consumers[1].GetExDependencies()[0] == -1);
     }
 
     section("8.2 Destino ausente ou produtor diferente não altera Q");
@@ -806,9 +794,8 @@ int main() {
         RegisterStatusTable register_status{MakeRegisterStatus()};
         register_status.AllocateProducer(R(1), 10, "producer", 1);
 
-        RESERVATION_STATION station;
-        station.int_basic.push_back(RS("consumer"));
-        station.int_basic[0].AddIssue(
+        RESERVATION_STATION station({0, 0, 1, 0, 0, 0});
+        station.AddIssue(
             make_inst("add r3, r1, r2", 20),
             register_status,
             2,
@@ -817,10 +804,10 @@ int main() {
 
         station.ResolveBroadcast({10, R(8)});
         check("destino sem consumidor preserva Q",
-            station.int_basic[0].GetExDependencies()[0] == 10);
+            station.GetIntBasicStations()[0].GetExDependencies()[0] == 10);
         station.ResolveBroadcast({11, R(1)});
         check("produtor diferente preserva Q",
-            station.int_basic[0].GetExDependencies()[0] == 10);
+            station.GetIntBasicStations()[0].GetExDependencies()[0] == 10);
     }
 
     section("8.3 Dois destinos do mesmo produtor são eventos independentes");
@@ -829,16 +816,14 @@ int main() {
         register_status.AllocateProducer(HI(), 10, "producer", 1);
         register_status.AllocateProducer(LO(), 10, "producer", 1);
 
-        RESERVATION_STATION station;
-        station.int_basic.push_back(RS("hi_consumer"));
-        station.int_basic.push_back(RS("lo_consumer"));
-        station.int_basic[0].AddIssue(
+        RESERVATION_STATION station({0, 0, 2, 0, 0, 0});
+        station.AddIssue(
             make_inst("mfhi r3", 20),
             register_status,
             2,
             true
         );
-        station.int_basic[1].AddIssue(
+        station.AddIssue(
             make_inst("mflo r4", 21),
             register_status,
             2,
@@ -846,12 +831,115 @@ int main() {
         );
 
         station.ResolveBroadcast({10, HI()});
+        const std::vector<RS>& consumers{station.GetIntBasicStations()};
         check("broadcast de HI não resolve LO",
-            station.int_basic[0].GetExDependencies()[0] == -1 &&
-            station.int_basic[1].GetExDependencies()[0] == 10);
+            consumers[0].GetExDependencies()[0] == -1 &&
+            consumers[1].GetExDependencies()[0] == 10);
         station.ResolveBroadcast({10, LO()});
         check("broadcast de LO conclui o segundo destino",
-            station.int_basic[1].GetExDependencies()[0] == -1);
+            consumers[1].GetExDependencies()[0] == -1);
+    }
+
+    std::cout << "\n";
+    print_title("9. BANCO DE RESERVATION STATIONS");
+
+    section("9.1 Construtor preserva capacidades e nomes físicos");
+    {
+        const RESERVATION_STATION station({1, 2, 3, 4, 5, 6});
+        check("capacidades são aplicadas aos seis grupos",
+            station.GetLoadStations().size() == 1 &&
+            station.GetStoreStations().size() == 2 &&
+            station.GetIntBasicStations().size() == 3 &&
+            station.GetIntMultDivStations().size() == 4 &&
+            station.GetFloatBasicStations().size() == 5 &&
+            station.GetFloatMultDivStations().size() == 6);
+        check("nomes físicos permanecem estáveis",
+            station.GetLoadStations()[0].GetId() == "load0" &&
+            station.GetStoreStations()[1].GetId() == "store1" &&
+            station.GetFloatMultDivStations()[5].GetId() == "float_mult_div5");
+    }
+
+    section("9.2 Banco roteia, sinaliza saturação, libera e reutiliza");
+    {
+        RESERVATION_STATION station({1, 0, 0, 0, 0, 0});
+        RegisterStatusTable register_status{MakeRegisterStatus()};
+
+        check("primeiro LOAD ocupa o grupo correto",
+            station.AddIssue(
+                make_inst("l.d f2, 0(r1)", 0),
+                register_status,
+                1,
+                true
+            ));
+        check("posição fica localizada pelo banco",
+            station.IsPositionAllocated(0));
+        check("segundo LOAD falha quando o grupo está cheio",
+            !station.AddIssue(
+                make_inst("l.d f4, 0(r2)", 1),
+                register_status,
+                2,
+                true
+            ));
+
+        station.ReleaseByPosition(0, 3);
+        check("liberação remove a posição física",
+            !station.IsPositionAllocated(0));
+        check("célula liberada aceita nova posição",
+            station.AddIssue(
+                make_inst("l.d f4, 0(r2)", 1),
+                register_status,
+                4,
+                true
+            ) && station.IsPositionAllocated(1));
+    }
+
+    section("9.3 Posição duplicada e liberação ausente abortam");
+    {
+        check("posição não pode ocupar duas RSs", Aborts([]() {
+            RESERVATION_STATION station({0, 0, 2, 0, 0, 0});
+            RegisterStatusTable register_status{MakeRegisterStatus()};
+            station.AddIssue(
+                make_inst("add r3, r1, r2", 5),
+                register_status,
+                1,
+                true
+            );
+            station.AddIssue(
+                make_inst("sub r4, r1, r2", 5),
+                register_status,
+                2,
+                true
+            );
+        }));
+        check("liberar posição ausente aborta", Aborts([]() {
+            RESERVATION_STATION station({0, 0, 1, 0, 0, 0});
+            station.ReleaseByPosition(9, 2);
+        }));
+    }
+
+    section("9.4 Candidatas prontas são ordenadas por posição lógica");
+    {
+        RESERVATION_STATION station({0, 0, 2, 0, 0, 0});
+        RegisterStatusTable register_status{MakeRegisterStatus()};
+        station.AddIssue(
+            make_inst("add r7, r1, r2", 7),
+            register_status,
+            1,
+            true
+        );
+        station.AddIssue(
+            make_inst("sub r8, r3, r4", 3),
+            register_status,
+            1,
+            true
+        );
+
+        const std::vector<RS*> candidates{station.CollectReadyCandidates()};
+        check("duas células ocupadas são coletadas",
+            station.CollectBusyStations().size() == 2 && candidates.size() == 2);
+        check("ordem independe da posição física",
+            candidates[0]->GetCurrentInstruction().GetPosition() == 3 &&
+            candidates[1]->GetCurrentInstruction().GetPosition() == 7);
     }
 
     std::cout << "\n-----------------------------\n";

@@ -166,6 +166,79 @@ int main() {
         check("view deriva busy do registro funcional", view.busy && table.IsBusy(reference));
     }
 
+    print_title("5. BANCO DE UNIDADES FUNCIONAIS");
+
+    section("5.1 Configuração e visualizações preservam grupos e larguras");
+    {
+        const FUNCTIONAL_UNITS units({2, 1, 3, 4, 5, 6}, 2);
+        check("capacidades são aplicadas aos cinco grupos",
+            units.GetMemoryAccessUnits().size() == 2 &&
+            units.GetIntBasicUnits().size() == 1 &&
+            units.GetIntMultDivUnits().size() == 3 &&
+            units.GetFloatBasicUnits().size() == 4 &&
+            units.GetFloatMultDivUnits().size() == 5);
+        check("larguras de WR e Commit ficam encapsuladas",
+            units.GetWriteResultWidth() == 6 && units.GetCommitWidth() == 2);
+    }
+
+    section("5.2 Alocação usa primeira unidade livre e sinaliza saturação");
+    {
+        FUNCTIONAL_UNITS units({2, 1, 1, 1, 1, 1}, 0);
+        const int first{
+            units.Allocate(FUNCTIONAL_UNIT_GROUP::MEMORY_ACCESS, "load0", 2)
+        };
+        const int second{
+            units.Allocate(FUNCTIONAL_UNIT_GROUP::MEMORY_ACCESS, "load1", 3)
+        };
+        const int blocked{
+            units.Allocate(FUNCTIONAL_UNIT_GROUP::MEMORY_ACCESS, "load2", 4)
+        };
+
+        const std::vector<FU>& memory_units{units.GetMemoryAccessUnits()};
+        check("primeiras posições livres são escolhidas em ordem",
+            first == 0 && second == 1);
+        check("grupo cheio retorna -1 sem alterar associações",
+            blocked == -1 &&
+            memory_units[0].current_rs == "load0" &&
+            memory_units[1].current_rs == "load1");
+    }
+
+    section("5.3 Liberação fecha trace e permite reutilização");
+    {
+        FUNCTIONAL_UNITS units({1, 1, 1, 1, 1, 1}, 0);
+        units.Allocate(FUNCTIONAL_UNIT_GROUP::INT_BASIC, "int0", 2);
+        units.Release(FUNCTIONAL_UNIT_GROUP::INT_BASIC, 0, "int0", 4);
+        const int reused{
+            units.Allocate(FUNCTIONAL_UNIT_GROUP::INT_BASIC, "int1", 5)
+        };
+
+        const FU& unit{units.GetIntBasicUnits()[0]};
+        check("unidade liberada volta à primeira posição", reused == 0);
+        check("associação atual pertence à nova RS",
+            unit.busy && unit.current_rs == "int1");
+        check("timeline e histórico permanecem consistentes",
+            unit.allocation_times == std::vector<int>({2, 4, 5}) &&
+            unit.allocated_rs == std::vector<std::string>({"int0", "int1"}));
+    }
+
+    section("5.4 Associação duplicada ou inválida aborta");
+    {
+        check("uma RS não pode possuir duas FUs", Aborts([]() {
+            FUNCTIONAL_UNITS units({1, 1, 1, 1, 1, 1}, 0);
+            units.Allocate(FUNCTIONAL_UNIT_GROUP::INT_BASIC, "int0", 1);
+            units.Allocate(FUNCTIONAL_UNIT_GROUP::MEMORY_ACCESS, "int0", 2);
+        }));
+        check("proprietário incorreto não libera FU", Aborts([]() {
+            FUNCTIONAL_UNITS units({1, 1, 1, 1, 1, 1}, 0);
+            units.Allocate(FUNCTIONAL_UNIT_GROUP::INT_BASIC, "int0", 1);
+            units.Release(FUNCTIONAL_UNIT_GROUP::INT_BASIC, 0, "int1", 2);
+        }));
+        check("posição inválida não libera FU", Aborts([]() {
+            FUNCTIONAL_UNITS units({1, 1, 1, 1, 1, 1}, 0);
+            units.Release(FUNCTIONAL_UNIT_GROUP::INT_BASIC, 3, "int0", 2);
+        }));
+    }
+
     std::cout << "\n-----------------------------\n";
     std::cout << "Resultado: " << passed << " OK, " << failed << " FALHOU\n";
     return failed ? 1 : 0;

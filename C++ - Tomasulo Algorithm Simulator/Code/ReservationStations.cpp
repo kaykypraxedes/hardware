@@ -10,28 +10,27 @@
 namespace processor {
 
 // ─── HELPERS ──────────────────────────────────────────────────────
-static std::vector<FU>& GetFUGroup(
-    FUNCTIONAL_UNITS&                fu,
+static FUNCTIONAL_UNIT_GROUP GetFunctionalUnitGroup(
     const INSTRUCTION_TYPE           type,
     const INSTRUCTION_PHASE_TOMASULO phase
 ) {
-    // Retorna a referência ao grupo de FU correto para (tipo, fase).
+    // Traduz a necessidade da RS para a identidade física aceita pelo banco.
     if (type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE)
         return (phase == INSTRUCTION_PHASE_TOMASULO::EX)
-            ? fu.int_basic_alu
-            : fu.memory_access;
+            ? FUNCTIONAL_UNIT_GROUP::INT_BASIC
+            : FUNCTIONAL_UNIT_GROUP::MEMORY_ACCESS;
 
     switch (type) {
         case INSTRUCTION_TYPE::INT_MUL:
         case INSTRUCTION_TYPE::INT_DIV:
-            return fu.int_mult_div_alu;
+            return FUNCTIONAL_UNIT_GROUP::INT_MULT_DIV;
         case INSTRUCTION_TYPE::FLOAT_BASIC:
-            return fu.float_basic_alu;
+            return FUNCTIONAL_UNIT_GROUP::FLOAT_BASIC;
         case INSTRUCTION_TYPE::FLOAT_MUL:
         case INSTRUCTION_TYPE::FLOAT_DIV:
-            return fu.float_mult_div_alu;
+            return FUNCTIONAL_UNIT_GROUP::FLOAT_MULT_DIV;
         default:
-            return fu.int_basic_alu;
+            return FUNCTIONAL_UNIT_GROUP::INT_BASIC;
     }
 }
 
@@ -308,42 +307,22 @@ bool RS::TryAllocateFU(
         std::abort();
     }
 
-    // Procura uma unidade funcional livre.
-    std::vector<FU>& fu_group{
-        GetFUGroup(
-            fu,
+    // Solicita ao banco uma unidade do grupo correspondente.
+    fu_position = fu.Allocate(
+        GetFunctionalUnitGroup(
             current_instruction->GetInstructionType(current_stage),
             target_phase
-        )
-    };
-    fu_position = FindFreeFU(fu_group);
+        ),
+        id,
+        cycle
+    );
 
     if (fu_position == -1) return false; // Não encontrou.
-
-    // Aloca a FU:
-    fu_group[fu_position].busy       = true;
-    fu_group[fu_position].current_rs = id;
-    fu_group[fu_position].allocated_rs.push_back(id);
-    fu_group[fu_position].allocation_times.push_back(cycle);
 
     // Atualiza a fase (permanece igual se já era MEM) e define o tempo de alocação.
     phase = target_phase;
     allocation_countdown = latency;
     return true;
-}
-
-// Privado:
-int RS::FindFreeFU(
-    const std::vector<FU>& fu_group
-) {
-    // Se encontrar uma FU, aloca e retorna a sua posição.
-    for (size_t i{}; i < fu_group.size(); i++) {
-        if (!fu_group[i].busy) {
-            return i;
-        }
-    }
-    // Se não encontrar, retorna -1 (falhou).
-    return -1;
 }
 
 // Público:
@@ -388,26 +367,16 @@ void RS::ReleaseFU(
     // A FU já estava desalocada (nada a fazer).
     if (fu_position == -1) return;
 
-    std::vector<FU>& fu_group{
-        GetFUGroup(
-            fu,
+    // O banco valida a posição e a associação antes de finalizar a timeline.
+    fu.Release(
+        GetFunctionalUnitGroup(
             current_instruction->GetInstructionType(current_stage),
             finished_phase
-        )
-    };
-
-    // Verifica se a posição da FU é válida:
-    if (fu_position < -1 || fu_position >= static_cast<int>(fu_group.size())) {
-        std::cerr <<
-        "[ERRO] Posição inválida de fu: " << fu_position <<
-        "- RS: " << id << "\n" <<
-        "- Fase: " << static_cast<int>(finished_phase) << "\n";
-        std::abort();
-    }
-
-    fu_group[fu_position].busy         = false;
-    fu_group[fu_position].current_rs   = "";
-    fu_group[fu_position].allocation_times.push_back(cycle);
+        ),
+        fu_position,
+        id,
+        cycle
+    );
     fu_position = -1;
 }
 
@@ -480,16 +449,207 @@ void RS::Release(
 // === RESERVATION_STATION ==========================================
 // ==================================================================
 
+// ─── CONSTRUTORES ─────────────────────────────────────────────────
+// Público:
+RESERVATION_STATION::RESERVATION_STATION(
+    const std::vector<int>& capacities
+) {
+    if (capacities.size() != 6) {
+        std::cerr <<
+            "[ERRO] Quantidade inválida de RSs: " << capacities.size() << '\n';
+        std::abort();
+    }
+
+    const std::vector<std::string> names{
+        "load",
+        "store",
+        "int_basic",
+        "int_mult_div",
+        "float_basic",
+        "float_mult_div"
+    };
+    const std::vector<std::vector<RS>*> groups{GetGroups()};
+    for (std::size_t group{}; group < groups.size(); group++)
+        for (int position{}; position < capacities[group]; position++)
+            groups[group]->push_back(RS(names[group] + std::to_string(position)));
+}
+
+// ─── GETTERS ──────────────────────────────────────────────────────
+// Público:
+const std::vector<RS>& RESERVATION_STATION::GetLoadStations() const {
+    return load;
+}
+
+// Público:
+const std::vector<RS>& RESERVATION_STATION::GetStoreStations() const {
+    return store;
+}
+
+// Público:
+const std::vector<RS>& RESERVATION_STATION::GetIntBasicStations() const {
+    return int_basic;
+}
+
+// Público:
+const std::vector<RS>& RESERVATION_STATION::GetIntMultDivStations() const {
+    return int_mult_div;
+}
+
+// Público:
+const std::vector<RS>& RESERVATION_STATION::GetFloatBasicStations() const {
+    return float_basic;
+}
+
+// Público:
+const std::vector<RS>& RESERVATION_STATION::GetFloatMultDivStations() const {
+    return float_mult_div;
+}
+
+// Privado:
+std::vector<RS>& RESERVATION_STATION::GetGroupForType(
+    const INSTRUCTION_TYPE type
+) {
+    switch (type) {
+        case INSTRUCTION_TYPE::LOAD: return load;
+        case INSTRUCTION_TYPE::STORE: return store;
+        case INSTRUCTION_TYPE::FLOAT_BASIC: return float_basic;
+        case INSTRUCTION_TYPE::INT_MUL:
+        case INSTRUCTION_TYPE::INT_DIV: return int_mult_div;
+        case INSTRUCTION_TYPE::FLOAT_MUL:
+        case INSTRUCTION_TYPE::FLOAT_DIV: return float_mult_div;
+        default: return int_basic;
+    }
+}
+
+// Privado:
+std::vector<std::vector<RS>*> RESERVATION_STATION::GetGroups() {
+    return {
+        &load,
+        &store,
+        &int_basic,
+        &int_mult_div,
+        &float_basic,
+        &float_mult_div
+    };
+}
+
+// Privado:
+std::vector<const std::vector<RS>*> RESERVATION_STATION::GetGroups() const {
+    return {
+        &load,
+        &store,
+        &int_basic,
+        &int_mult_div,
+        &float_basic,
+        &float_mult_div
+    };
+}
+
+// ─── DEMAIS MÉTODOS ───────────────────────────────────────────────
+// Público:
+bool RESERVATION_STATION::AddIssue(
+    const std::shared_ptr<Instruction>& instruction,
+    RegisterStatusTable&                register_status,
+    const int                           cycle,
+    const bool                          new_instruction,
+    const std::size_t                   stage
+) {
+    if (stage >= instruction->GetStageCount()) {
+        std::cerr <<
+            "[ERRO] Etapa inválida passada para o banco de RS.\n" <<
+            "- Etapa: " << stage << '\n' <<
+            "- Quantidade de etapas: " << instruction->GetStageCount() << '\n';
+        std::abort();
+    }
+
+    const int position{instruction->GetPosition()};
+    if (IsPositionAllocated(position)) {
+        std::cerr << "[ERRO] Posição já alocada em uma RS: " << position << '\n';
+        std::abort();
+    }
+
+    std::vector<RS>& group{
+        GetGroupForType(instruction->GetInstructionType(stage))
+    };
+    for (RS& station : group)
+        if (station.AddIssue(
+            instruction,
+            register_status,
+            cycle,
+            new_instruction,
+            stage
+        )) return true;
+    return false;
+}
+
+// Público:
+bool RESERVATION_STATION::IsPositionAllocated(
+    const int position
+) const {
+    for (const std::vector<RS>* group : GetGroups())
+        for (const RS& station : *group)
+            if (station.IsBusy() &&
+                station.GetCurrentInstruction().GetPosition() == position) return true;
+    return false;
+}
+
+// Público:
+void RESERVATION_STATION::ReleaseByPosition(
+    const int position,
+    const int cycle
+) {
+    for (std::vector<RS>* group : GetGroups()) {
+        for (RS& station : *group) {
+            if (!station.IsBusy() ||
+                station.GetCurrentInstruction().GetPosition() != position) continue;
+            station.Release(cycle);
+            return;
+        }
+    }
+
+    std::cerr <<
+        "[ERRO] RS da instrução não encontrada para liberação.\n" <<
+        "- Posição: " << position << '\n' <<
+        "- Ciclo: " << cycle << '\n';
+    std::abort();
+}
+
+// Público:
+std::vector<RS*> RESERVATION_STATION::CollectReadyCandidates() {
+    std::vector<RS*> candidates;
+    for (std::vector<RS>* group : GetGroups())
+        for (RS& station : *group)
+            if (station.IsBusy() &&
+                station.GetCountdown() == -1 &&
+                station.GetInstructionPhase() != INSTRUCTION_PHASE_TOMASULO::WR)
+                candidates.push_back(&station);
+
+    std::stable_sort(
+        candidates.begin(),
+        candidates.end(),
+        [](const RS* left, const RS* right) {
+            return left->GetCurrentInstruction().GetPosition() <
+                   right->GetCurrentInstruction().GetPosition();
+        }
+    );
+    return candidates;
+}
+
+// Público:
+std::vector<RS*> RESERVATION_STATION::CollectBusyStations() {
+    std::vector<RS*> stations;
+    for (std::vector<RS>* group : GetGroups())
+        for (RS& station : *group)
+            if (station.IsBusy()) stations.push_back(&station);
+    return stations;
+}
+
 // Público:
 void RESERVATION_STATION::ResolveBroadcast(
     const CDB_BROADCAST& broadcast
 ) {
-    ResolveBroadcastInGroup(load, broadcast);
-    ResolveBroadcastInGroup(store, broadcast);
-    ResolveBroadcastInGroup(int_basic, broadcast);
-    ResolveBroadcastInGroup(int_mult_div, broadcast);
-    ResolveBroadcastInGroup(float_basic, broadcast);
-    ResolveBroadcastInGroup(float_mult_div, broadcast);
+    for (std::vector<RS>* group : GetGroups())
+        ResolveBroadcastInGroup(*group, broadcast);
 }
 
 } // namespace processor

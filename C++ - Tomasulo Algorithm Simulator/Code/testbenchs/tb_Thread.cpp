@@ -71,17 +71,27 @@ int main() {
         check("GetRegisterBanks() preserva as 3 faixas simplificadas",
             t.GetRegisterBanks().size() == 3);
 
-        check("GetRS().load.size() == 5",                  t.GetRS().load.size() == 5);
-        check("GetRS().store.size() == 5",                 t.GetRS().store.size() == 5);
-        check("GetRS().int_basic.size() == 5",             t.GetRS().int_basic.size() == 5);
-        check("GetRS().int_mult_div.size() == 4",          t.GetRS().int_mult_div.size() == 4);
-        check("GetRS().float_basic.size() == 3",           t.GetRS().float_basic.size() == 3);
-        check("GetRS().float_mult_div.size() == 2",        t.GetRS().float_mult_div.size() == 2);
+        check("GetRS().GetLoadStations().size() == 5",
+            t.GetRS().GetLoadStations().size() == 5);
+        check("GetRS().GetStoreStations().size() == 5",
+            t.GetRS().GetStoreStations().size() == 5);
+        check("GetRS().GetIntBasicStations().size() == 5",
+            t.GetRS().GetIntBasicStations().size() == 5);
+        check("GetRS().GetIntMultDivStations().size() == 4",
+            t.GetRS().GetIntMultDivStations().size() == 4);
+        check("GetRS().GetFloatBasicStations().size() == 3",
+            t.GetRS().GetFloatBasicStations().size() == 3);
+        check("GetRS().GetFloatMultDivStations().size() == 2",
+            t.GetRS().GetFloatMultDivStations().size() == 2);
 
-        check("GetFU().memory_access.size() == 1",         t.GetFU().memory_access.size() == 1);
-        check("GetFU().int_basic_alu.size() == 1",         t.GetFU().int_basic_alu.size() == 1);
-        check("GetFU().wr == 2",                           t.GetFU().wr == 2);
-        check("GetFU().commit == 0 (sem ROB, nunca inicializado)", t.GetFU().commit == 0);
+        check("GetFU().GetMemoryAccessUnits().size() == 1",
+            t.GetFU().GetMemoryAccessUnits().size() == 1);
+        check("GetFU().GetIntBasicUnits().size() == 1",
+            t.GetFU().GetIntBasicUnits().size() == 1);
+        check("GetFU().GetWriteResultWidth() == 2",
+            t.GetFU().GetWriteResultWidth() == 2);
+        check("GetFU().GetCommitWidth() == 0 sem ROB",
+            t.GetFU().GetCommitWidth() == 0);
     }
 
     section("1.2 Thread() — construtor COM ROB");
@@ -89,9 +99,9 @@ int main() {
         std::vector<std::string> prog = {"add r1, r2, r3"};
         Thread t(prog, {}, DEFAULT_NUM_RS, DEFAULT_NUM_FUS, {}, /*dispatch_width=*/3, /*rob_capacity=*/8);
 
-        // Não há getter público de has_rob/rob_capacity — inferimos o efeito via
-        // fu.commit (só é setado quando has_rob==true, com valor == dispatch_width).
-        check("GetFU().commit == dispatch_width (3) quando há ROB", t.GetFU().commit == 3);
+        // A largura de Commit permite observar a configuração associada ao ROB.
+        check("GetFU().GetCommitWidth() == dispatch_width (3) quando há ROB",
+            t.GetFU().GetCommitWidth() == 3);
     }
 
     section("1.3 IsSwitchCycle() — granulação grossa");
@@ -388,7 +398,8 @@ int main() {
         t.ExMem(2); t.Wr(2); // IS -> EX (ex_cycles == [2,2], lat=1)
         // Com ROB, ao terminar o EX a RS já é agendada para liberação — não espera o MEM de verdade.
         t.ExMem(3); t.Wr(3);
-        check("STORE c/ ROB: RS já liberada (não fica presa em MEM)", !t.GetRS().store[0].IsBusy());
+        check("STORE c/ ROB: RS já liberada (não fica presa em MEM)",
+            !t.GetRS().GetStoreStations()[0].IsBusy());
         check("STORE concluído aguarda temporização na cabeça do ROB",
             t.GetROBEntries()[0].store_state == ROB_STORE_STATE::WAITING_MEMORY &&
             !t.GetROBEntries()[0].ready &&
@@ -463,7 +474,8 @@ int main() {
         check("WAW: WR de posições diferentes (não confundiu as duas RS)",
               tab[0].wr_cycle != tab[1].wr_cycle);
         check("WAW: ambas as RS de int_basic ficaram livres no fim",
-              !t.GetRS().int_basic[0].IsBusy() && !t.GetRS().int_basic[1].IsBusy());
+              !t.GetRS().GetIntBasicStations()[0].IsBusy() &&
+              !t.GetRS().GetIntBasicStations()[1].IsBusy());
     }
 
     section("4.2.1 WAW+RAW: produtor antigo não libera consumidor do mais novo");

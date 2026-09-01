@@ -295,6 +295,17 @@ struct FU {
 };
 
 /**
+ * @brief Grupos físicos controlados pelo banco de unidades funcionais.
+ */
+enum class FUNCTIONAL_UNIT_GROUP {
+    MEMORY_ACCESS,
+    INT_BASIC,
+    INT_MULT_DIV,
+    FLOAT_BASIC,
+    FLOAT_MULT_DIV
+};
+
+/**
  * @brief Conjunto de todas as unidades funcionais.
  *
  * @details As de mesmo tipo são agrupados em vetores de tamanho
@@ -307,13 +318,67 @@ struct FU {
  *
  */
 struct FUNCTIONAL_UNITS {
-    std::vector<FU> memory_access;
-    std::vector<FU> int_basic_alu;
-    std::vector<FU> int_mult_div_alu;
-    std::vector<FU> float_basic_alu;
-    std::vector<FU> float_mult_div_alu;
-    int             wr{1};
-    int             commit{0};
+    public:
+        FUNCTIONAL_UNITS() = default;
+
+        /**
+         * @brief Inicializa os grupos físicos e as larguras do pipeline.
+         *
+         * @details As cinco primeiras posições configuram os grupos de FU e
+         * a sexta preserva a largura de WR usada pela configuração atual.
+         *
+         * @param configuration Capacidades dos grupos e largura de WR.
+         * @param commit_width Largura de Commit; zero quando não há ROB.
+         */
+        FUNCTIONAL_UNITS(
+            const std::vector<int>& configuration,
+            const int               commit_width
+        );
+
+        int GetWriteResultWidth() const;
+        int GetCommitWidth() const;
+        const std::vector<FU>& GetMemoryAccessUnits() const;
+        const std::vector<FU>& GetIntBasicUnits() const;
+        const std::vector<FU>& GetIntMultDivUnits() const;
+        const std::vector<FU>& GetFloatBasicUnits() const;
+        const std::vector<FU>& GetFloatMultDivUnits() const;
+
+        /**
+         * @brief Aloca a primeira FU livre do grupo solicitado.
+         *
+         * @return Índice alocado ou -1 quando o grupo está saturado.
+         */
+        int Allocate(
+            const FUNCTIONAL_UNIT_GROUP group,
+            const std::string&          rs_id,
+            const int                   cycle
+        );
+
+        /**
+         * @brief Libera atomicamente uma FU pertencente à RS informada.
+         */
+        void Release(
+            const FUNCTIONAL_UNIT_GROUP group,
+            const int                   position,
+            const std::string&          rs_id,
+            const int                   cycle
+        );
+    private:
+        std::vector<FU> memory_access;
+        std::vector<FU> int_basic_alu;
+        std::vector<FU> int_mult_div_alu;
+        std::vector<FU> float_basic_alu;
+        std::vector<FU> float_mult_div_alu;
+        int             wr{1};
+        int             commit{0};
+
+        std::vector<FU>& GetGroup(
+            const FUNCTIONAL_UNIT_GROUP group
+        );
+
+        bool HasAllocation(
+            const std::string& rs_id
+        ) const;
 };
 
 // ─── HELPER ───────────────────────────────────────────────────────

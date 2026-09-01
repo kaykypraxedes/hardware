@@ -432,29 +432,29 @@ int main() {
     std::cout << "═══ RESERVATION STATIONS (RS) ════════════════════════════\n";
     std::cout << "══════════════════════════════════════════════════════════\n\n";
 
-    auto rs = p.GetThread(0).GetRS();
+    const auto& rs{p.GetThread(0).GetRS()};
 
-    processor::PrintComponentGroup("load", rs.load,
+    processor::PrintComponentGroup("load", rs.GetLoadStations(),
         [](const auto& c) { return c.GetTimes(); },
         [](const auto& c) { return c.GetInstructions(); });
 
-    processor::PrintComponentGroup("store", rs.store,
+    processor::PrintComponentGroup("store", rs.GetStoreStations(),
         [](const auto& c) { return c.GetTimes(); },
         [](const auto& c) { return c.GetInstructions(); });
 
-    processor::PrintComponentGroup("int_basic", rs.int_basic,
+    processor::PrintComponentGroup("int_basic", rs.GetIntBasicStations(),
         [](const auto& c) { return c.GetTimes(); },
         [](const auto& c) { return c.GetInstructions(); });
 
-    processor::PrintComponentGroup("int_mult_div", rs.int_mult_div,
+    processor::PrintComponentGroup("int_mult_div", rs.GetIntMultDivStations(),
         [](const auto& c) { return c.GetTimes(); },
         [](const auto& c) { return c.GetInstructions(); });
 
-    processor::PrintComponentGroup("float_basic", rs.float_basic,
+    processor::PrintComponentGroup("float_basic", rs.GetFloatBasicStations(),
         [](const auto& c) { return c.GetTimes(); },
         [](const auto& c) { return c.GetInstructions(); });
 
-    processor::PrintComponentGroup("float_mult_div", rs.float_mult_div,
+    processor::PrintComponentGroup("float_mult_div", rs.GetFloatMultDivStations(),
         [](const auto& c) { return c.GetTimes(); },
         [](const auto& c) { return c.GetInstructions(); });
 
@@ -488,25 +488,25 @@ int main() {
     std::cout << "═══ FUNCIONAL UNITYS (FU) ════════════════════════════════\n";
     std::cout << "══════════════════════════════════════════════════════════\n\n";
 
-    auto fu = p.GetThread(0).GetFU();
+    const auto& fu{p.GetThread(0).GetFU()};
 
-    processor::PrintComponentGroup("memory_access", fu.memory_access,
+    processor::PrintComponentGroup("memory_access", fu.GetMemoryAccessUnits(),
         [](const auto& c) { return c.allocation_times; },
         [](const auto& c) { return c.allocated_rs; });
 
-    processor::PrintComponentGroup("int_basic_alu", fu.int_basic_alu,
+    processor::PrintComponentGroup("int_basic_alu", fu.GetIntBasicUnits(),
         [](const auto& c) { return c.allocation_times; },
         [](const auto& c) { return c.allocated_rs; });
 
-    processor::PrintComponentGroup("int_mult_div_alu", fu.int_mult_div_alu,
+    processor::PrintComponentGroup("int_mult_div_alu", fu.GetIntMultDivUnits(),
         [](const auto& c) { return c.allocation_times; },
         [](const auto& c) { return c.allocated_rs; });
 
-    processor::PrintComponentGroup("float_basic_alu", fu.float_basic_alu,
+    processor::PrintComponentGroup("float_basic_alu", fu.GetFloatBasicUnits(),
         [](const auto& c) { return c.allocation_times; },
         [](const auto& c) { return c.allocated_rs; });
 
-    processor::PrintComponentGroup("float_mult_div_alu", fu.float_mult_div_alu,
+    processor::PrintComponentGroup("float_mult_div_alu", fu.GetFloatMultDivUnits(),
         [](const auto& c) { return c.allocation_times; },
         [](const auto& c) { return c.allocated_rs; });
 

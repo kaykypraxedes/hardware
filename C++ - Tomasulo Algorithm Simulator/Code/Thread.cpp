@@ -9,123 +9,6 @@
 
 namespace processor {
 
-// ─── ELEMENTOS STATIC ─────────────────────────────────────────────
-static const int num_rs_groups{6};
-static const int num_fu_groups{6};
-
-// ─── HELPERS ──────────────────────────────────────────────────────
-
-/**
- * @brief Retorna um vetor com os ponteiros para todos os grupos de
- * RS para permitir navegar por todos os grupos de maneira
- * simplificada.
- *
- * @details Esse retorno em um vetor de ponteiros garante um grande
- * resumo de código (visto que ações que exigiriam uma operação para
- * cada um agora podem ser feitos em um loop).
- *
- * @param RESERVATION_STATION& rs - A Reservation Station inteira.
- *
- * @return std::vector<std::vector<RS>*> - Vetor com ponteiros para
- * cada grupo de RS.
- */
-static std::vector<std::vector<RS>*> GetAllRSGroups(
-    RESERVATION_STATION& rs
-) {
-    return {
-        &rs.load,
-        &rs.store,
-        &rs.int_basic,
-        &rs.int_mult_div,
-        &rs.float_basic,
-        &rs.float_mult_div
-    };
-}
-
-/**
- * @brief Retorna um vetor com os ponteiros para todos os grupos de
- * FU para permitir navegar por todos os grupos de maneira
- * simplificada.
- *
- * @details Esse retorno em um vetor de ponteiros garante um grande
- * resumo de código (visto que ações que exigiriam uma operação para
- * cada um agora podem ser feitos em um loop).
- *
- * Os únicos elementos de "FUNCTIONAL_UNITS" que não são retornados
- * são o "wr" e o "commit" (que são "int"), exigindo operações
- * individuais para cada um.
- *
- * @param FUNCTIONAL_UNITS& fu - Todas as unidades funcionais.
- *
- * @return std::vector<std::vector<FU>*> - Vetor com
- * ponteiros para cada grupo de FU.
- */
-static std::vector<std::vector<FU>*> GetAllFUGroups(
-    FUNCTIONAL_UNITS& fu
-) {
-    return {
-        &fu.memory_access,
-        &fu.int_basic_alu,
-        &fu.int_mult_div_alu,
-        &fu.float_basic_alu,
-        &fu.float_mult_div_alu
-    };
-}
-
-static std::vector<RS>& GetRSGroupForType(
-    RESERVATION_STATION&   rs,
-    const INSTRUCTION_TYPE type
-) {
-    // Retorna a referência para o vetor do grupo de RS correto da instrução.
-    switch (type) {
-        case INSTRUCTION_TYPE::LOAD:
-            return rs.load;
-        case INSTRUCTION_TYPE::STORE:
-            return rs.store;
-        case INSTRUCTION_TYPE::FLOAT_BASIC:
-            return rs.float_basic;
-        case INSTRUCTION_TYPE::INT_MUL:
-        case INSTRUCTION_TYPE::INT_DIV:
-            return rs.int_mult_div;
-        case INSTRUCTION_TYPE::FLOAT_MUL:
-        case INSTRUCTION_TYPE::FLOAT_DIV:
-            return rs.float_mult_div;
-        default: // Cobre BRANCH também.
-            return rs.int_basic;
-    }
-}
-
-static bool ComparePositionOnRS(
-    const RS* a,
-    const RS* b
-) {
-    // indicar ao "std::stable_sort()" o padrão de organização desejado (nesse caso, crescente).
-    return a->GetCurrentInstruction().GetPosition() < b->GetCurrentInstruction().GetPosition();
-}
-
-static void ReleaseRSByPosition(
-    RESERVATION_STATION& rs,
-    const int            position,
-    const int            cycle
-) {
-    // Libera a única RS ocupada pela identidade lógica.
-    for (std::vector<RS>* group : GetAllRSGroups(rs)) {
-        for (RS& current : *group) {
-            if (current.IsBusy() &&
-                current.GetCurrentInstruction().GetPosition() == position) {
-                current.Release(cycle);
-                return;
-            }
-        }
-    }
-
-    std::cerr <<
-        "[ERRO] RS da instrução não encontrada para liberação.\n"
-        "- Posição: " << position << '\n' <<
-        "- Ciclo: " << cycle << '\n';
-    std::abort();
-}
-
 // ==================================================================
 // === CLASSE =======================================================
 // ==================================================================
@@ -278,41 +161,13 @@ void Thread::InitializeComponents(
     register_status = RegisterStatusTable(layout.references);
     register_banks = layout.banks;
 
-    // Verifica se foram passados valores para RSs.
+    // Delega a criação e a validação dos grupos ao banco de RSs.
     std::vector<int> aux{num_rs.empty() ? std::vector<int>{5,5,5,4,3,2} : num_rs}; // Valores arbitrários de default.
+    rs = RESERVATION_STATION(aux);
 
-    // A quantidade de valores para os grupos de RS é inválido.
-    if(aux.size() != num_rs_groups){
-        std::cerr << "[ERRO] Quantidade inválida de RSs: " << num_rs.size() << "\n";
-        std::abort();
-    }
-
-    // Declara os componententes da RS:
-    int i{};
-    std::vector<std::string> rs_names{"load", "store", "int_basic", "int_mult_div", "float_basic", "float_mult_div"};
-    for (std::vector<RS>* group : GetAllRSGroups(rs)) {
-        for(int j{}; j < aux[i]; j++) group->push_back(RS(rs_names[i] + std::to_string(j)));
-        i++;
-    }
-
-    // Verifica se foram passados valores para FUs.
+    // Delega grupos, WR e Commit ao banco de FUs.
     aux = num_fus.empty() ? std::vector<int>{1,1,1,1,1,2} : num_fus; // Valores arbitrários de default.
-
-    // A quantidade de valores para as FUs é inválido.
-    if(aux.size() != num_fu_groups){
-        std::cerr << "[ERRO] Quantidade inválida de FUs: " << num_fus.size() << "\n";
-        std::abort();
-    }
-
-    // Declara os componententes do FU:
-    i = 0;
-    for (std::vector<FU>* group : GetAllFUGroups(fu)) {
-        for(int j{}; j < aux[i]; j++) group->push_back(FU{});
-        i++;
-    }
-    // Valores int:
-    fu.wr = aux[5];
-    if(has_rob) fu.commit = dispatch_width; // Só inicializa commit se tem ROB.
+    fu = FUNCTIONAL_UNITS(aux, has_rob ? dispatch_width : 0);
 }
 
 // Privado:
@@ -452,12 +307,8 @@ ISSUE_RESULT Thread::TryIssue(
         if (new_instruction && rob.size() >= static_cast<size_t>(rob_capacity)) return {};
     }
 
-    // Identifica o tipo de grupo de RS necessário para alocar e procura uma vaga.
-    std::vector<RS>& group{GetRSGroupForType(rs, type)};
-
-    for (RS& r : group) {
-        // Se conseguiu adicionar:
-        if (r.AddIssue(
+    // O banco identifica o grupo e tenta a primeira célula livre.
+    if (rs.AddIssue(
             instruction,
             register_status,
             cycle,
@@ -523,7 +374,6 @@ ISSUE_RESULT Thread::TryIssue(
                 position,
                 type
             };
-        }
     }
     return {};
 }
@@ -676,43 +526,30 @@ bool Thread::ExMem(
 void Thread::StartPhase(
     const int cycle
 ){
+    const std::vector<RS*> ready_candidates{rs.CollectReadyCandidates()};
     std::vector<RS*> candidates;
 
-    // Adiciona as instruções aptas a iniciar sua fase de execução em um vetor.
-    for (std::vector<RS>* group : GetAllRSGroups(rs)) {
-        for (RS& r : *group) {
+    // Aplica somente políticas da Thread sobre candidatas já ordenadas pelo banco.
+    for (RS* r : ready_candidates) {
+        // Instrução observada foi adicionada após um branch não resolvido:
+        // - Tem sua execução atrasada (branch stall).
+        // - Não verifica se tem ROB ou não pois o "unresolved_branch_position >= 0" só ocorre sem ROB.
+        int inst_position{r->GetCurrentInstruction().GetPosition()};
+        if (unresolved_branch_position >= 0 && inst_position > unresolved_branch_position) continue;
 
-            // Célula da RS vazia.
-            if (!r.IsBusy()) continue;
+        // Previne que STORE com ROB seja escalonado para WR (nesse caso é apenas commit).
+        IN_FLIGHT_ENTRY& entry{GetInFlightEntry(inst_position)};
+        INSTRUCTION_TYPE type{
+            entry.instruction->GetInstructionType(entry.current_stage)
+        };
+        const bool final_stage{
+            entry.current_stage + 1 == entry.instruction->GetStageCount()
+        };
+        if (type == INSTRUCTION_TYPE::STORE && has_rob && final_stage &&
+            r->GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM) continue;
 
-            // Filtro que garante selecionar apenas as instruções em IS ou MEM (que vai começar)
-            // - São as únicas que podem ter o countdown = -1.
-            // - Redundante em lógica, já que o ReservationStations::UpdateDependencies() já faz esse filtro, mas diminui overhead do sort.
-            if (r.GetCountdown() != -1 || r.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR) continue;
-
-            // Instrução observada foi adicionada após um branch não resolvido:
-            // - Tem sua execução atrasada (branch stall).
-            // - Não verifica se tem ROB ou não pois o "unresolved_branch_position >= 0" só ocorre sem ROB.
-            int inst_position{r.GetCurrentInstruction().GetPosition()};
-            if (unresolved_branch_position >= 0 && inst_position > unresolved_branch_position) continue;
-
-            // Previne que STORE com ROB seja escalonado para WR (nesse caso é apenas commit).
-            IN_FLIGHT_ENTRY& entry{GetInFlightEntry(inst_position)};
-            INSTRUCTION_TYPE type{
-                entry.instruction->GetInstructionType(entry.current_stage)
-            };
-            const bool final_stage{
-                entry.current_stage + 1 == entry.instruction->GetStageCount()
-            };
-            if (type == INSTRUCTION_TYPE::STORE && has_rob && final_stage &&
-                r.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::MEM) continue;
-
-            candidates.push_back(&r);
-        }
+        candidates.push_back(r);
     }
-
-    // Ordena os candidatos com base na sua ordenação original.
-    std::stable_sort(candidates.begin(), candidates.end(), ComparePositionOnRS);
 
     // Avança as instruções de fase:
     for (RS* r : candidates) {
@@ -774,7 +611,7 @@ void Thread::PerformWriteResult(
     const int cycle
 ){
     int writes{};
-    while (!wr_buffer.empty() && writes < fu.wr) { // Limitado pela capacidade de WR simultâneo.
+    while (!wr_buffer.empty() && writes < fu.GetWriteResultWidth()) {
 
         int position{wr_buffer.front()};
         IN_FLIGHT_ENTRY& entry{GetInFlightEntry(position)};
@@ -793,7 +630,7 @@ void Thread::PerformWriteResult(
 
         // O estágio "wr" do "store" só é marcado se o o processador não possui ROB.
         if (store_with_rob) {
-            ReleaseRSByPosition(rs, position, cycle);
+            rs.ReleaseByPosition(position, cycle);
             wr_buffer.erase(wr_buffer.begin());
             entry.state = IN_FLIGHT_STATE::FINISHED;
             MarkStoreWaitingMemory(position);
@@ -834,7 +671,7 @@ void Thread::WriteResultOnComponents(
     }
 
     // Libera a célula da RS produtora.
-    ReleaseRSByPosition(rs, position, cycle);
+    rs.ReleaseByPosition(position, cycle);
 }
 
 // Privado:
@@ -862,80 +699,76 @@ void Thread::DetectPhaseTransitions(
     // Procura em todos os grupos de RS instruções que finalizaram uma fase:
     // - EX_inicio   -> EX_concluido  (próximo é o MEM ou o WR).
     // - MEM _inicio -> MEM_concluido (próximo éWR)
-    for (std::vector<RS>* group : GetAllRSGroups(rs)) {
-        for (RS& r : *group) {
+    for (RS* station : rs.CollectBusyStations()) {
+        RS& r{*station};
 
-            // Célula da RS vazia.
-            if (!r.IsBusy()) continue;
+        // Verifica se a fase mudou com o incremento do contador:
+        // - Guarda a fase antes da tentativa, para comparar com a fase depois.
+        INSTRUCTION_PHASE_TOMASULO phase_before{r.GetInstructionPhase()};
 
-            // Verifica se a fase mudou com o incremento do contador:
-            // - Guarda a fase antes da tentativa, para comparar com a fase depois.
-            INSTRUCTION_PHASE_TOMASULO phase_before{r.GetInstructionPhase()};
+        // Ainda executando.
+        if (!r.UpdateCountdown(fu, cycle)) continue;
 
-            // Ainda executando.
-            if (!r.UpdateCountdown(fu, cycle)) continue;
+        INSTRUCTION_PHASE_TOMASULO phase_after{r.GetInstructionPhase()};
+        int position{r.GetCurrentInstruction().GetPosition()};
+        IN_FLIGHT_ENTRY& entry{GetInFlightEntry(position)};
+        if (entry.state != IN_FLIGHT_STATE::EXECUTING) {
+            std::cerr <<
+                "[ERRO] Fase concluída fora do estado EXECUTING.\n"
+                "- Posição: " << position << '\n' <<
+                "- Estado: " << static_cast<int>(entry.state) << '\n';
+            std::abort();
+        }
+        INSTRUCTION_TYPE type{
+            entry.instruction->GetInstructionType(entry.current_stage)
+        };
+        bool has_mem{type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE};
+        bool final_stage{
+            entry.current_stage + 1 == entry.instruction->GetStageCount()
+        };
+        bool store_with_rob{type == INSTRUCTION_TYPE::STORE && has_rob && final_stage};
 
-            INSTRUCTION_PHASE_TOMASULO phase_after{r.GetInstructionPhase()};
-            int position{r.GetCurrentInstruction().GetPosition()};
-            IN_FLIGHT_ENTRY& entry{GetInFlightEntry(position)};
-            if (entry.state != IN_FLIGHT_STATE::EXECUTING) {
-                std::cerr <<
-                    "[ERRO] Fase concluída fora do estado EXECUTING.\n"
-                    "- Posição: " << position << '\n' <<
-                    "- Estado: " << static_cast<int>(entry.state) << '\n';
-                std::abort();
-            }
-            INSTRUCTION_TYPE type{
-                entry.instruction->GetInstructionType(entry.current_stage)
-            };
-            bool has_mem{type == INSTRUCTION_TYPE::LOAD || type == INSTRUCTION_TYPE::STORE};
-            bool final_stage{
-                entry.current_stage + 1 == entry.instruction->GetStageCount()
-            };
-            bool store_with_rob{type == INSTRUCTION_TYPE::STORE && has_rob && final_stage};
-
-            // Caso 1: EX finalizado: falta MEM.
-            if (phase_before == INSTRUCTION_PHASE_TOMASULO::EX && phase_after == INSTRUCTION_PHASE_TOMASULO::MEM) {
-                // O ciclo MEM do STORE é representado apenas quando ele não possui ROB.
-                // - Pula direto pro WR.
-                if (store_with_rob) {
-                    entry.state = IN_FLIGHT_STATE::WAITING_WR;
-                    pending_wr_buffer.push_back(position);
-                }
-                RecordTraceEvent(position, TRACE_EVENT::EX_BOUNDARY, cycle);
-            }
-            // Caso 2: * finalizado: falta WR.
-            // - Não precisa verificar o phase_before por que mudou de fase para o final.
-            else if (phase_after == INSTRUCTION_PHASE_TOMASULO::WR) {
-                const TRACE_EVENT completed_event{
-                    has_mem && !store_with_rob ? TRACE_EVENT::MEM_BOUNDARY :
-                        TRACE_EVENT::EX_BOUNDARY
-                };
-
-                // Se o Branch foi resolvido, a flag é desmarcada.
-                if (position == unresolved_branch_position &&
-                    r.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR)
-                    unresolved_branch_position = -1; // Valor default.
-
-                // Etapa intermediária libera hardware sem produzir resultado arquitetural.
-                if (!final_stage) {
-                    ReleaseRSByPosition(rs, position, cycle);
-                    entry.current_stage++;
-                    entry.state = IN_FLIGHT_STATE::WAITING_ISSUE;
-                    entry.next_issue_cycle = cycle + 1;
-                    RecordTraceEvent(position, completed_event, cycle);
-                    continue;
-                }
-
-                // Branch final pode receber Commit no ciclo em que seu EX é resolvido.
-                if (has_rob && type == INSTRUCTION_TYPE::BRANCH)
-                    MarkROBReady(position, cycle);
-
-                // Coloca a instrução na fila de WR.
+        // Caso 1: EX finalizado: falta MEM.
+        if (phase_before == INSTRUCTION_PHASE_TOMASULO::EX && phase_after == INSTRUCTION_PHASE_TOMASULO::MEM) {
+            // O ciclo MEM do STORE é representado apenas quando ele não possui ROB.
+            // - Pula direto pro WR.
+            if (store_with_rob) {
                 entry.state = IN_FLIGHT_STATE::WAITING_WR;
                 pending_wr_buffer.push_back(position);
-                RecordTraceEvent(position, completed_event, cycle);
             }
+            RecordTraceEvent(position, TRACE_EVENT::EX_BOUNDARY, cycle);
+        }
+        // Caso 2: * finalizado: falta WR.
+        // - Não precisa verificar o phase_before por que mudou de fase para o final.
+        else if (phase_after == INSTRUCTION_PHASE_TOMASULO::WR) {
+            const TRACE_EVENT completed_event{
+                has_mem && !store_with_rob ? TRACE_EVENT::MEM_BOUNDARY :
+                    TRACE_EVENT::EX_BOUNDARY
+            };
+
+            // Se o Branch foi resolvido, a flag é desmarcada.
+            if (position == unresolved_branch_position &&
+                r.GetInstructionPhase() == INSTRUCTION_PHASE_TOMASULO::WR)
+                unresolved_branch_position = -1; // Valor default.
+
+            // Etapa intermediária libera hardware sem produzir resultado arquitetural.
+            if (!final_stage) {
+                rs.ReleaseByPosition(position, cycle);
+                entry.current_stage++;
+                entry.state = IN_FLIGHT_STATE::WAITING_ISSUE;
+                entry.next_issue_cycle = cycle + 1;
+                RecordTraceEvent(position, completed_event, cycle);
+                continue;
+            }
+
+            // Branch final pode receber Commit no ciclo em que seu EX é resolvido.
+            if (has_rob && type == INSTRUCTION_TYPE::BRANCH)
+                MarkROBReady(position, cycle);
+
+            // Coloca a instrução na fila de WR.
+            entry.state = IN_FLIGHT_STATE::WAITING_WR;
+            pending_wr_buffer.push_back(position);
+            RecordTraceEvent(position, completed_event, cycle);
         }
     }
 }
@@ -950,7 +783,7 @@ void Thread::Commit(
 
     int writes{};
     // Até acabar as instruções ou até o limite de despacho.
-    while (!rob.empty() && writes < fu.commit){
+    while (!rob.empty() && writes < fu.GetCommitWidth()){
         ROB_ENTRY& rob_entry{rob.front()};
         const int position{rob_entry.position};
         IN_FLIGHT_ENTRY& in_flight_entry{GetInFlightEntry(position)};

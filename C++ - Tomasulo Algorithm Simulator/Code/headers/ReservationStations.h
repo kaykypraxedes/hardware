@@ -25,6 +25,7 @@
 #include <cstddef>   // para std::size_t
 #include <cstdlib>   // para std::abort
 #include <iostream>  // para std::cerr
+#include <algorithm> // para std::stable_sort
 
 namespace processor {
 
@@ -265,20 +266,6 @@ class RS {
             const int                        latency
         );
 
-        /**
-         * @brief Procura uma FU livre do grupo da instrução (para
-         * operar a fase específica) e retorna sua posição.
-         *
-         * @param const std::vector<FU>& fu_group - Apenas o grupo de
-         * unidades funcionais usado naquela instrução naquela fase.
-         *
-         * @return int - Posição da FU unitária encontrada.
-         * @return -1 - Não tem nenhuma disponível.
-         */
-        int FindFreeFU(
-            const std::vector<FU>& fu_group
-        );
-
         // - UpdateCountdown()
 
         /**
@@ -305,21 +292,76 @@ class RS {
  * instrução.
  */
 struct RESERVATION_STATION {
-    std::vector<RS> load;
-    std::vector<RS> store;
-    std::vector<RS> int_basic;
-    std::vector<RS> int_mult_div;
-    std::vector<RS> float_basic;
-    std::vector<RS> float_mult_div;
+    public:
+        RESERVATION_STATION() = default;
 
-    /**
-     * @brief Distribui um evento transitório para todas as RSs ocupadas.
-     *
-     * @param broadcast Identidade do produtor e destino transmitido.
-     */
-    void ResolveBroadcast(
-        const CDB_BROADCAST& broadcast
-    );
+        /**
+         * @brief Inicializa os seis grupos físicos na ordem configurável atual.
+         */
+        explicit RESERVATION_STATION(
+            const std::vector<int>& capacities
+        );
+
+        const std::vector<RS>& GetLoadStations() const;
+        const std::vector<RS>& GetStoreStations() const;
+        const std::vector<RS>& GetIntBasicStations() const;
+        const std::vector<RS>& GetIntMultDivStations() const;
+        const std::vector<RS>& GetFloatBasicStations() const;
+        const std::vector<RS>& GetFloatMultDivStations() const;
+
+        /**
+         * @brief Roteia e tenta alocar uma etapa na primeira RS livre.
+         */
+        bool AddIssue(
+            const std::shared_ptr<Instruction>& instruction,
+            RegisterStatusTable&                register_status,
+            const int                           cycle,
+            const bool                          new_instruction,
+            const std::size_t                   stage = 0
+        );
+
+        bool IsPositionAllocated(
+            const int position
+        ) const;
+
+        void ReleaseByPosition(
+            const int position,
+            const int cycle
+        );
+
+        /**
+         * @brief Coleta candidatas locais e as ordena por posição lógica.
+         */
+        std::vector<RS*> CollectReadyCandidates();
+
+        /**
+         * @brief Coleta todas as células ocupadas na ordem física dos grupos.
+         */
+        std::vector<RS*> CollectBusyStations();
+
+        /**
+         * @brief Distribui um evento transitório para todas as RSs ocupadas.
+         *
+         * @param broadcast Identidade do produtor e destino transmitido.
+         */
+        void ResolveBroadcast(
+            const CDB_BROADCAST& broadcast
+        );
+    private:
+        std::vector<RS> load;
+        std::vector<RS> store;
+        std::vector<RS> int_basic;
+        std::vector<RS> int_mult_div;
+        std::vector<RS> float_basic;
+        std::vector<RS> float_mult_div;
+
+        std::vector<RS>& GetGroupForType(
+            const INSTRUCTION_TYPE type
+        );
+
+        std::vector<std::vector<RS>*> GetGroups();
+
+        std::vector<const std::vector<RS>*> GetGroups() const;
 };
 
 } // namespace processor
